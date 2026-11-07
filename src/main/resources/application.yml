@@ -1,0 +1,23 @@
+spring:
+  application:
+    name: moneypoly
+
+  datasource:
+    url: ${MONEYPOLY_DB_URL:jdbc:postgresql://localhost:5432/moneypoly}
+    username: ${MONEYPOLY_DB_USER:moneypoly}
+    password: ${MONEYPOLY_DB_PASSWORD:moneypoly}
+
+  jpa:
+    hibernate:
+      ddl-auto: none
+    open-in-view: false
+
+  flyway:
+    enabled: true
+
+server:
+  port: 8080
+
+vaadin:
+  # Kein automatisches Öffnen des Browsers (Headless/Server-Betrieb)
+  launch-browser: false
