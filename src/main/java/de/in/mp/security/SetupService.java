@@ -8,23 +8,30 @@ import org.springframework.transaction.annotation.Transactional;
  * Creates the initial administrator account during the first application setup.
  * <p>
  * The service refuses to run as soon as any account exists so that the setup
- * cannot be replayed once the application has been initialized.
+ * cannot be replayed once the application has been initialized. The one-time
+ * setup token must be verified before an administrator is created.
  */
 @Service
 public class SetupService {
 
     private final AppUserRepository appUserRepository;
     private final PasswordEncoder passwordEncoder;
+    private final SetupTokenService setupTokenService;
 
-    public SetupService(AppUserRepository appUserRepository, PasswordEncoder passwordEncoder) {
+    public SetupService(AppUserRepository appUserRepository, PasswordEncoder passwordEncoder,
+            SetupTokenService setupTokenService) {
         this.appUserRepository = appUserRepository;
         this.passwordEncoder = passwordEncoder;
+        this.setupTokenService = setupTokenService;
     }
 
     @Transactional
-    public AppUser createInitialAdmin(String username, String email, String password) {
+    public AppUser createInitialAdmin(String username, String email, String password, String setupToken) {
         if (appUserRepository.count() > 0) {
             throw new IllegalStateException("Initial setup is unavailable because at least one user already exists");
+        }
+        if (!setupTokenService.isValid(setupToken)) {
+            throw new InvalidSetupTokenException("Invalid or missing setup token");
         }
 
         AppUser admin = new AppUser();
@@ -34,6 +41,9 @@ public class SetupService {
         admin.setRole(AppRole.ROLE_ADMIN);
         admin.setAuthProvider(AuthProvider.LOCAL);
         admin.setEnabled(true);
-        return appUserRepository.save(admin);
+
+        AppUser savedAdmin = appUserRepository.save(admin);
+        setupTokenService.invalidate();
+        return savedAdmin;
     }
 }

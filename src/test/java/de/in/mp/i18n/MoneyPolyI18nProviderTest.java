@@ -58,11 +58,12 @@ class MoneyPolyI18nProviderTest {
 				"ui.login.form.password", "ui.login.form.submit", "ui.login.error.title", "ui.login.error.message",
 				"ui.login.error.username", "ui.login.error.password", "ui.login.oauth2.google",
 				"ui.setup.page-title", "ui.setup.title", "ui.setup.username.label", "ui.setup.email.label",
-				"ui.setup.password.label", "ui.setup.password-confirmation.label", "ui.setup.submit",
-				"ui.setup.success.message", "ui.setup.error.username-required", "ui.setup.error.email-required",
-				"ui.setup.error.email-invalid", "ui.setup.error.password-required",
+				"ui.setup.password.label", "ui.setup.password-confirmation.label", "ui.setup.token.label",
+				"ui.setup.submit", "ui.setup.success.message", "ui.setup.error.username-required",
+				"ui.setup.error.email-required", "ui.setup.error.email-invalid", "ui.setup.error.password-required",
 				"ui.setup.error.password-min-length", "ui.setup.error.password-confirmation-required",
-				"ui.setup.error.password-mismatch", "ui.setup.error.already-configured",
+				"ui.setup.error.password-mismatch", "ui.setup.error.setup-token-required",
+				"ui.setup.error.already-configured", "setup.error.invalid_token",
 				"ui.app.title", "ui.nav.title", "ui.nav.dashboard", "ui.nav.finance", "ui.nav.loans",
 				"ui.nav.energy", "ui.nav.admin", "ui.header.toggle", "ui.header.logged-in-as", "ui.header.logout")) {
 			assertThat(provider.getTranslation(key, Locale.GERMAN))

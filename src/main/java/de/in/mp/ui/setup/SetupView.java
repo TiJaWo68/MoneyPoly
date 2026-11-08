@@ -22,6 +22,7 @@ import com.vaadin.flow.server.auth.AnonymousAllowed;
 import com.vaadin.flow.theme.lumo.LumoUtility;
 
 import de.in.mp.security.AppUserRepository;
+import de.in.mp.security.InvalidSetupTokenException;
 import de.in.mp.security.SetupService;
 import de.in.mp.ui.LoginView;
 
@@ -46,6 +47,7 @@ public class SetupView extends VerticalLayout implements BeforeEnterObserver, Ha
     private final EmailField email = new EmailField();
     private final PasswordField password = new PasswordField();
     private final PasswordField passwordConfirmation = new PasswordField();
+    private final TextField setupToken = new TextField();
     private final Button submitButton = new Button();
 
     private final Binder<SetupForm> binder = new Binder<>(SetupForm.class);
@@ -65,7 +67,7 @@ public class SetupView extends VerticalLayout implements BeforeEnterObserver, Ha
         submitButton.addClickListener(event -> createAdmin());
 
         FormLayout formLayout = new FormLayout();
-        formLayout.add(username, email, password, passwordConfirmation);
+        formLayout.add(username, email, password, passwordConfirmation, setupToken);
         formLayout.setResponsiveSteps(new FormLayout.ResponsiveStep("0", 1));
 
         VerticalLayout card = new VerticalLayout();
@@ -102,6 +104,7 @@ public class SetupView extends VerticalLayout implements BeforeEnterObserver, Ha
         email.setLabel(getTranslation("ui.setup.email.label"));
         password.setLabel(getTranslation("ui.setup.password.label"));
         passwordConfirmation.setLabel(getTranslation("ui.setup.password-confirmation.label"));
+        setupToken.setLabel(getTranslation("ui.setup.token.label"));
         submitButton.setText(getTranslation("ui.setup.submit"));
     }
 
@@ -126,6 +129,10 @@ public class SetupView extends VerticalLayout implements BeforeEnterObserver, Ha
                 .withValidator(value -> value.equals(password.getValue()),
                         getTranslation("ui.setup.error.password-mismatch"))
                 .bind(SetupForm::getPasswordConfirmation, SetupForm::setPasswordConfirmation);
+
+        binder.forField(setupToken)
+                .asRequired(getTranslation("ui.setup.error.setup-token-required"))
+                .bind(SetupForm::getSetupToken, SetupForm::setSetupToken);
     }
 
     private void createAdmin() {
@@ -135,9 +142,12 @@ public class SetupView extends VerticalLayout implements BeforeEnterObserver, Ha
         }
 
         try {
-            setupService.createInitialAdmin(form.getUsername(), form.getEmail(), form.getPassword());
+            setupService.createInitialAdmin(form.getUsername(), form.getEmail(), form.getPassword(),
+                    form.getSetupToken());
             Notification.show(getTranslation("ui.setup.success.message"), 3000, Notification.Position.MIDDLE);
             getUI().ifPresent(ui -> ui.navigate(LoginView.class));
+        } catch (InvalidSetupTokenException exception) {
+            Notification.show(getTranslation("setup.error.invalid_token"), 5000, Notification.Position.MIDDLE);
         } catch (IllegalStateException exception) {
             Notification.show(getTranslation("ui.setup.error.already-configured"), 5000, Notification.Position.MIDDLE);
             getUI().ifPresent(ui -> ui.navigate(LoginView.class));
@@ -153,6 +163,7 @@ public class SetupView extends VerticalLayout implements BeforeEnterObserver, Ha
         private String email;
         private String password;
         private String passwordConfirmation;
+        private String setupToken;
 
         public String getUsername() {
             return username;
@@ -184,6 +195,14 @@ public class SetupView extends VerticalLayout implements BeforeEnterObserver, Ha
 
         public void setPasswordConfirmation(String passwordConfirmation) {
             this.passwordConfirmation = passwordConfirmation;
+        }
+
+        public String getSetupToken() {
+            return setupToken;
+        }
+
+        public void setSetupToken(String setupToken) {
+            this.setupToken = setupToken;
         }
     }
 }
