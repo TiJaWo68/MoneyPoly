@@ -27,3 +27,4 @@ docs/*
 src/main/frontend/generated/
 src/main/bundles/
 node_modules/
+/build_and_deploy2dev.cmd
