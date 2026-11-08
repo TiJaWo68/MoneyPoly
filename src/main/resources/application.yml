@@ -1,5 +1,10 @@
 moneypoly:
   version: @project.version@
+  logging:
+    tcp:
+      enabled: ${LOGGING_TCP_ENABLED:false}
+      host: ${LOGGING_TCP_HOST:192.168.178.x}
+      port: ${LOGGING_TCP_PORT:4560}
 
 spring:
   application:

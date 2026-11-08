@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+    <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
+
+    <!-- Remote TCP log streaming configuration, overridable via Spring properties / environment variables. -->
+    <springProperty scope="context" name="moneypoly.logging.tcp.enabled"
+                    source="moneypoly.logging.tcp.enabled" defaultValue="false"/>
+    <springProperty scope="context" name="moneypoly.logging.tcp.host"
+                    source="moneypoly.logging.tcp.host" defaultValue="127.0.0.1"/>
+    <springProperty scope="context" name="moneypoly.logging.tcp.port"
+                    source="moneypoly.logging.tcp.port" defaultValue="4560"/>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+
+    <condition class="ch.qos.logback.core.boolex.PropertyEqualityCondition">
+        <key>moneypoly.logging.tcp.enabled</key>
+        <value>true</value>
+    </condition>
+    <if>
+        <then>
+            <!-- Asynchronous TCP appender streaming JSON (Logstash format).
+                 It never blocks the logging thread (events are dropped when the ring buffer is full)
+                 and automatically reconnects if the receiver is unavailable. -->
+            <appender name="TCP_LOGSTASH" class="net.logstash.logback.appender.LogstashTcpSocketAppender">
+                <destination>${moneypoly.logging.tcp.host}:${moneypoly.logging.tcp.port}</destination>
+                <reconnectionDelay>10 seconds</reconnectionDelay>
+                <shutdownGracePeriod>5 seconds</shutdownGracePeriod>
+                <ringBufferSize>1024</ringBufferSize>
+                <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+                    <customFields><![CDATA[{"application":"moneypoly"}]]></customFields>
+                </encoder>
+            </appender>
+
+            <root level="INFO">
+                <appender-ref ref="TCP_LOGSTASH"/>
+            </root>
+        </then>
+    </if>
+</configuration>
