@@ -5,6 +5,8 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import jakarta.annotation.security.PermitAll;
+
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -28,7 +30,11 @@ import com.vaadin.flow.theme.lumo.LumoUtility;
 /**
  * Application shell for all protected views: responsive navigation drawer,
  * header with session information and a logout action.
+ * <p>
+ * Accessible to every authenticated user via {@link PermitAll}. Individual
+ * views may apply stricter rules without conflicting with this layout.
  */
+@PermitAll
 public class MainLayout extends AppLayout {
 
     private static final String ROLE_ADMIN = "ROLE_ADMIN";

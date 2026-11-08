@@ -6,6 +6,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import jakarta.annotation.security.PermitAll;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -68,6 +70,13 @@ class MainLayoutTest {
     @Test
     void returnsEmptyDisplayNameWhenNotAuthenticated() {
         assertThat(MainLayout.resolveDisplayName(null)).isEmpty();
+    }
+
+    @Test
+    void mainLayoutAllowsAuthenticatedAccess() {
+        assertThat(MainLayout.class.isAnnotationPresent(PermitAll.class))
+                .as("MainLayout must allow access for every authenticated user")
+                .isTrue();
     }
 
     private MainLayout.NavigationItem adminItem() {
