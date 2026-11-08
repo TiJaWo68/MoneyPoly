@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100%" height="100%">
+  <defs>
+    <!-- Card Gradient -->
+    <linearGradient id="cardGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1E2638" />
+      <stop offset="100%" stop-color="#111622" />
+    </linearGradient>
+
+    <!-- Petrol Accent Gradient -->
+    <linearGradient id="petrolGrad" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#0077B6" />
+      <stop offset="100%" stop-color="#00B4D8" />
+    </linearGradient>
+
+    <!-- Gold Accent Gradient -->
+    <linearGradient id="goldGrad" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#C58A43" />
+      <stop offset="100%" stop-color="#E0A96D" />
+    </linearGradient>
+
+    <!-- Subtle Drop Shadow -->
+    <filter id="shadow" x="-10%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#000" flood-opacity="0.5" />
+    </filter>
+  </defs>
+
+  <!-- Background App Card / Dark Theme Canvas -->
+  <rect width="100" height="100" rx="22" fill="#151922" />
+
+  <!-- Hintere Kontokarte (Subtil angedeutet) -->
+  <rect x="20" y="18" width="58" height="38" rx="8" fill="#1C2433" stroke="#2D3748" stroke-width="1.5" />
+  <line x1="26" y1="26" x2="42" y2="26" stroke="#4A5568" stroke-width="2" stroke-linecap="round" />
+
+  <!-- Vordere Haupt-Kontokarte -->
+  <rect x="22" y="32" width="60" height="42" rx="8" fill="url(#cardGrad)" stroke="#38445A" stroke-width="1.5" filter="url(#shadow)" />
+
+  <!-- Integrierte Chart-Balken (Treppendiagramm / Saldo-Wachstum) -->
+  <rect x="30" y="56" width="6" height="10" rx="2" fill="#2D3B55" />
+  <rect x="40" y="50" width="6" height="16" rx="2" fill="url(#petrolGrad)" />
+  <rect x="50" y="44" width="6" height="22" rx="2" fill="url(#petrolGrad)" />
+  <rect x="60" y="38" width="6" height="28" rx="2" fill="url(#goldGrad)" />
+
+  <!-- Aufsteigende Trendlinie über den Balken -->
+  <path d="M 33 53 L 43 47 L 53 41 L 63 35 L 72 26" fill="none" stroke="#E0A96D" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+
+  <!-- Trend-Pfeilspitze -->
+  <path d="M 66 26 H 72 V 32" fill="none" stroke="#E0A96D" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+</svg>
