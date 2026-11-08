@@ -1,0 +1,39 @@
+package de.in.mp.security;
+
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+/**
+ * Creates the initial administrator account during the first application setup.
+ * <p>
+ * The service refuses to run as soon as any account exists so that the setup
+ * cannot be replayed once the application has been initialized.
+ */
+@Service
+public class SetupService {
+
+    private final AppUserRepository appUserRepository;
+    private final PasswordEncoder passwordEncoder;
+
+    public SetupService(AppUserRepository appUserRepository, PasswordEncoder passwordEncoder) {
+        this.appUserRepository = appUserRepository;
+        this.passwordEncoder = passwordEncoder;
+    }
+
+    @Transactional
+    public AppUser createInitialAdmin(String username, String email, String password) {
+        if (appUserRepository.count() > 0) {
+            throw new IllegalStateException("Initial setup is unavailable because at least one user already exists");
+        }
+
+        AppUser admin = new AppUser();
+        admin.setUsername(username);
+        admin.setEmail(email);
+        admin.setPasswordHash(passwordEncoder.encode(password));
+        admin.setRole(AppRole.ROLE_ADMIN);
+        admin.setAuthProvider(AuthProvider.LOCAL);
+        admin.setEnabled(true);
+        return appUserRepository.save(admin);
+    }
+}
