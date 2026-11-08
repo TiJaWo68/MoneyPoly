@@ -25,4 +25,5 @@ docs/*
 
 # Vaadin generated frontend resources
 src/main/frontend/generated/
+src/main/bundles/
 node_modules/
