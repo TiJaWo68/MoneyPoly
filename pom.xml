@@ -13,7 +13,7 @@
 
     <groupId>de.in.mp</groupId>
     <artifactId>moneypoly</artifactId>
-    <version>0.1.0</version>
+    <version>0.2.1</version>
     <name>MoneyPoly</name>
     <description>MoneyPoly - Family Finance, Loans and Energy Hub</description>
 
@@ -21,6 +21,8 @@
         <java.version>25</java.version>
         <vaadin.version>25.3.5</vaadin.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <!-- Integration tests (@Tag("integration")) are excluded locally and enabled in CI -->
+        <surefire.excludedGroups>integration</surefire.excludedGroups>
     </properties>
 
     <dependencyManagement>
@@ -29,6 +31,13 @@
                 <groupId>com.vaadin</groupId>
                 <artifactId>vaadin-bom</artifactId>
                 <version>${vaadin.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.testcontainers</groupId>
+                <artifactId>testcontainers-bom</artifactId>
+                <version>1.21.3</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
@@ -79,10 +88,29 @@
             <scope>runtime</scope>
         </dependency>
 
+        <!-- Structured JSON TCP log streaming for Logstash-compatible receivers -->
+        <dependency>
+            <groupId>net.logstash.logback</groupId>
+            <artifactId>logstash-logback-encoder</artifactId>
+            <version>9.0</version>
+        </dependency>
+
         <!-- https://mvnrepository.com/artifact/org.springframework.boot/spring-boot-starter-test -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- Testcontainers (JUnit 5 integration, versions managed by the Spring Boot BOM) -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>postgresql</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>
@@ -111,11 +139,24 @@
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
             </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <excludedGroups>${surefire.excludedGroups}</excludedGroups>
+                </configuration>
+            </plugin>
         </plugins>
     </build>
 	<profiles>
-        <profile>
-            <id>production</id>
+	       <profile>
+	           <id>integration-tests</id>
+	           <properties>
+	               <surefire.excludedGroups></surefire.excludedGroups>
+	           </properties>
+	       </profile>
+	       <profile>
+	           <id>production</id>
             <build>
                 <plugins>
                     <plugin>
