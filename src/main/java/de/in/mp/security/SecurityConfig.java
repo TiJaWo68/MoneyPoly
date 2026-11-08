@@ -2,6 +2,7 @@ package de.in.mp.security;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -22,6 +23,7 @@ import de.in.mp.ui.LoginView;
  * The OAuth2 login is only registered when a Google client id is configured so
  * that a missing {@code GOOGLE_CLIENT_ID} never prevents application startup.
  */
+@Configuration
 @EnableWebSecurity
 public class SecurityConfig {
 
