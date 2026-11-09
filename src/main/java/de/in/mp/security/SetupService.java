@@ -1,5 +1,7 @@
 package de.in.mp.security;
 
+import java.util.Set;
+
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,7 +40,7 @@ public class SetupService {
         admin.setUsername(username);
         admin.setEmail(email);
         admin.setPasswordHash(passwordEncoder.encode(password));
-        admin.setRole(AppRole.ROLE_ADMIN);
+        admin.setRoles(Set.of(AppRole.ROLE_ADMIN));
         admin.setAuthProvider(AuthProvider.LOCAL);
         admin.setEnabled(true);
 

@@ -1,7 +1,9 @@
 package de.in.mp.security;
 
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -51,7 +53,10 @@ public class CustomOAuth2UserService extends DefaultOAuth2UserService {
                     OAuth2ErrorCodes.ACCESS_DENIED, "Account is disabled", null));
         }
 
-        List<GrantedAuthority> authorities = List.of(new SimpleGrantedAuthority(appUser.getRole().name()));
+        List<GrantedAuthority> authorities = appUser.getRoles().stream()
+                .map(role -> new SimpleGrantedAuthority(role.name()))
+                .sorted(Comparator.comparing(GrantedAuthority::getAuthority))
+                .collect(Collectors.toList());
         return new DefaultOAuth2User(authorities, oAuth2User.getAttributes(), SUBJECT_ATTRIBUTE);
     }
 

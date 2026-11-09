@@ -69,6 +69,16 @@ public class SetupTokenService implements ApplicationRunner {
         token.set(null);
     }
 
+    /**
+     * Regenerates the setup token on explicit administrator request and prints
+     * it to the server log for a potential re-initialization.
+     */
+    public void renew() {
+        String generatedToken = generateToken();
+        token.set(generatedToken);
+        logToken(generatedToken);
+    }
+
     String generateToken() {
         SecureRandom secureRandom = new SecureRandom();
         StringBuilder tokenBuilder = new StringBuilder(TOKEN_LENGTH);

@@ -41,7 +41,7 @@ class SetupServiceTest {
         assertThat(result.getUsername()).isEqualTo("admin");
         assertThat(result.getEmail()).isEqualTo("admin@example.com");
         assertThat(result.getPasswordHash()).isEqualTo("hashed");
-        assertThat(result.getRole()).isEqualTo(AppRole.ROLE_ADMIN);
+        assertThat(result.getRoles()).containsExactly(AppRole.ROLE_ADMIN);
         assertThat(result.getAuthProvider()).isEqualTo(AuthProvider.LOCAL);
         assertThat(result.isEnabled()).isTrue();
         verify(repository).save(any(AppUser.class));

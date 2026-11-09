@@ -1,22 +1,28 @@
 package de.in.mp.security;
 
 import java.time.OffsetDateTime;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.UUID;
 
+import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
+import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
 import jakarta.persistence.Table;
 
 /**
  * Technical login account for authentication and authorization.
  * <p>
  * This entity is intentionally decoupled from the financial domain. The link to
- * a {@code family_member} is optional and modelled as a plain UUID reference so
+ * a {@code person} is optional and modelled as a plain UUID reference so
  * that a maintenance account does not require a financial person.
  * <p>
  * Authentication may either be local (username/password) or delegated to an
@@ -43,9 +49,11 @@ public class AppUser {
     @Column(name = "enabled", nullable = false)
     private boolean enabled = true;
 
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "app_user_role", joinColumns = @JoinColumn(name = "app_user_id"))
     @Enumerated(EnumType.STRING)
-    @Column(name = "role", nullable = false)
-    private AppRole role = AppRole.ROLE_USER;
+    @Column(name = "role", nullable = false, length = 20)
+    private Set<AppRole> roles = new HashSet<>(Set.of(AppRole.ROLE_USER));
 
     @Enumerated(EnumType.STRING)
     @Column(name = "auth_provider", nullable = false, length = 20)
@@ -57,8 +65,8 @@ public class AppUser {
     @Column(name = "preferred_locale", nullable = false, length = 10)
     private String preferredLocale = "de";
 
-    @Column(name = "family_member_id", unique = true)
-    private UUID familyMemberId;
+    @Column(name = "person_id", unique = true)
+    private UUID personId;
 
     @Column(name = "created_at", nullable = false, insertable = false, updatable = false)
     private OffsetDateTime createdAt;
@@ -106,12 +114,16 @@ public class AppUser {
         this.enabled = enabled;
     }
 
-    public AppRole getRole() {
-        return role;
+    public Set<AppRole> getRoles() {
+        return roles;
     }
 
-    public void setRole(AppRole role) {
-        this.role = role;
+    public void setRoles(Set<AppRole> roles) {
+        this.roles = roles;
+    }
+
+    public boolean hasRole(AppRole role) {
+        return roles != null && roles.contains(role);
     }
 
     public AuthProvider getAuthProvider() {
@@ -138,12 +150,12 @@ public class AppUser {
         this.preferredLocale = preferredLocale;
     }
 
-    public UUID getFamilyMemberId() {
-        return familyMemberId;
+    public UUID getPersonId() {
+        return personId;
     }
 
-    public void setFamilyMemberId(UUID familyMemberId) {
-        this.familyMemberId = familyMemberId;
+    public void setPersonId(UUID personId) {
+        this.personId = personId;
     }
 
     public OffsetDateTime getCreatedAt() {

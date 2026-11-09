@@ -1,5 +1,10 @@
 package de.in.mp.security;
 
+import java.util.Comparator;
+import java.util.List;
+import java.util.stream.Collectors;
+
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -31,11 +36,16 @@ public class UserDetailsServiceImpl implements UserDetailsService {
 
         String passwordHash = appUser.getPasswordHash() != null ? appUser.getPasswordHash() : "";
 
+        List<GrantedAuthority> authorities = appUser.getRoles().stream()
+                .map(role -> new SimpleGrantedAuthority(role.name()))
+                .sorted(Comparator.comparing(GrantedAuthority::getAuthority))
+                .collect(Collectors.toList());
+
         return User.builder()
                 .username(appUser.getUsername())
                 .password(passwordHash)
                 .disabled(!appUser.isEnabled())
-                .authorities(new SimpleGrantedAuthority(appUser.getRole().name()))
+                .authorities(authorities)
                 .build();
     }
 }

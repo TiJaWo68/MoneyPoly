@@ -6,6 +6,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import java.util.Optional;
+import java.util.Set;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -30,7 +31,7 @@ class UserDetailsServiceImplTest {
         appUser.setUsername("admin");
         appUser.setPasswordHash("$2a$10$hashed");
         appUser.setEnabled(true);
-        appUser.setRole(AppRole.ROLE_ADMIN);
+        appUser.setRoles(Set.of(AppRole.ROLE_ADMIN));
         when(repository.findByUsername("admin")).thenReturn(Optional.of(appUser));
 
         UserDetails result = service.loadUserByUsername("admin");
@@ -49,7 +50,7 @@ class UserDetailsServiceImplTest {
         appUser.setUsername("bob");
         appUser.setPasswordHash("hash");
         appUser.setEnabled(false);
-        appUser.setRole(AppRole.ROLE_USER);
+        appUser.setRoles(Set.of(AppRole.ROLE_USER));
         when(repository.findByUsername("bob")).thenReturn(Optional.of(appUser));
 
         assertThat(service.loadUserByUsername("bob").isEnabled()).isFalse();
@@ -61,7 +62,7 @@ class UserDetailsServiceImplTest {
         appUser.setUsername("google-user");
         appUser.setPasswordHash(null);
         appUser.setEnabled(true);
-        appUser.setRole(AppRole.ROLE_USER);
+        appUser.setRoles(Set.of(AppRole.ROLE_USER));
         when(repository.findByUsername("google-user")).thenReturn(Optional.of(appUser));
 
         UserDetails result = service.loadUserByUsername("google-user");

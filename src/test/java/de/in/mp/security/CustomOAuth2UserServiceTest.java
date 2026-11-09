@@ -8,6 +8,7 @@ import static org.mockito.Mockito.when;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -30,7 +31,7 @@ class CustomOAuth2UserServiceTest {
     @Test
     void mapsLocalRoleAndAttributesForKnownProviderId() {
         AppUser appUser = new AppUser();
-        appUser.setRole(AppRole.ROLE_ADMIN);
+        appUser.setRoles(Set.of(AppRole.ROLE_ADMIN));
         appUser.setEnabled(true);
         when(repository.findByProviderId("google-sub")).thenReturn(Optional.of(appUser));
 
@@ -45,7 +46,7 @@ class CustomOAuth2UserServiceTest {
     @Test
     void fallsBackToEmailLookupWhenProviderIdIsUnknown() {
         AppUser appUser = new AppUser();
-        appUser.setRole(AppRole.ROLE_USER);
+        appUser.setRoles(Set.of(AppRole.ROLE_USER));
         appUser.setEnabled(true);
         when(repository.findByProviderId("google-sub")).thenReturn(Optional.empty());
         when(repository.findByEmail("user@example.com")).thenReturn(Optional.of(appUser));

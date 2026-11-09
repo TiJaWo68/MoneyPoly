@@ -2,6 +2,8 @@ package de.in.mp.security;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.Set;
+
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -49,16 +51,16 @@ class AppUserRolePersistenceIntegrationTest {
         admin.setUsername("admin");
         admin.setEmail("admin@example.com");
         admin.setPasswordHash("hashed");
-        admin.setRole(AppRole.ROLE_ADMIN);
+        admin.setRoles(Set.of(AppRole.ROLE_ADMIN));
         admin.setAuthProvider(AuthProvider.LOCAL);
         admin.setEnabled(true);
 
         AppUser saved = appUserRepository.save(admin);
 
         assertThat(saved.getId()).isNotNull();
-        assertThat(saved.getRole()).isEqualTo(AppRole.ROLE_ADMIN);
+        assertThat(saved.getRoles()).containsExactly(AppRole.ROLE_ADMIN);
 
         AppUser reloaded = appUserRepository.findByUsername("admin").orElseThrow();
-        assertThat(reloaded.getRole()).isEqualTo(AppRole.ROLE_ADMIN);
+        assertThat(reloaded.getRoles()).containsExactly(AppRole.ROLE_ADMIN);
     }
 }
