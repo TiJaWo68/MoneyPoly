@@ -26,12 +26,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 public class OpenIbanClient {
 
     private final HttpClient httpClient;
-    private final ObjectMapper objectMapper;
+    private final ObjectMapper objectMapper = new ObjectMapper();
     private final String baseUrl;
 
-    public OpenIbanClient(ObjectMapper objectMapper,
-            @Value("${moneypoly.openiban.base-url:https://openiban.com}") String baseUrl) {
-        this.objectMapper = objectMapper;
+    public OpenIbanClient(@Value("${moneypoly.openiban.base-url:https://openiban.com}") String baseUrl) {
         this.baseUrl = baseUrl;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(5))

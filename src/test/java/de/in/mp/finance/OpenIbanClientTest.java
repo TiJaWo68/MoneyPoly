@@ -11,7 +11,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  */
 class OpenIbanClientTest {
 
-    private final OpenIbanClient client = new OpenIbanClient(new ObjectMapper(), "http://localhost");
+    private final OpenIbanClient client = new OpenIbanClient("http://localhost");
 
     @Test
     void mapsValidResponseToBankInfo() {
