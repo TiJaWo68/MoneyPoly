@@ -88,6 +88,18 @@ public class LoanContractService {
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
+    /**
+     * Outstanding receivables of active contracts only (open loan claims).
+     */
+    @Transactional(readOnly = true)
+    public BigDecimal calculateActiveOutstanding() {
+        return findAll().stream()
+                .filter(LoanContract::isActive)
+                .filter(contract -> !isPaidOff(contract))
+                .map(this::remainingBalance)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
     @Transactional(readOnly = true)
     public long countActiveContracts() {
         return findAll().stream()

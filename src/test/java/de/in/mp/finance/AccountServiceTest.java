@@ -242,6 +242,28 @@ class AccountServiceTest {
         assertThat(service.countActiveAccounts()).isEqualTo(3L);
     }
 
+    @Test
+    void calculateLiquiditySumsCheckingAndSavingsBalances() {
+        when(repository.findByActiveTrueOrderByAccountTypeAscNameAsc()).thenReturn(List.of(
+                account(AccountType.CHECKING, new BigDecimal("1000.00")),
+                account(AccountType.SAVINGS, new BigDecimal("500.00")),
+                account(AccountType.INVESTMENT, new BigDecimal("2500.00")),
+                account(AccountType.LOAN, new BigDecimal("800.00"))));
+
+        assertThat(service.calculateLiquidity()).isEqualByComparingTo("1500.00");
+    }
+
+    @Test
+    void calculateInvestedAssetsSumsInvestmentBalances() {
+        when(repository.findByActiveTrueOrderByAccountTypeAscNameAsc()).thenReturn(List.of(
+                account(AccountType.CHECKING, new BigDecimal("1000.00")),
+                account(AccountType.SAVINGS, new BigDecimal("500.00")),
+                account(AccountType.INVESTMENT, new BigDecimal("2500.00")),
+                account(AccountType.INVESTMENT, new BigDecimal("1500.00"))));
+
+        assertThat(service.calculateInvestedAssets()).isEqualByComparingTo("4000.00");
+    }
+
     private Account account(AccountType type, BigDecimal currentBalance) {
         Account account = new Account();
         account.setName("account-" + type.name());

@@ -116,6 +116,23 @@ class LoanContractServiceTest {
     }
 
     @Test
+    void calculateActiveOutstandingExcludesInactiveAndPaidOffContracts() {
+        UUID activeId = UUID.randomUUID();
+        LoanContract active = contract("Auto", "10000.00", Set.of(UUID.randomUUID()));
+        active.setId(activeId);
+        active.setInitialRepaid(new BigDecimal("2000.00"));
+
+        LoanContract inactive = contract("Haus", "50000.00", Set.of(UUID.randomUUID()));
+        inactive.setActive(false);
+
+        when(loanContractRepository.findAllByOrderByDesignationAsc()).thenReturn(List.of(active, inactive));
+        when(loanRepaymentRepository.findByLoanContractIdOrderByRepaymentDateAsc(activeId))
+                .thenReturn(List.of());
+
+        assertThat(service.calculateActiveOutstanding()).isEqualByComparingTo("8000.00");
+    }
+
+    @Test
     void countActiveContractsExcludesPaidOffContracts() {
         UUID paidOffId = UUID.randomUUID();
         LoanContract paidOff = contract("Auto", "1000.00", Set.of(UUID.randomUUID()));

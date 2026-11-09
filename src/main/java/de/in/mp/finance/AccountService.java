@@ -110,6 +110,29 @@ public class AccountService {
     }
 
     /**
+     * Liquid funds: active checking and savings balances.
+     */
+    @Transactional(readOnly = true)
+    public BigDecimal calculateLiquidity() {
+        return findActiveAccounts().stream()
+                .filter(account -> account.getAccountType() == AccountType.CHECKING
+                        || account.getAccountType() == AccountType.SAVINGS)
+                .map(Account::getCurrentBalance)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    /**
+     * Long-term securities: active investment (brokerage) balances.
+     */
+    @Transactional(readOnly = true)
+    public BigDecimal calculateInvestedAssets() {
+        return findActiveAccounts().stream()
+                .filter(account -> account.getAccountType() == AccountType.INVESTMENT)
+                .map(Account::getCurrentBalance)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    /**
      * Aggregated balance per institution: the sum of all active, non-institution
      * descendant balances within the institution subtree.
      */
