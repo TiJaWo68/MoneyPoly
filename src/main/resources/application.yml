@@ -1,5 +1,7 @@
 moneypoly:
   version: @project.version@
+  openiban:
+    base-url: ${MONEYPOLY_OPENIBAN_BASE_URL:https://openiban.com}
   logging:
     tcp:
       enabled: ${LOGGING_TCP_ENABLED:false}
