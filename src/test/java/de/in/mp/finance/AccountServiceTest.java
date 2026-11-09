@@ -9,6 +9,7 @@ import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -63,6 +64,19 @@ class AccountServiceTest {
     }
 
     @Test
+    void saveInstitutionForcesZeroBalances() {
+        when(repository.save(any(Account.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        Account institution = account(AccountType.INSTITUTION, new BigDecimal("500.00"));
+        institution.setInitialBalance(new BigDecimal("500.00"));
+
+        Account saved = service.save(institution);
+
+        assertThat(saved.getInitialBalance()).isEqualByComparingTo("0");
+        assertThat(saved.getCurrentBalance()).isEqualByComparingTo("0");
+    }
+
+    @Test
     void saveRejectsBlankName() {
         Account account = account(AccountType.CHECKING, BigDecimal.ZERO);
         account.setName("   ");
@@ -91,6 +105,52 @@ class AccountServiceTest {
         assertThatThrownBy(() -> service.save(account))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("type");
+    }
+
+    @Test
+    void saveRejectsSelfAsParent() {
+        UUID id = UUID.randomUUID();
+        Account account = account(AccountType.CHECKING, BigDecimal.ZERO);
+        account.setId(id);
+        account.setParentId(id);
+
+        assertThatThrownBy(() -> service.save(account))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("own parent");
+    }
+
+    @Test
+    void saveRejectsMissingParent() {
+        UUID parentId = UUID.randomUUID();
+        Account account = account(AccountType.CHECKING, BigDecimal.ZERO);
+        account.setParentId(parentId);
+
+        when(repository.findById(parentId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.save(account))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Parent account not found");
+    }
+
+    @Test
+    void saveRejectsCircularParent() {
+        UUID idA = UUID.randomUUID();
+        UUID idB = UUID.randomUUID();
+
+        Account accountA = account(AccountType.CHECKING, BigDecimal.ZERO);
+        accountA.setId(idA);
+        accountA.setParentId(idB);
+
+        Account accountB = account(AccountType.CHECKING, BigDecimal.ZERO);
+        accountB.setId(idB);
+        accountB.setParentId(idA);
+
+        when(repository.findById(idB)).thenReturn(Optional.of(accountB));
+        when(repository.findById(idA)).thenReturn(Optional.of(accountA));
+
+        assertThatThrownBy(() -> service.save(accountA))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Circular parent");
     }
 
     @Test
@@ -134,6 +194,45 @@ class AccountServiceTest {
                 account(AccountType.LOAN, new BigDecimal("800.00"))));
 
         assertThat(service.calculateNetWorth()).isEqualByComparingTo("3200.00");
+    }
+
+    @Test
+    void calculateNetWorthExcludesInstitutions() {
+        when(repository.findByActiveTrueOrderByAccountTypeAscNameAsc()).thenReturn(List.of(
+                account(AccountType.CHECKING, new BigDecimal("1000.00")),
+                account(AccountType.SAVINGS, new BigDecimal("500.00")),
+                account(AccountType.INVESTMENT, new BigDecimal("2500.00")),
+                account(AccountType.LOAN, new BigDecimal("800.00")),
+                account(AccountType.INSTITUTION, new BigDecimal("9999.00"))));
+
+        assertThat(service.calculateNetWorth()).isEqualByComparingTo("3200.00");
+    }
+
+    @Test
+    void calculateInstitutionTotalsSumsDescendantBalances() {
+        UUID institutionId = UUID.randomUUID();
+
+        Account institution = account(AccountType.INSTITUTION, BigDecimal.ZERO);
+        institution.setId(institutionId);
+
+        Account cash = account(AccountType.CHECKING, new BigDecimal("100.00"));
+        cash.setId(UUID.randomUUID());
+        cash.setParentId(institutionId);
+
+        Account depot = account(AccountType.INVESTMENT, new BigDecimal("200.00"));
+        depot.setId(UUID.randomUUID());
+        depot.setParentId(institutionId);
+
+        Account pocket = account(AccountType.SAVINGS, new BigDecimal("50.00"));
+        pocket.setId(UUID.randomUUID());
+        pocket.setParentId(cash.getId());
+
+        when(repository.findAllByOrderByAccountTypeAscNameAsc())
+                .thenReturn(List.of(institution, cash, depot, pocket));
+
+        Map<UUID, BigDecimal> totals = service.calculateInstitutionTotals();
+
+        assertThat(totals.get(institutionId)).isEqualByComparingTo("350.00");
     }
 
     @Test

@@ -4,11 +4,13 @@ import java.math.BigDecimal;
 import java.text.NumberFormat;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.UUID;
+import java.util.stream.Collectors;
 
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
-import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.grid.GridVariant;
 import com.vaadin.flow.component.html.H2;
 import com.vaadin.flow.component.html.Span;
@@ -17,6 +19,8 @@ import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.orderedlayout.FlexComponent.Alignment;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
+import com.vaadin.flow.component.treegrid.TreeGrid;
+import com.vaadin.flow.data.provider.hierarchy.TreeData;
 import com.vaadin.flow.data.renderer.ComponentRenderer;
 import com.vaadin.flow.router.HasDynamicTitle;
 import com.vaadin.flow.router.Route;
@@ -25,12 +29,13 @@ import com.vaadin.flow.theme.lumo.LumoUtility;
 import de.in.mp.finance.Account;
 import de.in.mp.finance.AccountService;
 import de.in.mp.finance.AccountType;
+import de.in.mp.finance.BankLookupService;
 import de.in.mp.ui.layout.MainLayout;
 import jakarta.annotation.security.PermitAll;
 
 /**
- * Finance account overview: KPI cards, account grid and the entry point for
- * creating and editing accounts via {@link AccountEditorDialog}.
+ * Finance account overview: KPI cards, hierarchical account tree and the entry
+ * point for creating and editing accounts via {@link AccountEditorDialog}.
  */
 @Route(value = "finance", layout = MainLayout.class)
 @PermitAll
@@ -39,20 +44,22 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle {
     private final AccountService accountService;
     private final AccountEditorDialog editorDialog;
 
-    private final Grid<Account> grid = new Grid<>(Account.class, false);
+    private final TreeGrid<Account> treeGrid = new TreeGrid<>();
     private final Span netWorthValue = new Span();
     private final Span activeAccountsValue = new Span();
 
-    public FinanceView(AccountService accountService) {
+    private Map<UUID, BigDecimal> institutionTotals = Map.of();
+
+    public FinanceView(AccountService accountService, BankLookupService bankLookupService) {
         this.accountService = accountService;
-        this.editorDialog = new AccountEditorDialog(accountService);
+        this.editorDialog = new AccountEditorDialog(accountService, bankLookupService);
 
         setSizeFull();
         setPadding(true);
         setSpacing(false);
 
-        add(createHeader(), createKpiRow(), grid);
-        configureGrid();
+        add(createHeader(), createKpiRow(), treeGrid);
+        configureTreeGrid();
         refresh();
     }
 
@@ -107,37 +114,36 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle {
         return card;
     }
 
-    private void configureGrid() {
-        grid.addColumn(Account::getName)
+    private void configureTreeGrid() {
+        treeGrid.addHierarchyColumn(Account::getName)
                 .setHeader(getTranslation("finance.grid.column.name"))
-                .setAutoWidth(true)
-                .setSortable(true);
+                .setAutoWidth(true);
 
-        grid.addColumn(account -> account.getBankName() != null ? account.getBankName() : "")
+        treeGrid.addColumn(account -> account.getBankName() != null ? account.getBankName() : "")
                 .setHeader(getTranslation("finance.grid.column.bank"))
                 .setAutoWidth(true);
 
-        grid.addColumn(new ComponentRenderer<>(this::renderTypeBadge))
+        treeGrid.addColumn(new ComponentRenderer<>(this::renderTypeBadge))
                 .setHeader(getTranslation("finance.grid.column.type"))
                 .setAutoWidth(true);
 
-        grid.addColumn(account -> account.getAccountNumber() != null ? account.getAccountNumber() : "")
+        treeGrid.addColumn(account -> account.getAccountNumber() != null ? account.getAccountNumber() : "")
                 .setHeader(getTranslation("finance.grid.column.account-number"))
                 .setAutoWidth(true);
 
-        grid.addColumn(new ComponentRenderer<>(this::renderBalance))
+        treeGrid.addColumn(new ComponentRenderer<>(this::renderBalance))
                 .setHeader(getTranslation("finance.grid.column.balance"))
                 .setAutoWidth(true);
 
-        grid.addColumn(new ComponentRenderer<>(this::renderStatus))
+        treeGrid.addColumn(new ComponentRenderer<>(this::renderStatus))
                 .setHeader(getTranslation("finance.grid.column.status"))
                 .setAutoWidth(true);
 
-        grid.addColumn(new ComponentRenderer<>(this::renderActions))
+        treeGrid.addColumn(new ComponentRenderer<>(this::renderActions))
                 .setHeader(getTranslation("finance.grid.column.actions"))
                 .setAutoWidth(true);
 
-        grid.addThemeVariants(GridVariant.LUMO_ROW_STRIPES, GridVariant.LUMO_COLUMN_BORDERS);
+        treeGrid.addThemeVariants(GridVariant.LUMO_ROW_STRIPES, GridVariant.LUMO_COLUMN_BORDERS);
     }
 
     private Span renderTypeBadge(Account account) {
@@ -151,12 +157,17 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle {
             case LOAN -> badge.getElement().getThemeList().add("error");
             case INVESTMENT -> badge.getElement().getThemeList().add("contrast");
             case CHECKING -> badge.getElement().getThemeList().add("primary");
+            default -> {
+                // INSTITUTION uses the default badge style.
+            }
         }
         return badge;
     }
 
     private Span renderBalance(Account account) {
-        BigDecimal balance = account.getCurrentBalance();
+        BigDecimal balance = account.getAccountType() == AccountType.INSTITUTION
+                ? institutionTotals.getOrDefault(account.getId(), BigDecimal.ZERO)
+                : account.getCurrentBalance();
         Span span = new Span(formatCurrency(balance));
         span.addClassName(balance.signum() < 0 ? LumoUtility.TextColor.ERROR : LumoUtility.TextColor.SUCCESS);
         return span;
@@ -200,9 +211,37 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle {
 
     private void refresh() {
         List<Account> accounts = accountService.findAll();
-        grid.setItems(accounts);
+        TreeData<Account> treeData = buildTreeData(accounts);
+        treeGrid.setTreeData(treeData);
+        treeGrid.expand(treeData.getRootItems());
+
+        institutionTotals = accountService.calculateInstitutionTotals();
         netWorthValue.setText(formatCurrency(accountService.calculateNetWorth()));
         activeAccountsValue.setText(String.valueOf(accountService.countActiveAccounts()));
+    }
+
+    private TreeData<Account> buildTreeData(List<Account> accounts) {
+        TreeData<Account> treeData = new TreeData<>();
+
+        Map<UUID, List<Account>> childrenByParent = accounts.stream()
+                .filter(account -> account.getParentId() != null)
+                .collect(Collectors.groupingBy(Account::getParentId));
+
+        List<Account> roots = accounts.stream()
+                .filter(account -> account.getParentId() == null)
+                .collect(Collectors.toList());
+        treeData.addRootItems(roots);
+        addChildrenRecursively(roots, childrenByParent, treeData);
+        return treeData;
+    }
+
+    private void addChildrenRecursively(List<Account> parents, Map<UUID, List<Account>> childrenByParent,
+            TreeData<Account> treeData) {
+        for (Account parent : parents) {
+            List<Account> children = childrenByParent.getOrDefault(parent.getId(), List.of());
+            treeData.addItems(parent, children);
+            addChildrenRecursively(children, childrenByParent, treeData);
+        }
     }
 
     private String formatCurrency(BigDecimal amount) {

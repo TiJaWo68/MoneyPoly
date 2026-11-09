@@ -8,5 +8,6 @@ public enum AccountType {
     CHECKING,
     SAVINGS,
     LOAN,
-    INVESTMENT
+    INVESTMENT,
+    INSTITUTION
 }

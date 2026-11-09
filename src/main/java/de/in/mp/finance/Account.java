@@ -33,6 +33,9 @@ public class Account {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
+    @Column(name = "parent_id")
+    private UUID parentId;
+
     @Column(name = "name", nullable = false, length = 100)
     private String name;
 
@@ -79,6 +82,14 @@ public class Account {
 
     public void setId(UUID id) {
         this.id = id;
+    }
+
+    public UUID getParentId() {
+        return parentId;
+    }
+
+    public void setParentId(UUID parentId) {
+        this.parentId = parentId;
     }
 
     public String getName() {

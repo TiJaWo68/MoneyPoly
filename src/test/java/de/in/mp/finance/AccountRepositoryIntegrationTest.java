@@ -97,6 +97,20 @@ class AccountRepositoryIntegrationTest {
                 .containsExactly("C24", "Targobank", "VW Bank", "Autokredit");
     }
 
+    @Test
+    void persistsInstitutionAccountWithParentLink() {
+        Account institution = account("Trade Republic", AccountType.INSTITUTION, BigDecimal.ZERO);
+        Account savedInstitution = accountRepository.save(institution);
+
+        Account cash = account("Verrechnungskonto", AccountType.CHECKING, new BigDecimal("100.00"));
+        cash.setParentId(savedInstitution.getId());
+        Account savedCash = accountRepository.save(cash);
+
+        Account reloaded = accountRepository.findById(savedCash.getId()).orElseThrow();
+        assertThat(reloaded.getAccountType()).isEqualTo(AccountType.CHECKING);
+        assertThat(reloaded.getParentId()).isEqualTo(savedInstitution.getId());
+    }
+
     private Account account(String name, AccountType type, BigDecimal balance) {
         Account account = new Account();
         account.setName(name);

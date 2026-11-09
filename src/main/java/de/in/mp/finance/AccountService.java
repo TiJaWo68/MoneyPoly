@@ -1,16 +1,22 @@
 package de.in.mp.finance;
 
 import java.math.BigDecimal;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Domain service for finance accounts: validation, balance synchronization,
- * soft-delete and aggregate balance calculation for the dashboard KPIs.
+ * soft-delete, parent/child hierarchy and aggregate balance calculation for
+ * the dashboard KPIs.
  */
 @Service
 public class AccountService {
@@ -38,6 +44,11 @@ public class AccountService {
     @Transactional
     public Account save(Account account) {
         validate(account);
+
+        if (account.getAccountType() == AccountType.INSTITUTION) {
+            account.setInitialBalance(BigDecimal.ZERO);
+            account.setCurrentBalance(BigDecimal.ZERO);
+        }
 
         if (account.getId() == null) {
             account.setCurrentBalance(account.getInitialBalance());
@@ -72,7 +83,9 @@ public class AccountService {
     }
 
     /**
-     * Net worth = total assets (checking, savings, investment) minus loan liabilities.
+     * Net worth = total assets (checking, savings, investment) minus loan
+     * liabilities. Grouping nodes (INSTITUTION) carry no own balance and are
+     * excluded.
      */
     @Transactional(readOnly = true)
     public BigDecimal calculateNetWorth() {
@@ -82,7 +95,8 @@ public class AccountService {
     @Transactional(readOnly = true)
     public BigDecimal calculateTotalAssets() {
         return findActiveAccounts().stream()
-                .filter(account -> account.getAccountType() != AccountType.LOAN)
+                .filter(account -> account.getAccountType() != AccountType.LOAN
+                        && account.getAccountType() != AccountType.INSTITUTION)
                 .map(Account::getCurrentBalance)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
@@ -93,6 +107,40 @@ public class AccountService {
                 .filter(account -> account.getAccountType() == AccountType.LOAN)
                 .map(Account::getCurrentBalance)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    /**
+     * Aggregated balance per institution: the sum of all active, non-institution
+     * descendant balances within the institution subtree.
+     */
+    @Transactional(readOnly = true)
+    public Map<UUID, BigDecimal> calculateInstitutionTotals() {
+        List<Account> all = accountRepository.findAllByOrderByAccountTypeAscNameAsc();
+        Map<UUID, List<Account>> childrenByParent = all.stream()
+                .filter(account -> account.getParentId() != null)
+                .collect(Collectors.groupingBy(Account::getParentId));
+
+        Map<UUID, BigDecimal> totals = new HashMap<>();
+        for (Account account : all) {
+            if (account.getAccountType() == AccountType.INSTITUTION) {
+                totals.put(account.getId(), sumSubtree(account.getId(), childrenByParent));
+            }
+        }
+        return totals;
+    }
+
+    private BigDecimal sumSubtree(UUID parentId, Map<UUID, List<Account>> childrenByParent) {
+        BigDecimal total = BigDecimal.ZERO;
+        for (Account child : childrenByParent.getOrDefault(parentId, List.of())) {
+            if (!child.isActive()) {
+                continue;
+            }
+            if (child.getAccountType() != AccountType.INSTITUTION) {
+                total = total.add(child.getCurrentBalance());
+            }
+            total = total.add(sumSubtree(child.getId(), childrenByParent));
+        }
+        return total;
     }
 
     private Account requireAccount(UUID id) {
@@ -121,6 +169,32 @@ public class AccountService {
         }
         if (account.getCurrentBalance() == null) {
             account.setCurrentBalance(BigDecimal.ZERO);
+        }
+        validateParent(account);
+    }
+
+    private void validateParent(Account account) {
+        UUID parentId = account.getParentId();
+        if (parentId == null) {
+            return;
+        }
+        if (account.getId() != null && parentId.equals(account.getId())) {
+            throw new IllegalArgumentException("Account cannot be its own parent");
+        }
+
+        Set<UUID> visited = new HashSet<>();
+        if (account.getId() != null) {
+            visited.add(account.getId());
+        }
+
+        Account cursor = accountRepository.findById(parentId)
+                .orElseThrow(() -> new IllegalArgumentException("Parent account not found: " + parentId));
+        while (cursor != null) {
+            if (!visited.add(cursor.getId())) {
+                throw new IllegalArgumentException("Circular parent relation detected");
+            }
+            UUID nextId = cursor.getParentId();
+            cursor = nextId == null ? null : accountRepository.findById(nextId).orElse(null);
         }
     }
 }
