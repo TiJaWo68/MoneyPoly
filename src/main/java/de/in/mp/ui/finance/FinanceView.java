@@ -1,7 +1,6 @@
 package de.in.mp.ui.finance;
 
 import java.math.BigDecimal;
-import java.text.NumberFormat;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -29,6 +28,7 @@ import de.in.mp.finance.Account;
 import de.in.mp.finance.AccountService;
 import de.in.mp.finance.AccountType;
 import de.in.mp.finance.BankLookupService;
+import de.in.mp.i18n.MoneyFormatter;
 import de.in.mp.ui.layout.MainLayout;
 import jakarta.annotation.security.PermitAll;
 
@@ -245,6 +245,6 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle {
 
     private String formatCurrency(BigDecimal amount) {
         Locale locale = UI.getCurrent() != null ? UI.getCurrent().getLocale() : Locale.GERMAN;
-        return NumberFormat.getCurrencyInstance(locale).format(amount);
+        return MoneyFormatter.format(amount, locale);
     }
 }
