@@ -1,5 +1,7 @@
 package de.in.mp.ui.admin;
 
+import java.util.function.Consumer;
+
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.combobox.ComboBox;
@@ -34,6 +36,7 @@ public class PersonEditorDialog extends Dialog {
 
     private Person currentPerson;
     private Runnable onSaved;
+    private Consumer<Person> onSavedPerson;
 
     public PersonEditorDialog(PersonService personService) {
         this.personService = personService;
@@ -58,7 +61,12 @@ public class PersonEditorDialog extends Dialog {
     }
 
     public void openForCreate(Runnable onSaved) {
-        this.onSaved = onSaved;
+        openForCreate(savedPerson -> onSaved.run());
+    }
+
+    public void openForCreate(Consumer<Person> onSavedPerson) {
+        this.onSavedPerson = onSavedPerson;
+        this.onSaved = null;
         this.currentPerson = new Person();
         setHeaderTitle(getTranslation("admin.person.editor.title.new"));
         binder.readBean(currentPerson);
@@ -67,6 +75,7 @@ public class PersonEditorDialog extends Dialog {
 
     public void openForEdit(Person person, Runnable onSaved) {
         this.onSaved = onSaved;
+        this.onSavedPerson = null;
         this.currentPerson = person;
         setHeaderTitle(getTranslation("admin.person.editor.title.edit"));
         binder.readBean(person);
@@ -102,9 +111,11 @@ public class PersonEditorDialog extends Dialog {
             return;
         }
         try {
-            personService.save(currentPerson);
+            Person savedPerson = personService.save(currentPerson);
             close();
-            if (onSaved != null) {
+            if (onSavedPerson != null) {
+                onSavedPerson.accept(savedPerson);
+            } else if (onSaved != null) {
                 onSaved.run();
             }
         } catch (IllegalArgumentException exception) {

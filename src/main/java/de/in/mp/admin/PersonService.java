@@ -44,7 +44,7 @@ public class PersonService {
     @Transactional
     public void delete(UUID id) {
         Person person = requirePerson(id);
-        if (loanContractRepository.countByBorrowerIdAndActiveTrue(id) > 0) {
+        if (loanContractRepository.countByDebtorIdAndActiveTrue(id) > 0) {
             throw new IllegalArgumentException("Person cannot be deleted while active loan contracts exist");
         }
         personRepository.delete(person);
@@ -52,7 +52,7 @@ public class PersonService {
 
     @Transactional(readOnly = true)
     public long countActiveLoans(UUID personId) {
-        return loanContractRepository.countByBorrowerIdAndActiveTrue(personId);
+        return loanContractRepository.countByDebtorIdAndActiveTrue(personId);
     }
 
     private void validate(Person person) {

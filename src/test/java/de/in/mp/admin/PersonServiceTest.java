@@ -58,7 +58,7 @@ class PersonServiceTest {
         UUID id = UUID.randomUUID();
         Person person = person(id, "Anna", PersonRole.BORROWER);
         when(personRepository.findById(id)).thenReturn(Optional.of(person));
-        when(loanContractRepository.countByBorrowerIdAndActiveTrue(id)).thenReturn(1L);
+        when(loanContractRepository.countByDebtorIdAndActiveTrue(id)).thenReturn(1L);
 
         assertThatThrownBy(() -> service.delete(id))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -72,7 +72,7 @@ class PersonServiceTest {
         UUID id = UUID.randomUUID();
         Person person = person(id, "Anna", PersonRole.BORROWER);
         when(personRepository.findById(id)).thenReturn(Optional.of(person));
-        when(loanContractRepository.countByBorrowerIdAndActiveTrue(id)).thenReturn(0L);
+        when(loanContractRepository.countByDebtorIdAndActiveTrue(id)).thenReturn(0L);
 
         service.delete(id);
 
@@ -82,7 +82,7 @@ class PersonServiceTest {
     @Test
     void countActiveLoansDelegatesToRepository() {
         UUID personId = UUID.fromString("00000000-0000-0000-0000-000000000001");
-        when(loanContractRepository.countByBorrowerIdAndActiveTrue(personId)).thenReturn(3L);
+        when(loanContractRepository.countByDebtorIdAndActiveTrue(personId)).thenReturn(3L);
 
         assertThat(service.countActiveLoans(personId)).isEqualTo(3L);
     }
