@@ -206,9 +206,7 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle {
                 .setTextAlign(ColumnTextAlign.END)
                 .setAutoWidth(true);
 
-        groupHeaderRow = balanceGrid.prependHeaderRow();
-        String currentGroup = null;
-        List<Grid.Column<BalanceDateRow>> groupColumns = new java.util.ArrayList<>();
+        List<AccountColumnEntry> accountColumns = new java.util.ArrayList<>();
         for (Account account : columns) {
             UUID accountId = account.getId();
             Grid.Column<BalanceDateRow> column = balanceGrid
@@ -219,29 +217,38 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle {
                     .setAutoWidth(true);
 
             String group = AccountLabels.institutionName(account, byId);
-            if (group == null || !group.equals(currentGroup)) {
-                joinGroup(currentGroup, groupColumns);
-                groupColumns = new java.util.ArrayList<>();
-                currentGroup = group;
-            }
-            groupColumns.add(column);
+            accountColumns.add(new AccountColumnEntry(group, column));
         }
-        joinGroup(currentGroup, groupColumns);
 
         balanceGrid.addColumn(new ComponentRenderer<>(this::renderRowActions))
                 .setHeader(getTranslation("finance.grid.column.actions"))
                 .setAutoWidth(true);
+
+        groupHeaderRow = balanceGrid.prependHeaderRow();
+        applyGroupedHeaders(groupHeaderRow, accountColumns);
     }
 
-    private void joinGroup(String group, List<Grid.Column<BalanceDateRow>> columns) {
-        if (group == null || columns.isEmpty()) {
-            return;
+    private void applyGroupedHeaders(HeaderRow topRow, List<AccountColumnEntry> accountColumns) {
+        int i = 0;
+        while (i < accountColumns.size()) {
+            String currentGroup = accountColumns.get(i).institutionGroup();
+            List<Grid.Column<BalanceDateRow>> run = new java.util.ArrayList<>();
+            while (i < accountColumns.size()
+                    && java.util.Objects.equals(accountColumns.get(i).institutionGroup(), currentGroup)) {
+                run.add(accountColumns.get(i).column());
+                i++;
+            }
+            if (currentGroup != null && !run.isEmpty()) {
+                if (run.size() == 1) {
+                    topRow.getCell(run.get(0)).setText(currentGroup);
+                } else {
+                    topRow.join(run.toArray(new Grid.Column[0])).setText(currentGroup);
+                }
+            }
         }
-        if (columns.size() == 1) {
-            groupHeaderRow.getCell(columns.get(0)).setText(group);
-        } else {
-            groupHeaderRow.join(columns.toArray(new Grid.Column[0])).setText(group);
-        }
+    }
+
+    private record AccountColumnEntry(String institutionGroup, Grid.Column<BalanceDateRow> column) {
     }
 
     private static boolean hasSnapshots(Account account, List<BalanceDateRow> rows) {
