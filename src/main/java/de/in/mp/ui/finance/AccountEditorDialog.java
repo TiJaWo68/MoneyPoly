@@ -22,6 +22,7 @@ import com.vaadin.flow.component.textfield.IntegerField;
 import com.vaadin.flow.component.textfield.TextArea;
 import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.data.binder.Binder;
+import com.vaadin.flow.data.binder.ValidationResult;
 
 import de.in.mp.finance.Account;
 import de.in.mp.finance.AccountService;
@@ -40,14 +41,16 @@ public class AccountEditorDialog extends Dialog {
 
     private static final int NAME_MAX_LENGTH = 100;
     private static final int HOLDER_MAX_LENGTH = 100;
+    private static final int NOTIFICATION_DURATION_MS = 5000;
+    private static final String VALIDATION_MESSAGE_SEPARATOR = ", ";
 
     private final AccountService accountService;
     private final BankLookupService bankLookupService;
 
     private final Binder<Account> binder = new Binder<>(Account.class);
 
-    private final TextField name = new TextField();
-    private final ComboBox<AccountType> accountType = new ComboBox<>();
+    final TextField name = new TextField();
+    final ComboBox<AccountType> accountType = new ComboBox<>();
     private final ComboBox<Account> parent = new ComboBox<>();
     private final TextField accountNumber = new TextField();
     private final TextField bankName = new TextField();
@@ -95,6 +98,11 @@ public class AccountEditorDialog extends Dialog {
     }
 
     public void openForCreate(Runnable onSaved) {
+        initForCreate(onSaved);
+        open();
+    }
+
+    void initForCreate(Runnable onSaved) {
         this.onSaved = onSaved;
         this.currentAccount = new Account();
         setHeaderTitle(getTranslation("finance.editor.title.new"));
@@ -102,7 +110,6 @@ public class AccountEditorDialog extends Dialog {
         parent.clear();
         refreshParentItems();
         updateFieldVisibility();
-        open();
     }
 
     public void openForEdit(Account account, Runnable onSaved) {
@@ -163,7 +170,9 @@ public class AccountEditorDialog extends Dialog {
                 .bind(Account::getInitialBalance, Account::setInitialBalance);
 
         binder.forField(displayOrder)
-                .withNullRepresentation(Account.DEFAULT_DISPLAY_ORDER)
+                .<Integer>withConverter(
+                        value -> value == null ? Account.DEFAULT_DISPLAY_ORDER : value,
+                        value -> value)
                 .bind(Account::getDisplayOrder, Account::setDisplayOrder);
 
         binder.forField(description)
@@ -241,8 +250,18 @@ public class AccountEditorDialog extends Dialog {
         bankLookupService.findBankName(iban).ifPresent(bankName::setValue);
     }
 
-    private void save() {
+    String validationSummary() {
+        return binder.validate().getValidationErrors().stream()
+                .map(ValidationResult::getErrorMessage)
+                .collect(Collectors.joining(VALIDATION_MESSAGE_SEPARATOR));
+    }
+
+    void save() {
         if (!binder.writeBeanIfValid(currentAccount)) {
+            if (com.vaadin.flow.component.UI.getCurrent() != null) {
+                Notification.show(getTranslation("finance.editor.error.validation", validationSummary()),
+                        NOTIFICATION_DURATION_MS, Notification.Position.MIDDLE);
+            }
             return;
         }
 
@@ -256,7 +275,8 @@ public class AccountEditorDialog extends Dialog {
                 onSaved.run();
             }
         } catch (IllegalArgumentException exception) {
-            Notification.show(getTranslation("finance.notification.error", exception.getMessage()), 5000,
+            Notification.show(getTranslation("finance.notification.error", exception.getMessage()),
+                    NOTIFICATION_DURATION_MS,
                     Notification.Position.MIDDLE);
         }
     }
