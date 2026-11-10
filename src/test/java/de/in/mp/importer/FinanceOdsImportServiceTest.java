@@ -145,7 +145,7 @@ class FinanceOdsImportServiceTest {
     @Test
     void analyzeExcludesColumnsOfPrivateLoansAndLinksExistingAccounts() {
         LoanContract loan = new LoanContract();
-        loan.setDesignation("Haus");
+        loan.setDesignation("Sarah + Oli Haus");
         when(loanContractService.findAll()).thenReturn(List.of(loan));
 
         Account institution = new Account();

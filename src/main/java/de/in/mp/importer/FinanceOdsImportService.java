@@ -2,6 +2,7 @@ package de.in.mp.importer;
 
 import java.io.InputStream;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -61,12 +62,26 @@ public class FinanceOdsImportService {
         List<Account> accounts = accountService.findAll();
 
         for (OdsAccountColumn column : columns) {
-            if (loanDesignations.contains(normalize(column.subHeader()))) {
+            if (matchesLoanDesignation(column.subHeader(), loanDesignations)) {
                 column.setInclude(false);
             }
             findExisting(column, accounts).ifPresent(account -> linkExisting(column, account));
         }
         return columns;
+    }
+
+    private static boolean matchesLoanDesignation(String subHeader, Set<String> loanDesignations) {
+        String normalizedHeader = normalize(subHeader);
+        if (normalizedHeader.isEmpty()) {
+            return false;
+        }
+        if (loanDesignations.contains(normalizedHeader)) {
+            return true;
+        }
+        return loanDesignations.stream()
+                .flatMap(designation -> Arrays.stream(designation.split("[^\\p{L}\\p{N}]+")))
+                .filter(token -> !token.isEmpty())
+                .anyMatch(normalizedHeader::equals);
     }
 
     @Transactional

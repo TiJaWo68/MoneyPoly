@@ -49,6 +49,8 @@ public class FinanceOdsMigrationDialog extends Dialog {
 
     private final Upload upload;
     private final Grid<OdsAccountColumn> grid = new Grid<>();
+    private final Button selectAllButton = new Button();
+    private final Button deselectAllButton = new Button();
     private final Button runButton = new Button();
 
     private ByteArrayOutputStream buffer;
@@ -71,14 +73,22 @@ public class FinanceOdsMigrationDialog extends Dialog {
 
         configureGrid();
 
+        selectAllButton.setText(getTranslation("admin.migration.button.select-all"));
+        selectAllButton.addClickListener(event -> setAllIncluded(true));
+
+        deselectAllButton.setText(getTranslation("admin.migration.button.deselect-all"));
+        deselectAllButton.addClickListener(event -> setAllIncluded(false));
+
         runButton.setText(getTranslation("admin.migration.button.run"));
         runButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
         runButton.addClickListener(event -> execute());
         Button cancelButton = new Button(getTranslation("admin.button.cancel"), event -> close());
 
-        HorizontalLayout actions = new HorizontalLayout(cancelButton, runButton);
+        HorizontalLayout selectionActions = new HorizontalLayout(selectAllButton, deselectAllButton);
+        HorizontalLayout dialogActions = new HorizontalLayout(cancelButton, runButton);
+        HorizontalLayout actions = new HorizontalLayout(selectionActions, dialogActions);
         actions.setWidthFull();
-        actions.setJustifyContentMode(JustifyContentMode.END);
+        actions.setJustifyContentMode(JustifyContentMode.BETWEEN);
 
         VerticalLayout layout = new VerticalLayout(
                 new Paragraph(getTranslation("admin.migration.finance.description")), upload, grid, actions);
@@ -92,11 +102,23 @@ public class FinanceOdsMigrationDialog extends Dialog {
 
     public void openForMigration() {
         buffer = null;
-        columns = List.of();
-        grid.setItems(columns);
+        setColumnsForTest(List.of());
         upload.clearFileList();
-        runButton.setEnabled(false);
         open();
+    }
+
+    void setColumnsForTest(List<OdsAccountColumn> newColumns) {
+        this.columns = newColumns;
+        grid.setItems(columns);
+        boolean hasColumns = !columns.isEmpty();
+        selectAllButton.setEnabled(hasColumns);
+        deselectAllButton.setEnabled(hasColumns);
+        runButton.setEnabled(hasColumns);
+    }
+
+    void setAllIncluded(boolean include) {
+        columns.forEach(column -> column.setInclude(include));
+        grid.getDataProvider().refreshAll();
     }
 
     private ByteArrayOutputStream receiveUpload(String fileName, String mimeType) {
@@ -106,9 +128,7 @@ public class FinanceOdsMigrationDialog extends Dialog {
 
     private void analyze() {
         try {
-            columns = importService.analyze(new ByteArrayInputStream(buffer.toByteArray()));
-            grid.setItems(columns);
-            runButton.setEnabled(!columns.isEmpty());
+            setColumnsForTest(importService.analyze(new ByteArrayInputStream(buffer.toByteArray())));
         } catch (IllegalArgumentException exception) {
             Notification notification = Notification.show(
                     getTranslation("admin.notification.error", exception.getMessage()), 6000,
@@ -165,7 +185,7 @@ public class FinanceOdsMigrationDialog extends Dialog {
     }
 
     private Checkbox includeBox(OdsAccountColumn column) {
-        Checkbox box = new Checkbox(column.isInclude());
+        Checkbox box = new Checkbox(getTranslation("admin.migration.column.include"), column.isInclude());
         box.addValueChangeListener(event -> column.setInclude(event.getValue()));
         return box;
     }

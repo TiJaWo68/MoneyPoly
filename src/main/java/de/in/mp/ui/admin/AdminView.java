@@ -12,6 +12,7 @@ import com.vaadin.flow.spring.security.AuthenticationContext;
 
 import de.in.mp.admin.CategoryService;
 import de.in.mp.admin.ClassificationRuleService;
+import de.in.mp.admin.DatabaseResetService;
 import de.in.mp.admin.PersonService;
 import de.in.mp.admin.SystemHealthService;
 import de.in.mp.admin.UserService;
@@ -37,7 +38,7 @@ public class AdminView extends VerticalLayout implements HasDynamicTitle {
             CategoryService categoryService, ClassificationRuleService classificationRuleService,
             SystemHealthService systemHealthService, AuthenticationContext authenticationContext,
             LoanContractRepository loanContractRepository, FinanceOdsImportService financeOdsImportService,
-            EnergyOdsImportService energyOdsImportService) {
+            EnergyOdsImportService energyOdsImportService, DatabaseResetService databaseResetService) {
         setSizeFull();
         setPadding(true);
         setSpacing(false);
@@ -50,7 +51,7 @@ public class AdminView extends VerticalLayout implements HasDynamicTitle {
         registerTab(new PersonsTab(personService));
         registerTab(new CategoriesTab(categoryService));
         registerTab(new ClassificationRulesTab(classificationRuleService, categoryService, loanContractRepository));
-        registerTab(new DataMigrationTab(financeOdsImportService, energyOdsImportService));
+        registerTab(new DataMigrationTab(financeOdsImportService, energyOdsImportService, databaseResetService));
         registerTab(new SystemHealthTab(systemHealthService));
 
         tabBar.addSelectedChangeListener(event -> showSelectedTab());
