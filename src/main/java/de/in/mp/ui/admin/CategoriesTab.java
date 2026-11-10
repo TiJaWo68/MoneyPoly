@@ -7,6 +7,7 @@ import com.vaadin.flow.component.dialog.Dialog;
 import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.grid.GridVariant;
 import com.vaadin.flow.component.html.Span;
+import com.vaadin.flow.component.icon.VaadinIcon;
 import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.orderedlayout.FlexComponent.Alignment;
 import com.vaadin.flow.component.orderedlayout.FlexComponent.JustifyContentMode;
@@ -16,6 +17,7 @@ import com.vaadin.flow.data.renderer.ComponentRenderer;
 
 import de.in.mp.admin.CategoryService;
 import de.in.mp.finance.Category;
+import de.in.mp.ui.GridActionButton;
 
 /**
  * Tab 3: booking categories (category).
@@ -58,7 +60,10 @@ public class CategoriesTab extends VerticalLayout implements AdminTab {
         Span title = new Span(getTranslation("admin.categories.title"));
         title.addClassName("admin-tab-title");
 
-        Button newCategoryButton = new Button(getTranslation("admin.categories.button.new-category"));
+        Button newCategoryButton = new Button(
+                getTranslation("admin.categories.button.new-category"),
+                VaadinIcon.PLUS.create());
+        newCategoryButton.setTooltipText(getTranslation("admin.categories.button.new-category"));
         newCategoryButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
         newCategoryButton.addClickListener(event -> editorDialog.openForCreate(this::refresh));
 
@@ -86,13 +91,15 @@ public class CategoriesTab extends VerticalLayout implements AdminTab {
     }
 
     private HorizontalLayout renderActions(Category category) {
-        Button editButton = new Button(getTranslation("admin.action.edit"),
+        Button editButton = GridActionButton.create(
+                VaadinIcon.EDIT,
+                getTranslation("admin.action.edit"),
                 event -> editorDialog.openForEdit(category, this::refresh));
-        editButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY_INLINE, ButtonVariant.LUMO_SMALL);
 
-        Button deleteButton = new Button(getTranslation("admin.action.delete"), event -> confirmDelete(category));
-        deleteButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY_INLINE, ButtonVariant.LUMO_SMALL,
-                ButtonVariant.LUMO_ERROR);
+        Button deleteButton = GridActionButton.createDanger(
+                VaadinIcon.TRASH,
+                getTranslation("admin.action.delete"),
+                event -> confirmDelete(category));
 
         return new HorizontalLayout(editButton, deleteButton);
     }

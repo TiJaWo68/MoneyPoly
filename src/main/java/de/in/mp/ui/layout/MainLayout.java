@@ -58,9 +58,11 @@ public class MainLayout extends AppLayout {
         Span userBadge = new Span(getTranslation("ui.header.logged-in-as", displayName));
         userBadge.addClassNames(LumoUtility.TextColor.SECONDARY, LumoUtility.FontSize.SMALL);
 
-        Button logoutButton = new Button(getTranslation("ui.header.logout"),
+        Button logoutButton = new Button(
+                VaadinIcon.SIGN_OUT.create(),
                 event -> authenticationContext.logout());
         logoutButton.setTooltipText(getTranslation("ui.header.logout"));
+        logoutButton.setAriaLabel(getTranslation("ui.header.logout"));
 
         HorizontalLayout header = new HorizontalLayout(drawerToggle, title, userBadge, logoutButton);
         header.setWidthFull();

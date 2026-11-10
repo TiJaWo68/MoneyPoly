@@ -29,6 +29,7 @@ import de.in.mp.finance.AccountService;
 import de.in.mp.finance.AccountType;
 import de.in.mp.finance.BankLookupService;
 import de.in.mp.i18n.MoneyFormatter;
+import de.in.mp.ui.GridActionButton;
 import de.in.mp.ui.layout.MainLayout;
 import jakarta.annotation.security.PermitAll;
 
@@ -73,6 +74,7 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle {
 
         Button newAccountButton = new Button(getTranslation("finance.view.button.new-account"),
                 VaadinIcon.PLUS.create());
+        newAccountButton.setTooltipText(getTranslation("finance.view.button.new-account"));
         newAccountButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
         newAccountButton.addClickListener(event -> editorDialog.openForCreate(this::refresh));
 
@@ -184,13 +186,17 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle {
     }
 
     private HorizontalLayout renderActions(Account account) {
-        Button editButton = new Button(getTranslation("finance.action.edit"),
+        Button editButton = GridActionButton.create(
+                VaadinIcon.EDIT,
+                getTranslation("finance.action.edit"),
                 event -> editorDialog.openForEdit(account, this::refresh));
-        editButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY_INLINE, ButtonVariant.LUMO_SMALL);
 
         String toggleKey = account.isActive() ? "finance.action.deactivate" : "finance.action.activate";
-        Button toggleButton = new Button(getTranslation(toggleKey), event -> toggleActive(account));
-        toggleButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY_INLINE, ButtonVariant.LUMO_SMALL);
+        VaadinIcon toggleIcon = account.isActive() ? VaadinIcon.BAN : VaadinIcon.CHECK_CIRCLE_O;
+        Button toggleButton = GridActionButton.create(
+                toggleIcon,
+                getTranslation(toggleKey),
+                event -> toggleActive(account));
 
         return new HorizontalLayout(editButton, toggleButton);
     }

@@ -12,6 +12,7 @@ import com.vaadin.flow.component.combobox.MultiSelectComboBox;
 import com.vaadin.flow.component.datepicker.DatePicker;
 import com.vaadin.flow.component.dialog.Dialog;
 import com.vaadin.flow.component.formlayout.FormLayout;
+import com.vaadin.flow.component.icon.VaadinIcon;
 import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.orderedlayout.FlexComponent.JustifyContentMode;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
@@ -112,6 +113,8 @@ public class LoanContractEditorDialog extends Dialog {
         debtors.setItemLabelGenerator(Person::getName);
 
         newDebtorButton.setText(getTranslation("loans.editor.button.new-debtor"));
+        newDebtorButton.setIcon(VaadinIcon.PLUS.create());
+        newDebtorButton.setTooltipText(getTranslation("loans.editor.button.new-debtor"));
         newDebtorButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY);
         newDebtorButton.addClickListener(event -> openNewDebtorDialog());
     }

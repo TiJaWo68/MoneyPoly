@@ -33,6 +33,7 @@ import de.in.mp.i18n.MoneyFormatter;
 import de.in.mp.loans.LoanContract;
 import de.in.mp.loans.LoanContractService;
 import de.in.mp.loans.LoanRepaymentService;
+import de.in.mp.ui.GridActionButton;
 import de.in.mp.ui.layout.MainLayout;
 import jakarta.annotation.security.PermitAll;
 
@@ -84,6 +85,7 @@ public class PrivateLoanView extends VerticalLayout implements HasDynamicTitle {
 
         Button newContractButton = new Button(getTranslation("loans.button.new-contract"),
                 VaadinIcon.PLUS.create());
+        newContractButton.setTooltipText(getTranslation("loans.button.new-contract"));
         newContractButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
         newContractButton.addClickListener(event -> contractEditorDialog.openForCreate(this::refresh));
 
@@ -196,13 +198,15 @@ public class PrivateLoanView extends VerticalLayout implements HasDynamicTitle {
     }
 
     private HorizontalLayout renderActions(LoanContract contract) {
-        Button repaymentButton = new Button(getTranslation("loans.action.record-repayment"),
+        Button repaymentButton = GridActionButton.create(
+                VaadinIcon.COIN_PILES,
+                getTranslation("loans.action.record-repayment"),
                 event -> repaymentEditorDialog.openForCreate(contract, this::refresh));
-        repaymentButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY_INLINE, ButtonVariant.LUMO_SMALL);
 
-        Button editButton = new Button(getTranslation("loans.action.edit"),
+        Button editButton = GridActionButton.create(
+                VaadinIcon.EDIT,
+                getTranslation("loans.action.edit"),
                 event -> contractEditorDialog.openForEdit(contract, this::refresh));
-        editButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY_INLINE, ButtonVariant.LUMO_SMALL);
 
         return new HorizontalLayout(repaymentButton, editButton);
     }

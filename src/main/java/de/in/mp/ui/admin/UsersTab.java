@@ -16,6 +16,7 @@ import com.vaadin.flow.component.dialog.Dialog;
 import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.grid.GridVariant;
 import com.vaadin.flow.component.html.Span;
+import com.vaadin.flow.component.icon.VaadinIcon;
 import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.orderedlayout.FlexComponent.Alignment;
 import com.vaadin.flow.component.orderedlayout.FlexComponent.JustifyContentMode;
@@ -31,6 +32,7 @@ import de.in.mp.finance.Person;
 import de.in.mp.security.AppRole;
 import de.in.mp.security.AppUser;
 import de.in.mp.security.AuthProvider;
+import de.in.mp.ui.GridActionButton;
 
 /**
  * Tab 1: user accounts, roles and access management.
@@ -83,7 +85,10 @@ public class UsersTab extends VerticalLayout implements AdminTab {
         Span title = new Span(getTranslation("admin.users.title"));
         title.addClassName("admin-tab-title");
 
-        Button newUserButton = new Button(getTranslation("admin.users.button.new-user"));
+        Button newUserButton = new Button(
+                getTranslation("admin.users.button.new-user"),
+                VaadinIcon.PLUS.create());
+        newUserButton.setTooltipText(getTranslation("admin.users.button.new-user"));
         newUserButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
         newUserButton.addClickListener(event -> editorDialog.openForCreate(this::refresh));
 
@@ -158,23 +163,29 @@ public class UsersTab extends VerticalLayout implements AdminTab {
     private HorizontalLayout renderActions(AppUser user) {
         boolean self = user.getId() != null && user.getId().equals(currentUserId);
 
-        Button editButton = new Button(getTranslation("admin.action.edit"),
+        Button editButton = GridActionButton.create(
+                VaadinIcon.EDIT,
+                getTranslation("admin.action.edit"),
                 event -> editorDialog.openForEdit(user, this::refresh));
-        editButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY_INLINE, ButtonVariant.LUMO_SMALL);
 
-        Button resetButton = new Button(getTranslation("admin.user.action.reset-password"),
+        Button resetButton = GridActionButton.create(
+                VaadinIcon.KEY,
+                getTranslation("admin.user.action.reset-password"),
                 event -> openResetPasswordDialog(user));
-        resetButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY_INLINE, ButtonVariant.LUMO_SMALL);
         resetButton.setEnabled(!self && user.getAuthProvider() == AuthProvider.LOCAL);
 
         String toggleKey = user.isEnabled() ? "admin.user.action.disable" : "admin.user.action.enable";
-        Button toggleButton = new Button(getTranslation(toggleKey), event -> toggleEnabled(user));
-        toggleButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY_INLINE, ButtonVariant.LUMO_SMALL);
+        VaadinIcon toggleIcon = user.isEnabled() ? VaadinIcon.LOCK : VaadinIcon.UNLOCK;
+        Button toggleButton = GridActionButton.create(
+                toggleIcon,
+                getTranslation(toggleKey),
+                event -> toggleEnabled(user));
         toggleButton.setEnabled(!self);
 
-        Button deleteButton = new Button(getTranslation("admin.action.delete"), event -> confirmDelete(user));
-        deleteButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY_INLINE, ButtonVariant.LUMO_SMALL,
-                ButtonVariant.LUMO_ERROR);
+        Button deleteButton = GridActionButton.createDanger(
+                VaadinIcon.TRASH,
+                getTranslation("admin.action.delete"),
+                event -> confirmDelete(user));
         deleteButton.setEnabled(!self);
 
         return new HorizontalLayout(editButton, resetButton, toggleButton, deleteButton);

@@ -7,6 +7,7 @@ import com.vaadin.flow.component.dialog.Dialog;
 import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.grid.GridVariant;
 import com.vaadin.flow.component.html.Span;
+import com.vaadin.flow.component.icon.VaadinIcon;
 import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.orderedlayout.FlexComponent.Alignment;
 import com.vaadin.flow.component.orderedlayout.FlexComponent.JustifyContentMode;
@@ -16,6 +17,7 @@ import com.vaadin.flow.data.renderer.ComponentRenderer;
 
 import de.in.mp.admin.PersonService;
 import de.in.mp.finance.Person;
+import de.in.mp.ui.GridActionButton;
 
 /**
  * Tab 2: persons participating in household finances and private loans.
@@ -58,7 +60,10 @@ public class PersonsTab extends VerticalLayout implements AdminTab {
         Span title = new Span(getTranslation("admin.persons.title"));
         title.addClassName("admin-tab-title");
 
-        Button newPersonButton = new Button(getTranslation("admin.persons.button.new-person"));
+        Button newPersonButton = new Button(
+                getTranslation("admin.persons.button.new-person"),
+                VaadinIcon.PLUS.create());
+        newPersonButton.setTooltipText(getTranslation("admin.persons.button.new-person"));
         newPersonButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
         newPersonButton.addClickListener(event -> editorDialog.openForCreate(this::refresh));
 
@@ -100,13 +105,15 @@ public class PersonsTab extends VerticalLayout implements AdminTab {
     }
 
     private HorizontalLayout renderActions(Person person) {
-        Button editButton = new Button(getTranslation("admin.action.edit"),
+        Button editButton = GridActionButton.create(
+                VaadinIcon.EDIT,
+                getTranslation("admin.action.edit"),
                 event -> editorDialog.openForEdit(person, this::refresh));
-        editButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY_INLINE, ButtonVariant.LUMO_SMALL);
 
-        Button deleteButton = new Button(getTranslation("admin.action.delete"), event -> confirmDelete(person));
-        deleteButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY_INLINE, ButtonVariant.LUMO_SMALL,
-                ButtonVariant.LUMO_ERROR);
+        Button deleteButton = GridActionButton.createDanger(
+                VaadinIcon.TRASH,
+                getTranslation("admin.action.delete"),
+                event -> confirmDelete(person));
 
         return new HorizontalLayout(editButton, deleteButton);
     }

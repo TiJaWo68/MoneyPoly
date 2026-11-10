@@ -5,6 +5,7 @@ import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.formlayout.FormLayout;
 import com.vaadin.flow.component.html.Span;
+import com.vaadin.flow.component.icon.VaadinIcon;
 import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.orderedlayout.FlexComponent.Alignment;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
@@ -68,7 +69,10 @@ public class SystemHealthTab extends VerticalLayout implements AdminTab {
         Span title = new Span(getTranslation("admin.health.title"));
         title.addClassName("admin-tab-title");
 
-        Button renewTokenButton = new Button(getTranslation("admin.health.button.renew-token"));
+        Button renewTokenButton = new Button(
+                getTranslation("admin.health.button.renew-token"),
+                VaadinIcon.REFRESH.create());
+        renewTokenButton.setTooltipText(getTranslation("admin.health.button.renew-token"));
         renewTokenButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
         renewTokenButton.addClickListener(event -> renewSetupToken());
 

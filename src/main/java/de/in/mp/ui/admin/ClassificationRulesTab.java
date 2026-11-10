@@ -13,6 +13,7 @@ import com.vaadin.flow.component.dialog.Dialog;
 import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.grid.GridVariant;
 import com.vaadin.flow.component.html.Span;
+import com.vaadin.flow.component.icon.VaadinIcon;
 import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.orderedlayout.FlexComponent.Alignment;
 import com.vaadin.flow.component.orderedlayout.FlexComponent.JustifyContentMode;
@@ -24,6 +25,7 @@ import de.in.mp.admin.CategoryService;
 import de.in.mp.admin.ClassificationRuleService;
 import de.in.mp.finance.ClassificationRule;
 import de.in.mp.loans.LoanContractRepository;
+import de.in.mp.ui.GridActionButton;
 
 /**
  * Tab 4: transaction classification rules (classification_rule).
@@ -79,7 +81,10 @@ public class ClassificationRulesTab extends VerticalLayout implements AdminTab {
         Span title = new Span(getTranslation("admin.rules.title"));
         title.addClassName("admin-tab-title");
 
-        Button newRuleButton = new Button(getTranslation("admin.rules.button.new-rule"));
+        Button newRuleButton = new Button(
+                getTranslation("admin.rules.button.new-rule"),
+                VaadinIcon.PLUS.create());
+        newRuleButton.setTooltipText(getTranslation("admin.rules.button.new-rule"));
         newRuleButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
         newRuleButton.addClickListener(event -> editorDialog.openForCreate(this::refresh));
 
@@ -151,13 +156,15 @@ public class ClassificationRulesTab extends VerticalLayout implements AdminTab {
     }
 
     private HorizontalLayout renderActions(ClassificationRule rule) {
-        Button editButton = new Button(getTranslation("admin.action.edit"),
+        Button editButton = GridActionButton.create(
+                VaadinIcon.EDIT,
+                getTranslation("admin.action.edit"),
                 event -> editorDialog.openForEdit(rule, this::refresh));
-        editButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY_INLINE, ButtonVariant.LUMO_SMALL);
 
-        Button deleteButton = new Button(getTranslation("admin.action.delete"), event -> confirmDelete(rule));
-        deleteButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY_INLINE, ButtonVariant.LUMO_SMALL,
-                ButtonVariant.LUMO_ERROR);
+        Button deleteButton = GridActionButton.createDanger(
+                VaadinIcon.TRASH,
+                getTranslation("admin.action.delete"),
+                event -> confirmDelete(rule));
 
         return new HorizontalLayout(editButton, deleteButton);
     }

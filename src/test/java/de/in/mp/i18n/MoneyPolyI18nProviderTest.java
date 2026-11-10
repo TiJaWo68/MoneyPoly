@@ -65,7 +65,11 @@ class MoneyPolyI18nProviderTest {
 				"ui.setup.error.password-mismatch", "ui.setup.error.setup-token-required",
 				"ui.setup.error.already-configured", "setup.error.invalid_token",
 				"ui.app.title", "ui.nav.title", "ui.nav.dashboard", "ui.nav.finance", "ui.nav.loans",
-				"ui.nav.energy", "ui.nav.admin", "ui.header.toggle", "ui.header.logged-in-as", "ui.header.logout")) {
+				"ui.nav.energy", "ui.nav.admin", "ui.header.toggle", "ui.header.logged-in-as", "ui.header.logout",
+				"energy.view.page-title", "energy.view.title", "energy.kpi.total-investment",
+				"energy.kpi.total-amortized", "energy.kpi.remaining-cost", "energy.kpi.active-meters",
+				"energy.tab.readings", "energy.tab.amortization", "energy.tab.masterdata",
+				"energy.button.batch-entry", "energy.batch.title.new", "energy.batch.button.save")) {
 			assertThat(provider.getTranslation(key, Locale.GERMAN))
 					.as("German translation for %s", key)
 					.isNotEqualTo(key);
