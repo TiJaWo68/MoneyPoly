@@ -22,12 +22,14 @@ import org.junit.jupiter.api.Test;
 class AccountServiceTest {
 
     private AccountRepository repository;
+    private AccountSnapshotRepository snapshotRepository;
     private AccountService service;
 
     @BeforeEach
     void setUp() {
         repository = mock(AccountRepository.class);
-        service = new AccountService(repository);
+        snapshotRepository = mock(AccountSnapshotRepository.class);
+        service = new AccountService(repository, snapshotRepository);
     }
 
     @Test

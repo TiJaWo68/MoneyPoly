@@ -40,7 +40,6 @@ import de.in.mp.energy.EnergyAmortizationService;
 import de.in.mp.energy.EnergyAsset;
 import de.in.mp.energy.EnergyAssetService;
 import de.in.mp.energy.EnergyDateRow;
-import de.in.mp.energy.EnergyOdsImportService;
 import de.in.mp.energy.EnergyTariff;
 import de.in.mp.energy.EnergyTariffService;
 import de.in.mp.energy.Meter;
@@ -76,7 +75,6 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle {
     private final EnergyAmortizationService amortizationService;
 
     private final BatchMeterReadingDialog batchReadingDialog;
-    private final EnergyOdsImportDialog odsImportDialog;
     private final EnergyAssetEditorDialog assetEditorDialog;
     private final MeterEditorDialog meterEditorDialog;
     private final EnergyTariffEditorDialog tariffEditorDialog;
@@ -106,8 +104,7 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle {
             MeterService meterService,
             MeterReadingService readingService,
             EnergyTariffService tariffService,
-            EnergyAmortizationService amortizationService,
-            EnergyOdsImportService odsImportService) {
+            EnergyAmortizationService amortizationService) {
         this.assetService = assetService;
         this.meterService = meterService;
         this.readingService = readingService;
@@ -115,7 +112,6 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle {
         this.amortizationService = amortizationService;
 
         this.batchReadingDialog = new BatchMeterReadingDialog(meterService, readingService);
-        this.odsImportDialog = new EnergyOdsImportDialog(odsImportService);
         this.assetEditorDialog = new EnergyAssetEditorDialog(assetService);
         this.meterEditorDialog = new MeterEditorDialog(meterService, assetService);
         this.tariffEditorDialog = new EnergyTariffEditorDialog(tariffService);
@@ -153,12 +149,6 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle {
         H2 title = new H2(getTranslation("energy.view.title"));
         title.addClassName(LumoUtility.Margin.NONE);
 
-        Button importOdsButton = new Button(
-                getTranslation("energy.button.import-ods"),
-                VaadinIcon.UPLOAD.create());
-        importOdsButton.setTooltipText(getTranslation("energy.button.import-ods"));
-        importOdsButton.addClickListener(event -> odsImportDialog.openForImport(this::refreshAll));
-
         Button batchEntryButton = new Button(
                 getTranslation("energy.button.batch-entry"),
                 VaadinIcon.PLUS.create());
@@ -166,7 +156,7 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle {
         batchEntryButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
         batchEntryButton.addClickListener(event -> batchReadingDialog.openForCreate(this::refreshAll));
 
-        HorizontalLayout header = new HorizontalLayout(title, importOdsButton, batchEntryButton);
+        HorizontalLayout header = new HorizontalLayout(title, batchEntryButton);
         header.setWidthFull();
         header.setDefaultVerticalComponentAlignment(Alignment.CENTER);
         header.expand(title);

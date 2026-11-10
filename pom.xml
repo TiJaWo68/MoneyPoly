@@ -13,7 +13,7 @@
 
     <groupId>de.in.mp</groupId>
     <artifactId>moneypoly</artifactId>
-    <version>0.6.2</version>
+    <version>0.7.0</version>
     <name>MoneyPoly</name>
     <description>MoneyPoly - Family Finance, Loans and Energy Hub</description>
 
@@ -93,6 +93,13 @@
             <groupId>org.iban4j</groupId>
             <artifactId>iban4j</artifactId>
             <version>3.2.14-RELEASE</version>
+        </dependency>
+
+        <!-- Text extraction from PDF bank statements -->
+        <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>pdfbox</artifactId>
+            <version>3.0.4</version>
         </dependency>
 
         <!-- JSON mapping for the OpenIBAN bank directory lookup -->

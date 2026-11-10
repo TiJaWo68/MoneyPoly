@@ -17,6 +17,10 @@ import org.springframework.transaction.annotation.Transactional;
  * Domain service for finance accounts: validation, balance synchronization,
  * soft-delete, parent/child hierarchy and aggregate balance calculation for
  * the dashboard KPIs.
+ * <p>
+ * While an account has no balance snapshot, its current balance follows the
+ * initial balance. Once snapshots exist, the current balance is owned by
+ * {@link AccountSnapshotService} and is not changed by master data edits.
  */
 @Service
 public class AccountService {
@@ -26,9 +30,11 @@ public class AccountService {
     private static final Pattern ISO_CURRENCY_PATTERN = Pattern.compile("[A-Z]{3}");
 
     private final AccountRepository accountRepository;
+    private final AccountSnapshotRepository snapshotRepository;
 
-    public AccountService(AccountRepository accountRepository) {
+    public AccountService(AccountRepository accountRepository, AccountSnapshotRepository snapshotRepository) {
         this.accountRepository = accountRepository;
+        this.snapshotRepository = snapshotRepository;
     }
 
     @Transactional(readOnly = true)
@@ -58,8 +64,12 @@ public class AccountService {
         Account existing = accountRepository.findById(account.getId())
                 .orElseThrow(() -> new IllegalArgumentException("Account not found: " + account.getId()));
 
-        BigDecimal initialBalanceDelta = account.getInitialBalance().subtract(existing.getInitialBalance());
-        account.setCurrentBalance(existing.getCurrentBalance().add(initialBalanceDelta));
+        if (snapshotRepository.findFirstByAccountIdOrderBySnapshotDateDesc(account.getId()).isPresent()) {
+            account.setCurrentBalance(existing.getCurrentBalance());
+        } else {
+            BigDecimal initialBalanceDelta = account.getInitialBalance().subtract(existing.getInitialBalance());
+            account.setCurrentBalance(existing.getCurrentBalance().add(initialBalanceDelta));
+        }
         return accountRepository.save(account);
     }
 

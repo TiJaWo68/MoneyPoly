@@ -15,13 +15,15 @@ import de.in.mp.admin.ClassificationRuleService;
 import de.in.mp.admin.PersonService;
 import de.in.mp.admin.SystemHealthService;
 import de.in.mp.admin.UserService;
+import de.in.mp.energy.EnergyOdsImportService;
+import de.in.mp.importer.FinanceOdsImportService;
 import de.in.mp.loans.LoanContractRepository;
 import de.in.mp.ui.layout.MainLayout;
 import jakarta.annotation.security.RolesAllowed;
 
 /**
- * Administration area: master data and system management, restricted to
- * {@code ROLE_ADMIN}.
+ * Administration area: master data, one-time data migrations and system
+ * management, restricted to {@code ROLE_ADMIN}.
  */
 @Route(value = "admin", layout = MainLayout.class)
 @RolesAllowed("ROLE_ADMIN")
@@ -34,7 +36,8 @@ public class AdminView extends VerticalLayout implements HasDynamicTitle {
     public AdminView(UserService userService, PersonService personService,
             CategoryService categoryService, ClassificationRuleService classificationRuleService,
             SystemHealthService systemHealthService, AuthenticationContext authenticationContext,
-            LoanContractRepository loanContractRepository) {
+            LoanContractRepository loanContractRepository, FinanceOdsImportService financeOdsImportService,
+            EnergyOdsImportService energyOdsImportService) {
         setSizeFull();
         setPadding(true);
         setSpacing(false);
@@ -47,6 +50,7 @@ public class AdminView extends VerticalLayout implements HasDynamicTitle {
         registerTab(new PersonsTab(personService));
         registerTab(new CategoriesTab(categoryService));
         registerTab(new ClassificationRulesTab(classificationRuleService, categoryService, loanContractRepository));
+        registerTab(new DataMigrationTab(financeOdsImportService, energyOdsImportService));
         registerTab(new SystemHealthTab(systemHealthService));
 
         tabBar.addSelectedChangeListener(event -> showSelectedTab());

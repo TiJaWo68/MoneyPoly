@@ -2,7 +2,11 @@ package de.in.mp.finance;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
+import java.util.Arrays;
+import java.util.LinkedHashSet;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -22,12 +26,20 @@ import jakarta.persistence.Table;
  * {@code NUMERIC(12, 2)} in PostgreSQL. {@code accountType} is mapped as a
  * plain string enum against the {@code VARCHAR(30)} column with a CHECK
  * constraint, mirroring the V3 approach for the security role column.
+ * <p>
+ * {@code currentBalance} mirrors the balance of the most recent
+ * {@link AccountSnapshot} (or the initial balance while no snapshot exists).
+ * {@code importKeys} holds statement identifiers confirmed by the user so
+ * that statements without a matching IBAN resolve to this account again.
  */
 @Entity
 @Table(name = "finance_account")
 public class Account {
 
     public static final String DEFAULT_CURRENCY = "EUR";
+    public static final int DEFAULT_DISPLAY_ORDER = 100;
+
+    private static final String IMPORT_KEY_SEPARATOR = ";";
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -48,6 +60,15 @@ public class Account {
 
     @Column(name = "bank_name", length = 100)
     private String bankName;
+
+    @Column(name = "account_holder", length = 100)
+    private String accountHolder;
+
+    @Column(name = "import_keys", length = 500)
+    private String importKeys;
+
+    @Column(name = "display_order", nullable = false)
+    private int displayOrder = DEFAULT_DISPLAY_ORDER;
 
     @Column(name = "currency", nullable = false, length = 3)
     private String currency = DEFAULT_CURRENCY;
@@ -74,6 +95,32 @@ public class Account {
     @PreUpdate
     void touchUpdatedAt() {
         this.updatedAt = OffsetDateTime.now();
+    }
+
+    /**
+     * Confirmed statement identifiers of this account.
+     */
+    public Set<String> importKeySet() {
+        if (importKeys == null || importKeys.isBlank()) {
+            return Set.of();
+        }
+        return Arrays.stream(importKeys.split(IMPORT_KEY_SEPARATOR))
+                .map(String::trim)
+                .filter(key -> !key.isEmpty())
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+    }
+
+    public boolean hasImportKey(String key) {
+        return key != null && importKeySet().contains(key);
+    }
+
+    public void addImportKey(String key) {
+        if (key == null || key.isBlank() || hasImportKey(key)) {
+            return;
+        }
+        Set<String> keys = new LinkedHashSet<>(importKeySet());
+        keys.add(key.trim());
+        importKeys = String.join(IMPORT_KEY_SEPARATOR, keys);
     }
 
     public UUID getId() {
@@ -122,6 +169,30 @@ public class Account {
 
     public void setBankName(String bankName) {
         this.bankName = bankName;
+    }
+
+    public String getAccountHolder() {
+        return accountHolder;
+    }
+
+    public void setAccountHolder(String accountHolder) {
+        this.accountHolder = accountHolder;
+    }
+
+    public String getImportKeys() {
+        return importKeys;
+    }
+
+    public void setImportKeys(String importKeys) {
+        this.importKeys = importKeys;
+    }
+
+    public int getDisplayOrder() {
+        return displayOrder;
+    }
+
+    public void setDisplayOrder(int displayOrder) {
+        this.displayOrder = displayOrder;
     }
 
     public String getCurrency() {

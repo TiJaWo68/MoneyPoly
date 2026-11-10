@@ -18,6 +18,7 @@ import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.orderedlayout.FlexComponent.JustifyContentMode;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.textfield.BigDecimalField;
+import com.vaadin.flow.component.textfield.IntegerField;
 import com.vaadin.flow.component.textfield.TextArea;
 import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.data.binder.Binder;
@@ -32,11 +33,13 @@ import de.in.mp.finance.BankLookupService;
  * <p>
  * Entering a German IBAN pre-fills the bank name via {@link BankLookupService}
  * as long as the bank field is still empty. The bank field stays fully
- * editable afterwards.
+ * editable afterwards. The account holder is used to match bank statements
+ * of sub-accounts that carry no IBAN.
  */
 public class AccountEditorDialog extends Dialog {
 
     private static final int NAME_MAX_LENGTH = 100;
+    private static final int HOLDER_MAX_LENGTH = 100;
 
     private final AccountService accountService;
     private final BankLookupService bankLookupService;
@@ -48,7 +51,9 @@ public class AccountEditorDialog extends Dialog {
     private final ComboBox<Account> parent = new ComboBox<>();
     private final TextField accountNumber = new TextField();
     private final TextField bankName = new TextField();
+    private final TextField accountHolder = new TextField();
     private final BigDecimalField initialBalance = new BigDecimalField();
+    private final IntegerField displayOrder = new IntegerField();
     private final TextArea description = new TextArea();
 
     private final Button saveButton = new Button();
@@ -72,13 +77,18 @@ public class AccountEditorDialog extends Dialog {
         saveButton.addClickListener(event -> save());
         cancelButton.addClickListener(event -> close());
 
-        FormLayout form = new FormLayout(name, accountType, parent, accountNumber, bankName, initialBalance, description);
-        form.setResponsiveSteps(new FormLayout.ResponsiveStep("0", 1));
+        FormLayout form = new FormLayout(name, accountType, parent, accountNumber, bankName, accountHolder,
+                initialBalance, displayOrder, description);
+        form.setResponsiveSteps(
+                new FormLayout.ResponsiveStep("0", 1),
+                new FormLayout.ResponsiveStep("500px", 2));
+        form.setColspan(description, 2);
 
         HorizontalLayout actions = new HorizontalLayout(cancelButton, saveButton);
         actions.setWidthFull();
         actions.setJustifyContentMode(JustifyContentMode.END);
 
+        setWidth("640px");
         add(form, actions);
         setCloseOnEsc(true);
         setCloseOnOutsideClick(false);
@@ -112,7 +122,10 @@ public class AccountEditorDialog extends Dialog {
         parent.setLabel(getTranslation("finance.editor.field.parent"));
         accountNumber.setLabel(getTranslation("finance.editor.field.account-number"));
         bankName.setLabel(getTranslation("finance.editor.field.bank"));
+        accountHolder.setLabel(getTranslation("finance.editor.field.holder"));
+        accountHolder.setHelperText(getTranslation("finance.editor.hint.holder"));
         initialBalance.setLabel(getTranslation("finance.editor.field.initial-balance"));
+        displayOrder.setLabel(getTranslation("finance.editor.field.display-order"));
         description.setLabel(getTranslation("finance.editor.field.note"));
         saveButton.setText(getTranslation("finance.editor.button.save"));
         cancelButton.setText(getTranslation("finance.editor.button.cancel"));
@@ -141,8 +154,17 @@ public class AccountEditorDialog extends Dialog {
         binder.forField(bankName)
                 .bind(Account::getBankName, Account::setBankName);
 
+        binder.forField(accountHolder)
+                .withValidator(value -> value == null || value.length() <= HOLDER_MAX_LENGTH,
+                        getTranslation("finance.editor.error.holder-too-long"))
+                .bind(Account::getAccountHolder, Account::setAccountHolder);
+
         binder.forField(initialBalance)
                 .bind(Account::getInitialBalance, Account::setInitialBalance);
+
+        binder.forField(displayOrder)
+                .withNullRepresentation(Account.DEFAULT_DISPLAY_ORDER)
+                .bind(Account::getDisplayOrder, Account::setDisplayOrder);
 
         binder.forField(description)
                 .bind(Account::getDescription, Account::setDescription);
@@ -202,7 +224,7 @@ public class AccountEditorDialog extends Dialog {
     private void updateFieldVisibility() {
         boolean institution = AccountType.INSTITUTION.equals(accountType.getValue());
         accountNumber.setVisible(!institution);
-        bankName.setVisible(!institution);
+        accountHolder.setVisible(!institution);
         initialBalance.setVisible(!institution);
         if (institution) {
             initialBalance.clear();

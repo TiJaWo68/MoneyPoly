@@ -20,5 +20,10 @@ public interface AccountRepository extends JpaRepository<Account, UUID> {
      */
     List<Account> findAllByOrderByAccountTypeAscNameAsc();
 
+    /**
+     * All accounts in balance-matrix column order.
+     */
+    List<Account> findAllByOrderByDisplayOrderAscNameAsc();
+
     long countByActiveTrue();
 }
