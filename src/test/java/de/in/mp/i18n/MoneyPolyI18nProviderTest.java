@@ -54,7 +54,7 @@ class MoneyPolyI18nProviderTest {
 	@Test
 	void keepsGermanAndEnglishBundlesInSync() {
 		for (String key : List.of("ui.main.page-title", "ui.main.title", "ui.main.subtitle", "ui.main.status.ready",
-				"ui.login.page-title", "ui.login.title", "ui.login.form.title", "ui.login.form.username",
+				"ui.login.page-title", "ui.login.title", "ui.login.subtitle", "ui.login.form.username",
 				"ui.login.form.password", "ui.login.form.submit", "ui.login.error.title", "ui.login.error.message",
 				"ui.login.error.username", "ui.login.error.password", "ui.login.oauth2.google",
 				"ui.setup.page-title", "ui.setup.title", "ui.setup.username.label", "ui.setup.email.label",

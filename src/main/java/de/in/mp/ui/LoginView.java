@@ -4,6 +4,8 @@ import org.springframework.beans.factory.annotation.Value;
 
 import com.vaadin.flow.component.html.Anchor;
 import com.vaadin.flow.component.html.H1;
+import com.vaadin.flow.component.html.Image;
+import com.vaadin.flow.component.html.Span;
 import com.vaadin.flow.component.login.LoginForm;
 import com.vaadin.flow.component.login.LoginI18n;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
@@ -31,6 +33,8 @@ import de.in.mp.ui.setup.SetupView;
 public class LoginView extends VerticalLayout implements BeforeEnterObserver, HasDynamicTitle {
 
     private static final String GOOGLE_AUTHORIZATION_URL = "/oauth2/authorization/google";
+    private static final String LOGO_PATH = "/icons/moneypoly-logo.svg";
+    private static final String LOGO_SIZE = "64px";
 
     private final AppUserRepository appUserRepository;
     private final LoginForm loginForm = new LoginForm();
@@ -46,7 +50,7 @@ public class LoginView extends VerticalLayout implements BeforeEnterObserver, Ha
         loginForm.setForgotPasswordButtonVisible(false);
         loginForm.setI18n(createLoginI18n());
 
-        add(new H1(getTranslation("ui.login.title")), loginForm);
+        add(createBrandHeader(), loginForm);
 
         if (GoogleOAuth2Config.isConfigured(googleClientId)) {
             add(createGoogleLoginAnchor());
@@ -70,6 +74,25 @@ public class LoginView extends VerticalLayout implements BeforeEnterObserver, Ha
         return getTranslation("ui.login.page-title");
     }
 
+    private VerticalLayout createBrandHeader() {
+        Image logo = new Image(LOGO_PATH, getTranslation("ui.login.title"));
+        logo.setWidth(LOGO_SIZE);
+        logo.setHeight(LOGO_SIZE);
+
+        H1 title = new H1(getTranslation("ui.login.title"));
+        title.addClassNames(LumoUtility.Margin.NONE);
+
+        Span subtitle = new Span(getTranslation("ui.login.subtitle"));
+        subtitle.addClassNames(LumoUtility.TextColor.SECONDARY, LumoUtility.FontSize.MEDIUM);
+
+        VerticalLayout brandHeader = new VerticalLayout(logo, title, subtitle);
+        brandHeader.setPadding(false);
+        brandHeader.setSpacing(false);
+        brandHeader.setAlignItems(Alignment.CENTER);
+        brandHeader.addClassNames(LumoUtility.Gap.XSMALL, LumoUtility.Margin.Bottom.SMALL);
+        return brandHeader;
+    }
+
     private Anchor createGoogleLoginAnchor() {
         Anchor googleLogin = new Anchor(GOOGLE_AUTHORIZATION_URL, getTranslation("ui.login.oauth2.google"));
         googleLogin.setRouterIgnore(true);
@@ -84,11 +107,11 @@ public class LoginView extends VerticalLayout implements BeforeEnterObserver, Ha
         return googleLogin;
     }
 
-    private LoginI18n createLoginI18n() {
+    LoginI18n createLoginI18n() {
         LoginI18n i18n = new LoginI18n();
 
         LoginI18n.Form form = new LoginI18n.Form();
-        form.setTitle(getTranslation("ui.login.form.title"));
+        form.setTitle("");
         form.setUsername(getTranslation("ui.login.form.username"));
         form.setPassword(getTranslation("ui.login.form.password"));
         form.setSubmit(getTranslation("ui.login.form.submit"));
