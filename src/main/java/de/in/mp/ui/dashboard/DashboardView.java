@@ -23,6 +23,7 @@ import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.data.renderer.ComponentRenderer;
 import com.vaadin.flow.dom.Style;
 import com.vaadin.flow.router.HasDynamicTitle;
+import com.vaadin.flow.router.QueryParameters;
 import com.vaadin.flow.router.Route;
 import com.vaadin.flow.theme.lumo.LumoUtility;
 
@@ -211,7 +212,7 @@ public class DashboardView extends VerticalLayout implements HasDynamicTitle {
                 .setHeader(rightAlignedHeader("dashboard.grid.column.share"))
                 .setWidth(PROGRESS_COLUMN_WIDTH)
                 .setFlexGrow(0);
-        liquidityGrid.addItemClickListener(event -> navigateTo(FinanceView.class));
+        liquidityGrid.addItemClickListener(event -> navigateToAccount(event.getItem()));
         liquidityGrid.addThemeVariants(GridVariant.LUMO_COMPACT, GridVariant.LUMO_NO_ROW_BORDERS);
         liquidityGrid.setAllRowsVisible(true);
         liquidityGrid.setWidthFull();
@@ -232,7 +233,7 @@ public class DashboardView extends VerticalLayout implements HasDynamicTitle {
                 .setHeader(rightAlignedHeader("dashboard.grid.column.share"))
                 .setWidth(PROGRESS_COLUMN_WIDTH)
                 .setFlexGrow(0);
-        investmentsGrid.addItemClickListener(event -> navigateTo(FinanceView.class));
+        investmentsGrid.addItemClickListener(event -> navigateToAccount(event.getItem()));
         investmentsGrid.addThemeVariants(GridVariant.LUMO_COMPACT, GridVariant.LUMO_NO_ROW_BORDERS);
         investmentsGrid.setAllRowsVisible(true);
         investmentsGrid.setWidthFull();
@@ -431,6 +432,16 @@ public class DashboardView extends VerticalLayout implements HasDynamicTitle {
             return accountNumber;
         }
         return accountNumber.substring(0, 4) + " •••• " + accountNumber.substring(accountNumber.length() - 4);
+    }
+
+    private void navigateToAccount(Account account) {
+        if (account == null || account.getId() == null) {
+            navigateTo(FinanceView.class);
+            return;
+        }
+        QueryParameters params = QueryParameters.simple(
+                Map.of(FinanceView.ACCOUNT_QUERY_PARAM, account.getId().toString()));
+        getUI().ifPresent(ui -> ui.navigate(FinanceView.class, params));
     }
 
     private void navigateTo(Class<? extends Component> target) {

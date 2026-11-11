@@ -1,5 +1,6 @@
 package de.in.mp.ui.finance;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -11,6 +12,8 @@ import java.util.Map;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
+
+import com.vaadin.flow.data.provider.hierarchy.TreeData;
 
 import de.in.mp.finance.Account;
 import de.in.mp.finance.AccountService;
@@ -63,6 +66,76 @@ class FinanceViewTest {
 
         assertThatCode(() -> new FinanceView(accountService, snapshotService, bankLookupService, statementImportService))
                 .doesNotThrowAnyException();
+    }
+
+    @Test
+    void hidesInactiveAccountsAndInactiveOnlyInstitutionsInTreeUntilShowInactiveIsEnabled() {
+        AccountService accountService = mock(AccountService.class);
+        AccountSnapshotService snapshotService = mock(AccountSnapshotService.class);
+        BankLookupService bankLookupService = mock(BankLookupService.class);
+        StatementImportService statementImportService = mock(StatementImportService.class);
+
+        Account c24 = institution(UUID.randomUUID(), "C24");
+        Account c24Active = childAccount(UUID.randomUUID(), "Giro", c24.getId(), 1);
+        Account c24Inactive = childAccount(UUID.randomUUID(), "Pocket", c24.getId(), 2);
+        c24Inactive.setActive(false);
+
+        Account bunq = institution(UUID.randomUUID(), "Bunq");
+        Account bunqInactive = childAccount(UUID.randomUUID(), "Till", bunq.getId(), 3);
+        bunqInactive.setActive(false);
+
+        Account emptyNewInst = institution(UUID.randomUUID(), "Scalable Capital");
+
+        List<Account> accounts = List.of(c24, c24Active, c24Inactive, bunq, bunqInactive, emptyNewInst);
+        when(accountService.findAll()).thenReturn(accounts);
+        when(accountService.calculateInstitutionTotals()).thenReturn(Map.of());
+        when(accountService.calculateNetWorth()).thenReturn(BigDecimal.ZERO);
+        when(accountService.countActiveAccounts()).thenReturn(1L);
+        when(snapshotService.buildDateRows()).thenReturn(List.of());
+
+        FinanceView view = new FinanceView(accountService, snapshotService, bankLookupService, statementImportService);
+
+        TreeData<Account> activeOnlyTree = view.treeDataForTest();
+        assertThat(activeOnlyTree.getRootItems()).containsExactly(c24, emptyNewInst);
+        assertThat(activeOnlyTree.getChildren(c24)).containsExactly(c24Active);
+
+        view.setShowInactiveForTest(true);
+
+        TreeData<Account> fullTree = view.treeDataForTest();
+        assertThat(fullTree.getRootItems()).containsExactly(c24, bunq, emptyNewInst);
+        assertThat(fullTree.getChildren(c24)).containsExactly(c24Active, c24Inactive);
+        assertThat(fullTree.getChildren(bunq)).containsExactly(bunqInactive);
+    }
+
+    @Test
+    void focusAccountSwitchesToAccountsTabAndSelectsTargetAccount() {
+        AccountService accountService = mock(AccountService.class);
+        AccountSnapshotService snapshotService = mock(AccountSnapshotService.class);
+        BankLookupService bankLookupService = mock(BankLookupService.class);
+        StatementImportService statementImportService = mock(StatementImportService.class);
+
+        Account c24 = institution(UUID.randomUUID(), "C24");
+        Account c24Main = childAccount(UUID.randomUUID(), "Hauptkonto", c24.getId(), 1);
+
+        Account targobank = institution(UUID.randomUUID(), "Targobank");
+        Account targoChecking = childAccount(UUID.randomUUID(), "Giro", targobank.getId(), 2);
+        Account targoSavings = childAccount(UUID.randomUUID(), "Sparen", targobank.getId(), 3);
+
+        List<Account> accounts = List.of(c24, c24Main, targobank, targoChecking, targoSavings);
+        when(accountService.findAll()).thenReturn(accounts);
+        when(accountService.calculateInstitutionTotals()).thenReturn(Map.of());
+        when(accountService.calculateNetWorth()).thenReturn(BigDecimal.ZERO);
+        when(accountService.countActiveAccounts()).thenReturn(3L);
+        when(snapshotService.buildDateRows()).thenReturn(List.of());
+
+        FinanceView view = new FinanceView(accountService, snapshotService, bankLookupService, statementImportService);
+        assertThat(view.isAccountsTabSelected()).isFalse();
+
+        view.focusAccount(targoSavings.getId());
+
+        assertThat(view.isAccountsTabSelected()).isTrue();
+        assertThat(view.selectedTreeAccount()).isEqualTo(targoSavings);
+        assertThat(view.hierarchyPathForTest(targoSavings)).containsExactly(1, 1);
     }
 
     private static Account institution(UUID id, String name) {

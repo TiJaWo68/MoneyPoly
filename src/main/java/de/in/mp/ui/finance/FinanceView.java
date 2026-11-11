@@ -1,6 +1,8 @@
 package de.in.mp.ui.finance;
 
 import java.math.BigDecimal;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -26,6 +28,8 @@ import com.vaadin.flow.component.tabs.Tabs;
 import com.vaadin.flow.component.treegrid.TreeGrid;
 import com.vaadin.flow.data.provider.hierarchy.TreeData;
 import com.vaadin.flow.data.renderer.ComponentRenderer;
+import com.vaadin.flow.router.BeforeEnterEvent;
+import com.vaadin.flow.router.BeforeEnterObserver;
 import com.vaadin.flow.router.HasDynamicTitle;
 import com.vaadin.flow.router.Route;
 import com.vaadin.flow.theme.lumo.LumoUtility;
@@ -54,7 +58,9 @@ import jakarta.annotation.security.PermitAll;
  */
 @Route(value = "finance", layout = MainLayout.class)
 @PermitAll
-public class FinanceView extends VerticalLayout implements HasDynamicTitle {
+public class FinanceView extends VerticalLayout implements HasDynamicTitle, BeforeEnterObserver {
+
+    public static final String ACCOUNT_QUERY_PARAM = "account";
 
     private final AccountService accountService;
     private final AccountSnapshotService snapshotService;
@@ -77,6 +83,7 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle {
 
     private HeaderRow groupHeaderRow;
     private Map<UUID, BigDecimal> institutionTotals = Map.of();
+    private List<Account> currentAccounts = List.of();
 
     public FinanceView(AccountService accountService, AccountSnapshotService snapshotService,
             BankLookupService bankLookupService, StatementImportService statementImportService) {
@@ -116,6 +123,66 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle {
     @Override
     public String getPageTitle() {
         return getTranslation("finance.view.page-title");
+    }
+
+    @Override
+    public void beforeEnter(BeforeEnterEvent event) {
+        List<String> values = event.getLocation().getQueryParameters().getParameters().get(ACCOUNT_QUERY_PARAM);
+        if (values != null && !values.isEmpty()) {
+            try {
+                focusAccount(UUID.fromString(values.get(0)));
+            } catch (IllegalArgumentException ignored) {
+                // Ignore malformed query parameter.
+            }
+        }
+    }
+
+    void focusAccount(UUID accountId) {
+        if (accountId == null) {
+            return;
+        }
+        tabBar.setSelectedTab(accountsTab);
+
+        Account target = findCurrentAccount(accountId);
+        if (target == null) {
+            return;
+        }
+
+        if (!treeGrid.getTreeData().contains(target) && !Boolean.TRUE.equals(showInactive.getValue())) {
+            showInactive.setValue(true);
+            target = findCurrentAccount(accountId);
+        }
+
+        if (target == null || !treeGrid.getTreeData().contains(target)) {
+            return;
+        }
+
+        expandAncestors(target);
+        treeGrid.select(target);
+        int[] path = hierarchyPathForTest(target);
+        if (path.length > 0) {
+            treeGrid.scrollToIndex(path);
+        }
+    }
+
+    private Account findCurrentAccount(UUID accountId) {
+        return currentAccounts.stream()
+                .filter(account -> accountId.equals(account.getId()))
+                .findFirst()
+                .orElse(null);
+    }
+
+    private void expandAncestors(Account target) {
+        TreeData<Account> treeData = treeGrid.getTreeData();
+        Deque<Account> ancestors = new ArrayDeque<>();
+        Account parent = treeData.getParent(target);
+        while (parent != null) {
+            ancestors.push(parent);
+            parent = treeData.getParent(parent);
+        }
+        while (!ancestors.isEmpty()) {
+            treeGrid.expand(ancestors.pop());
+        }
     }
 
     private HorizontalLayout createHeader() {
@@ -175,7 +242,9 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle {
             Button newAccountButton = new Button(getTranslation("finance.view.button.new-account"),
                     VaadinIcon.PLUS.create(), event -> editorDialog.openForCreate(this::refresh));
             newAccountButton.setTooltipText(getTranslation("finance.view.button.new-account"));
-            tabContent.add(newAccountButton, treeGrid);
+            HorizontalLayout toolbar = new HorizontalLayout(newAccountButton, showInactive);
+            toolbar.setDefaultVerticalComponentAlignment(Alignment.CENTER);
+            tabContent.add(toolbar, treeGrid);
         } else {
             tabContent.add(showInactive, balanceGrid);
         }
@@ -406,17 +475,55 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle {
 
     private TreeData<Account> buildTreeData(List<Account> accounts) {
         TreeData<Account> treeData = new TreeData<>();
+        boolean includeInactive = Boolean.TRUE.equals(showInactive.getValue());
 
-        Map<UUID, List<Account>> childrenByParent = accounts.stream()
+        Map<UUID, List<Account>> allChildrenByParent = accounts.stream()
                 .filter(account -> account.getParentId() != null)
                 .collect(Collectors.groupingBy(Account::getParentId));
 
-        List<Account> roots = accounts.stream()
+        List<Account> visibleAccounts = includeInactive
+                ? accounts
+                : accounts.stream()
+                        .filter(account -> isVisibleInActiveTree(account, allChildrenByParent))
+                        .toList();
+
+        Map<UUID, List<Account>> childrenByParent = visibleAccounts.stream()
+                .filter(account -> account.getParentId() != null)
+                .collect(Collectors.groupingBy(Account::getParentId));
+
+        List<Account> roots = visibleAccounts.stream()
                 .filter(account -> account.getParentId() == null)
                 .collect(Collectors.toList());
         treeData.addRootItems(roots);
         addChildrenRecursively(roots, childrenByParent, treeData);
         return treeData;
+    }
+
+    private static boolean isVisibleInActiveTree(Account account, Map<UUID, List<Account>> allChildrenByParent) {
+        if (!account.isActive()) {
+            return false;
+        }
+        if (account.getAccountType() != AccountType.INSTITUTION) {
+            return true;
+        }
+        List<Account> directChildren = allChildrenByParent.getOrDefault(account.getId(), List.of());
+        if (directChildren.isEmpty()) {
+            return true;
+        }
+        return hasActiveDescendant(directChildren, allChildrenByParent);
+    }
+
+    private static boolean hasActiveDescendant(List<Account> children, Map<UUID, List<Account>> allChildrenByParent) {
+        for (Account child : children) {
+            if (child.isActive() && child.getAccountType() != AccountType.INSTITUTION) {
+                return true;
+            }
+            List<Account> grandChildren = allChildrenByParent.getOrDefault(child.getId(), List.of());
+            if (child.isActive() && hasActiveDescendant(grandChildren, allChildrenByParent)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void addChildrenRecursively(List<Account> parents, Map<UUID, List<Account>> childrenByParent,
@@ -432,6 +539,7 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle {
 
     private void refresh() {
         List<Account> accounts = accountService.findAll();
+        this.currentAccounts = accounts;
         List<BalanceDateRow> rows = snapshotService.buildDateRows();
 
         rebuildBalanceColumns(accounts, rows);
@@ -445,6 +553,42 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle {
         netWorthValue.setText(formatMoney(accountService.calculateNetWorth()));
         activeAccountsValue.setText(String.valueOf(accountService.countActiveAccounts()));
         latestDateValue.setText(rows.isEmpty() ? "–" : DateFormatter.format(rows.get(0).date(), locale()));
+    }
+
+    TreeData<Account> treeDataForTest() {
+        return treeGrid.getTreeData();
+    }
+
+    void setShowInactiveForTest(boolean value) {
+        showInactive.setValue(value);
+    }
+
+    boolean isAccountsTabSelected() {
+        return tabBar.getSelectedTab() == accountsTab;
+    }
+
+    Account selectedTreeAccount() {
+        return treeGrid.asSingleSelect().getValue();
+    }
+
+    int[] hierarchyPathForTest(Account target) {
+        TreeData<Account> treeData = treeGrid.getTreeData();
+        if (target == null || !treeData.contains(target)) {
+            return new int[0];
+        }
+        Deque<Integer> indices = new ArrayDeque<>();
+        Account current = target;
+        while (current != null) {
+            Account parent = treeData.getParent(current);
+            List<Account> siblings = parent == null ? treeData.getRootItems() : treeData.getChildren(parent);
+            int idx = siblings.indexOf(current);
+            if (idx < 0) {
+                return new int[0];
+            }
+            indices.push(idx);
+            current = parent;
+        }
+        return indices.stream().mapToInt(Integer::intValue).toArray();
     }
 
     private static String formatMoney(BigDecimal amount) {
