@@ -2,10 +2,12 @@ package de.in.mp.ui.dashboard;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -13,6 +15,7 @@ import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.grid.ColumnTextAlign;
 import com.vaadin.flow.component.grid.Grid;
+import com.vaadin.flow.component.grid.GridSortOrder;
 import com.vaadin.flow.component.grid.GridVariant;
 import com.vaadin.flow.component.html.H2;
 import com.vaadin.flow.component.html.H3;
@@ -20,6 +23,7 @@ import com.vaadin.flow.component.html.Span;
 import com.vaadin.flow.component.orderedlayout.FlexComponent.Alignment;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
+import com.vaadin.flow.data.provider.SortDirection;
 import com.vaadin.flow.data.renderer.ComponentRenderer;
 import com.vaadin.flow.dom.Style;
 import com.vaadin.flow.router.HasDynamicTitle;
@@ -193,71 +197,104 @@ public class DashboardView extends VerticalLayout implements HasDynamicTitle {
     }
 
     private void configureGrids() {
-        configureLiquidityGrid();
-        configureInvestmentsGrid();
+        configureAccountGrid(liquidityGrid);
+        configureAccountGrid(investmentsGrid);
         configureLoansGrid();
+        allGrids().forEach(this::synchronizeSorting);
     }
 
-    private void configureLiquidityGrid() {
-        liquidityGrid.addColumn(new ComponentRenderer<>(this::renderAccountLabel))
+
+    /**
+     * The share is proportional to the balance, hence both columns sort by
+     * the balance.
+     */
+    private void configureAccountGrid(Grid<Account> grid) {
+        Comparator<Account> byBalance = Comparator.comparing(Account::getCurrentBalance);
+        grid.addColumn(new ComponentRenderer<>(this::renderAccountLabel))
+                .setKey(DashboardSortColumn.NAME.key())
+                .setComparator(Comparator.comparing(this::accountLabel, String.CASE_INSENSITIVE_ORDER))
                 .setHeader(getTranslation("dashboard.grid.column.name"))
                 .setFlexGrow(1);
-        liquidityGrid.addColumn(account -> MoneyFormatter.format(account.getCurrentBalance(), locale()))
+        grid.addColumn(account -> MoneyFormatter.format(account.getCurrentBalance(), locale()))
+                .setKey(DashboardSortColumn.AMOUNT.key())
+                .setComparator(byBalance)
                 .setHeader(rightAlignedHeader("dashboard.grid.column.balance"))
                 .setTextAlign(ColumnTextAlign.END)
                 .setWidth(AMOUNT_COLUMN_WIDTH)
                 .setFlexGrow(0);
-        liquidityGrid.addColumn(new ComponentRenderer<>(
+        grid.addColumn(new ComponentRenderer<>(
                 account -> renderProgress(sharePercent(account.getCurrentBalance()))))
+                .setKey(DashboardSortColumn.SHARE.key())
+                .setComparator(byBalance)
                 .setHeader(rightAlignedHeader("dashboard.grid.column.share"))
                 .setWidth(PROGRESS_COLUMN_WIDTH)
                 .setFlexGrow(0);
-        liquidityGrid.addItemClickListener(event -> navigateToAccount(event.getItem()));
-        liquidityGrid.addThemeVariants(GridVariant.LUMO_COMPACT, GridVariant.LUMO_NO_ROW_BORDERS);
-        liquidityGrid.setAllRowsVisible(true);
-        liquidityGrid.setWidthFull();
-        liquidityGrid.getStyle().set(FLEX_SHRINK, NO_SHRINK);
-    }
-
-    private void configureInvestmentsGrid() {
-        investmentsGrid.addColumn(new ComponentRenderer<>(this::renderDepotLabel))
-                .setHeader(getTranslation("dashboard.grid.column.name"))
-                .setFlexGrow(1);
-        investmentsGrid.addColumn(account -> MoneyFormatter.format(account.getCurrentBalance(), locale()))
-                .setHeader(rightAlignedHeader("dashboard.grid.column.balance"))
-                .setTextAlign(ColumnTextAlign.END)
-                .setWidth(AMOUNT_COLUMN_WIDTH)
-                .setFlexGrow(0);
-        investmentsGrid.addColumn(new ComponentRenderer<>(
-                account -> renderProgress(sharePercent(account.getCurrentBalance()))))
-                .setHeader(rightAlignedHeader("dashboard.grid.column.share"))
-                .setWidth(PROGRESS_COLUMN_WIDTH)
-                .setFlexGrow(0);
-        investmentsGrid.addItemClickListener(event -> navigateToAccount(event.getItem()));
-        investmentsGrid.addThemeVariants(GridVariant.LUMO_COMPACT, GridVariant.LUMO_NO_ROW_BORDERS);
-        investmentsGrid.setAllRowsVisible(true);
-        investmentsGrid.setWidthFull();
-        investmentsGrid.getStyle().set(FLEX_SHRINK, NO_SHRINK);
+        grid.addItemClickListener(event -> navigateToAccount(event.getItem()));
+        applyCompactLayout(grid);
     }
 
     private void configureLoansGrid() {
         loansGrid.addColumn(new ComponentRenderer<>(this::renderLoanLabel))
+                .setKey(DashboardSortColumn.NAME.key())
+                .setComparator(Comparator.comparing(
+                        (LoanContract contract) -> Objects.toString(contract.getDesignation(), ""),
+                        String.CASE_INSENSITIVE_ORDER))
                 .setHeader(getTranslation("dashboard.grid.column.designation"))
                 .setFlexGrow(1);
         loansGrid.addColumn(contract -> MoneyFormatter.format(loanContractService.remainingBalance(contract), locale()))
+                .setKey(DashboardSortColumn.AMOUNT.key())
+                .setComparator(Comparator.comparing(loanContractService::remainingBalance))
                 .setHeader(rightAlignedHeader("dashboard.grid.column.remaining"))
                 .setTextAlign(ColumnTextAlign.END)
                 .setWidth(AMOUNT_COLUMN_WIDTH)
                 .setFlexGrow(0);
         loansGrid.addColumn(new ComponentRenderer<>(contract -> renderProgress(repaymentPercent(contract))))
+                .setKey(DashboardSortColumn.SHARE.key())
+                .setComparator(Comparator.comparing(this::repaymentPercent))
                 .setHeader(rightAlignedHeader("dashboard.grid.column.progress"))
                 .setWidth(PROGRESS_COLUMN_WIDTH)
                 .setFlexGrow(0);
         loansGrid.addItemClickListener(event -> navigateTo(PrivateLoanView.class));
-        loansGrid.addThemeVariants(GridVariant.LUMO_COMPACT, GridVariant.LUMO_NO_ROW_BORDERS);
-        loansGrid.setAllRowsVisible(true);
-        loansGrid.setWidthFull();
-        loansGrid.getStyle().set(FLEX_SHRINK, NO_SHRINK);
+        applyCompactLayout(loansGrid);
+    }
+
+    private static void applyCompactLayout(Grid<?> grid) {
+        grid.addThemeVariants(GridVariant.LUMO_COMPACT, GridVariant.LUMO_NO_ROW_BORDERS);
+        grid.setAllRowsVisible(true);
+        grid.setWidthFull();
+        grid.getStyle().set(FLEX_SHRINK, NO_SHRINK);
+    }
+
+    /**
+     * A sort triggered by a click on a column header is applied to all
+     * dashboard tables. Programmatic sorts are ignored to avoid feedback loops.
+     */
+    private <T> void synchronizeSorting(Grid<T> source) {
+        source.addSortListener(event -> {
+            if (!event.isFromClient()) {
+                return;
+            }
+            Optional<GridSortOrder<T>> order = event.getSortOrder().stream().findFirst();
+            for (Grid<?> target : allGrids()) {
+                if (target != source) {
+                    applySort(target, order.map(o -> o.getSorted().getKey()).orElse(null),
+                            order.map(GridSortOrder::getDirection).orElse(null));
+                }
+            }
+        });
+    }
+
+    private static <T> void applySort(Grid<T> grid, String columnKey, SortDirection direction) {
+        Grid.Column<T> column = columnKey == null ? null : grid.getColumnByKey(columnKey);
+        if (column == null || direction == null) {
+            grid.sort(List.of());
+            return;
+        }
+        grid.sort(List.of(new GridSortOrder<>(column, direction)));
+    }
+
+    List<Grid<?>> allGrids() {
+        return List.of(liquidityGrid, investmentsGrid, loansGrid);
     }
 
     private Span rightAlignedHeader(String key) {
@@ -290,21 +327,15 @@ public class DashboardView extends VerticalLayout implements HasDynamicTitle {
     }
 
     private Component renderAccountLabel(Account account) {
-        String typeLabel = account.getAccountType() == null
-                ? account.getName()
-                : getTranslation("finance.account.type." + account.getAccountType().name());
-        String primary = join(" · ", parentName(account), typeLabel, account.getAccountHolder());
-        String secondary = maskIban(account.getAccountNumber());
-        return renderLabel(primary, secondary);
+        return renderLabel(accountLabel(account), maskIban(account.getAccountNumber()));
     }
 
-    private Component renderDepotLabel(Account account) {
+
+    private String accountLabel(Account account) {
         String typeLabel = account.getAccountType() == null
                 ? account.getName()
                 : getTranslation("finance.account.type." + account.getAccountType().name());
-        String primary = join(" · ", parentName(account), typeLabel, account.getAccountHolder());
-        String secondary = maskIban(account.getAccountNumber());
-        return renderLabel(primary, secondary);
+        return join(" · ", parentName(account), typeLabel, account.getAccountHolder());
     }
 
     private Component renderLoanLabel(LoanContract contract) {
