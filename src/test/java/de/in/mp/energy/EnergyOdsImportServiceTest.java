@@ -3,7 +3,10 @@ package de.in.mp.energy;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+
+import de.in.mp.admin.DatabaseResetService;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -65,6 +68,7 @@ class EnergyOdsImportServiceTest {
         MeterService meterService = mock(MeterService.class);
         EnergyTariffService tariffService = mock(EnergyTariffService.class);
         MeterReadingService readingService = mock(MeterReadingService.class);
+        DatabaseResetService databaseResetService = mock(DatabaseResetService.class);
 
         List<EnergyAsset> assets = new ArrayList<>();
         when(assetService.findAll()).thenReturn(assets);
@@ -94,7 +98,7 @@ class EnergyOdsImportServiceTest {
         });
 
         EnergyOdsImportService importService = new EnergyOdsImportService(
-                assetService, meterService, tariffService, readingService);
+                assetService, meterService, tariffService, readingService, databaseResetService);
 
         EnergyOdsImportService.OdsImportResult result = importService.importOds(
                 createSyntheticOdsStream(),
@@ -103,6 +107,7 @@ class EnergyOdsImportServiceTest {
                         new BigDecimal("1500.00"),
                         new BigDecimal("1200.00")));
 
+        verify(databaseResetService).resetEnergyData();
         assertThat(result.assetsConfigured()).isEqualTo(3);
         assertThat(result.metersConfigured()).isEqualTo(14);
         assertThat(result.tariffsCreated()).isEqualTo(3);

@@ -40,30 +40,50 @@ class AccountEditorDialogTest {
     }
 
     @Test
-    void savesNewAccountWithDefaultDisplayOrderAndEmptyOptionalFields() {
+    void savesNewRegularAccountWithoutManualNameUsingAccountTypeLabel() {
         dialog.initForCreate(() -> {
         });
-        dialog.name.setValue("Broker");
         dialog.accountType.setValue(AccountType.INVESTMENT);
 
+        assertThat(dialog.name.isVisible()).isFalse();
         dialog.save();
 
         ArgumentCaptor<Account> saved = ArgumentCaptor.forClass(Account.class);
         verify(accountService).save(saved.capture());
-        assertThat(saved.getValue().getName()).isEqualTo("Broker");
+        assertThat(saved.getValue().getName()).isNotBlank();
+        assertThat(saved.getValue().getAccountType()).isEqualTo(AccountType.INVESTMENT);
         assertThat(saved.getValue().getDisplayOrder()).isEqualTo(Account.DEFAULT_DISPLAY_ORDER);
     }
 
     @Test
-    void reportsMissingRequiredFieldsInsteadOfFailingSilently() {
+    void requiresNameOnlyWhenAccountTypeIsInstitution() {
+        dialog.initForCreate(() -> {
+        });
+        dialog.accountType.setValue(AccountType.INSTITUTION);
+
+        assertThat(dialog.name.isVisible()).isTrue();
+        dialog.save();
+
+        verify(accountService, never()).save(any());
+        assertThat(dialog.validationSummary()).contains("name-required");
+
+        dialog.name.setValue("C24");
+        dialog.save();
+
+        ArgumentCaptor<Account> saved = ArgumentCaptor.forClass(Account.class);
+        verify(accountService).save(saved.capture());
+        assertThat(saved.getValue().getName()).isEqualTo("C24");
+        assertThat(saved.getValue().getAccountType()).isEqualTo(AccountType.INSTITUTION);
+    }
+
+    @Test
+    void reportsMissingAccountTypeInsteadOfFailingSilently() {
         dialog.initForCreate(() -> {
         });
 
         dialog.save();
 
         verify(accountService, never()).save(any());
-        assertThat(dialog.validationSummary())
-                .contains("name-required")
-                .contains("type-required");
+        assertThat(dialog.validationSummary()).contains("type-required");
     }
 }

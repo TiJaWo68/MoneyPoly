@@ -18,12 +18,15 @@ import javax.xml.XMLConstants;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
+
+import de.in.mp.admin.DatabaseResetService;
 
 /**
  * Parses and imports historical energy data from an OpenDocument Spreadsheet
@@ -61,25 +64,40 @@ public class EnergyOdsImportService {
     private final MeterService meterService;
     private final EnergyTariffService tariffService;
     private final MeterReadingService readingService;
+    private final DatabaseResetService databaseResetService;
 
     public EnergyOdsImportService(
             EnergyAssetService assetService,
             MeterService meterService,
             EnergyTariffService tariffService,
             MeterReadingService readingService) {
+        this(assetService, meterService, tariffService, readingService, null);
+    }
+
+    @Autowired
+    public EnergyOdsImportService(
+            EnergyAssetService assetService,
+            MeterService meterService,
+            EnergyTariffService tariffService,
+            MeterReadingService readingService,
+            DatabaseResetService databaseResetService) {
         this.assetService = assetService;
         this.meterService = meterService;
         this.tariffService = tariffService;
         this.readingService = readingService;
+        this.databaseResetService = databaseResetService;
     }
 
     /**
-     * Imports assets, meters, tariffs, and all reading rows from the provided
-     * {@code .ods} stream idempotently.
+     * Resets energy target tables and imports assets, meters, tariffs, and all
+     * reading rows from the provided {@code .ods} stream.
      */
     @Transactional
     public OdsImportResult importOds(InputStream odsStream, OdsAssetCostDefaults costDefaults) {
         ParsedOdsData parsed = parseOds(odsStream);
+        if (databaseResetService != null) {
+            databaseResetService.resetEnergyData();
+        }
 
         Map<String, EnergyAsset> assetsByName = ensureAssets(costDefaults);
         Map<String, Meter> metersByName = ensureMeters(assetsByName);

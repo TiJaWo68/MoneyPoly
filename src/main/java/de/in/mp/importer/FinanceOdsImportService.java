@@ -13,9 +13,11 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import de.in.mp.admin.DatabaseResetService;
 import de.in.mp.finance.Account;
 import de.in.mp.finance.AccountService;
 import de.in.mp.finance.AccountSnapshotService;
@@ -43,12 +45,20 @@ public class FinanceOdsImportService {
     private final AccountService accountService;
     private final AccountSnapshotService snapshotService;
     private final LoanContractService loanContractService;
+    private final DatabaseResetService databaseResetService;
 
     public FinanceOdsImportService(AccountService accountService, AccountSnapshotService snapshotService,
             LoanContractService loanContractService) {
+        this(accountService, snapshotService, loanContractService, null);
+    }
+
+    @Autowired
+    public FinanceOdsImportService(AccountService accountService, AccountSnapshotService snapshotService,
+            LoanContractService loanContractService, DatabaseResetService databaseResetService) {
         this.accountService = accountService;
         this.snapshotService = snapshotService;
         this.loanContractService = loanContractService;
+        this.databaseResetService = databaseResetService;
     }
 
     @Transactional(readOnly = true)
@@ -86,6 +96,11 @@ public class FinanceOdsImportService {
 
     @Transactional
     public OdsMigrationResult execute(List<OdsAccountColumn> columns) {
+        if (databaseResetService != null) {
+            databaseResetService.resetFinanceData();
+            columns.forEach(column -> column.setExistingAccountId(null));
+        }
+
         Map<String, Account> institutions = new LinkedHashMap<>();
         accountService.findAll().stream()
                 .filter(account -> account.getAccountType() == AccountType.INSTITUTION)
@@ -153,11 +168,20 @@ public class FinanceOdsImportService {
                         .findFirst()
                         .orElseThrow(() -> new IllegalArgumentException(
                                 "Account not found: " + column.getExistingAccountId()));
-        account.setName(column.getAccountName().trim());
-        account.setAccountType(column.getAccountType() == null ? AccountType.CHECKING : column.getAccountType());
+        AccountType type = column.getAccountType() == null ? AccountType.CHECKING : column.getAccountType();
+        String name = blankToNull(column.getAccountName());
+        if (name == null) {
+            name = FinanceOdsParser.defaultTypeName(type);
+        }
+        String bank = blankToNull(column.getBankName());
+        if (bank == null) {
+            bank = blankToNull(column.getInstitutionName());
+        }
+        account.setName(name);
+        account.setAccountType(type);
         account.setParentId(parentId);
         account.setAccountNumber(blankToNull(column.getAccountNumber()));
-        account.setBankName(blankToNull(column.getBankName()));
+        account.setBankName(bank);
         account.setAccountHolder(blankToNull(column.getAccountHolder()));
         account.setActive(column.isActive());
         account.setDisplayOrder(displayOrder);
@@ -170,9 +194,13 @@ public class FinanceOdsImportService {
                 .filter(account -> normalize(account.getName()).equals(normalize(column.getInstitutionName())))
                 .map(Account::getId)
                 .findFirst();
+        String columnHolder = normalize(column.getAccountHolder());
         return accounts.stream()
                 .filter(account -> account.getAccountType() != AccountType.INSTITUTION)
-                .filter(account -> normalize(account.getName()).equals(normalize(column.getAccountName())))
+                .filter(account -> normalize(account.getName()).equals(normalize(column.getAccountName()))
+                        || account.getAccountType() == column.getAccountType())
+                .filter(account -> columnHolder.isEmpty() || normalize(account.getAccountHolder()).isEmpty()
+                        || columnHolder.equals(normalize(account.getAccountHolder())))
                 .filter(account -> !column.grouped()
                         || institutionId.map(id -> id.equals(account.getParentId())).orElse(false))
                 .findFirst();

@@ -21,6 +21,7 @@ import com.vaadin.flow.component.notification.NotificationVariant;
 import com.vaadin.flow.component.orderedlayout.FlexComponent.JustifyContentMode;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
+import com.vaadin.flow.component.textfield.Autocomplete;
 import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.component.upload.Upload;
 import com.vaadin.flow.data.renderer.ComponentRenderer;
@@ -155,20 +156,14 @@ public class FinanceOdsMigrationDialog extends Dialog {
         grid.addColumn(new ComponentRenderer<>(column -> textField(column.getInstitutionName(),
                 column::setInstitutionName)))
                 .setHeader(getTranslation("admin.migration.column.institution")).setWidth("160px");
-        grid.addColumn(new ComponentRenderer<>(column -> textField(column.getAccountName(),
-                column::setAccountName)))
-                .setHeader(getTranslation("finance.editor.field.name")).setWidth("160px");
         grid.addColumn(new ComponentRenderer<>(this::typeBox))
                 .setHeader(getTranslation("finance.editor.field.type")).setWidth("190px");
-        grid.addColumn(new ComponentRenderer<>(column -> textField(column.getAccountNumber(),
-                column::setAccountNumber)))
-                .setHeader(getTranslation("finance.editor.field.account-number")).setWidth("220px");
-        grid.addColumn(new ComponentRenderer<>(column -> textField(column.getBankName(),
-                column::setBankName)))
-                .setHeader(getTranslation("finance.editor.field.bank")).setWidth("150px");
         grid.addColumn(new ComponentRenderer<>(column -> textField(column.getAccountHolder(),
                 column::setAccountHolder)))
                 .setHeader(getTranslation("finance.editor.field.holder")).setWidth("150px");
+        grid.addColumn(new ComponentRenderer<>(column -> textField(column.getAccountNumber(),
+                column::setAccountNumber)))
+                .setHeader(getTranslation("finance.editor.field.account-number")).setWidth("220px");
         grid.addColumn(new ComponentRenderer<>(this::activeBox))
                 .setHeader(getTranslation("finance.grid.column.status"))
                 .setAutoWidth(true).setFlexGrow(0);
@@ -219,6 +214,7 @@ public class FinanceOdsMigrationDialog extends Dialog {
 
     private static TextField textField(String value, java.util.function.Consumer<String> setter) {
         TextField field = new TextField();
+        field.setAutocomplete(Autocomplete.OFF);
         field.setValue(value == null ? "" : value);
         field.setWidthFull();
         field.addValueChangeListener(event -> setter.accept(event.getValue()));

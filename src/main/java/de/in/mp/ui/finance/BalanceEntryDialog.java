@@ -98,7 +98,8 @@ public class BalanceEntryDialog extends Dialog {
             if (!account.isActive() && snapshot == null) {
                 continue;
             }
-            BigDecimalField field = new BigDecimalField(AccountLabels.qualifiedName(account, byId));
+            BigDecimalField field = new BigDecimalField(AccountLabels.qualifiedName(
+                    account, byId, type -> getTranslation("finance.account.type." + type.name())));
             field.setWidthFull();
             if (snapshot != null) {
                 field.setValue(snapshot.getBalance());

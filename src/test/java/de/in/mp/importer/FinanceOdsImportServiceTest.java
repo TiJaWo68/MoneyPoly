@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -19,6 +20,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import de.in.mp.admin.DatabaseResetService;
 import de.in.mp.finance.Account;
 import de.in.mp.finance.AccountService;
 import de.in.mp.finance.AccountSnapshotService;
@@ -40,6 +42,7 @@ class FinanceOdsImportServiceTest {
     private AccountService accountService;
     private AccountSnapshotService snapshotService;
     private LoanContractService loanContractService;
+    private DatabaseResetService databaseResetService;
     private FinanceOdsImportService service;
 
     @BeforeEach
@@ -47,7 +50,9 @@ class FinanceOdsImportServiceTest {
         accountService = mock(AccountService.class);
         snapshotService = mock(AccountSnapshotService.class);
         loanContractService = mock(LoanContractService.class);
-        service = new FinanceOdsImportService(accountService, snapshotService, loanContractService);
+        databaseResetService = mock(DatabaseResetService.class);
+        service = new FinanceOdsImportService(
+                accountService, snapshotService, loanContractService, databaseResetService);
 
         when(accountService.findAll()).thenAnswer(invocation -> List.copyOf(accounts));
         when(accountService.save(any(Account.class))).thenAnswer(invocation -> {
@@ -71,6 +76,7 @@ class FinanceOdsImportServiceTest {
 
         OdsMigrationResult result = service.execute(List.of(giro, savings));
 
+        verify(databaseResetService).resetFinanceData();
         assertThat(result.institutions()).isEqualTo(1);
         assertThat(result.accountsCreated()).isEqualTo(2);
         assertThat(result.snapshotsRecorded()).isEqualTo(2);
@@ -127,7 +133,9 @@ class FinanceOdsImportServiceTest {
     }
 
     @Test
-    void executeReusesExistingAccount() {
+    void executeReusesExistingAccountWhenNotReset() {
+        FinanceOdsImportService serviceWithoutReset = new FinanceOdsImportService(
+                accountService, snapshotService, loanContractService);
         Account existing = new Account();
         existing.setId(UUID.randomUUID());
         existing.setName("Depot");
@@ -136,10 +144,41 @@ class FinanceOdsImportServiceTest {
         OdsAccountColumn column = column(null, "Depot", AccountType.INVESTMENT, 1);
         column.setExistingAccountId(existing.getId());
 
-        OdsMigrationResult result = service.execute(List.of(column));
+        OdsMigrationResult result = serviceWithoutReset.execute(List.of(column));
 
         assertThat(result.accountsCreated()).isZero();
         verify(snapshotService).recordSnapshots(eq(existing.getId()), anyList());
+    }
+
+    @Test
+    void executeResetsFinanceDataBeforeImportingAndUnifiesSharedInstitutionsByHolder() {
+        Account staleAccount = new Account();
+        staleAccount.setId(UUID.randomUUID());
+        staleAccount.setName("Stale");
+        staleAccount.setAccountType(AccountType.CHECKING);
+        accounts.add(staleAccount);
+        doAnswer(inv -> {
+            accounts.clear();
+            return null;
+        }).when(databaseResetService).resetFinanceData();
+
+        OdsAccountColumn c24Till = column("C24", null, AccountType.CHECKING, 1);
+        c24Till.setAccountHolder("Till");
+        OdsAccountColumn c24Birgit = column("C24", null, AccountType.CHECKING, 1);
+        c24Birgit.setAccountHolder("Birgit");
+
+        OdsMigrationResult result = service.execute(List.of(c24Till, c24Birgit));
+
+        verify(databaseResetService).resetFinanceData();
+        assertThat(result.institutions()).isEqualTo(1);
+        assertThat(result.accountsCreated()).isEqualTo(2);
+
+        List<Account> createdChecking = accounts.stream()
+                .filter(a -> a.getAccountType() == AccountType.CHECKING)
+                .toList();
+        assertThat(createdChecking).extracting(Account::getAccountHolder)
+                .containsExactly("Till", "Birgit");
+        assertThat(createdChecking).allMatch(a -> a.getName() != null && !a.getName().isBlank());
     }
 
     @Test
@@ -182,7 +221,8 @@ class FinanceOdsImportServiceTest {
     }
 
     private static OdsAccountColumn column(String institution, String name, AccountType type, int unused) {
-        OdsAccountColumn column = new OdsAccountColumn("Balances", 4, institution == null ? "" : institution, name,
+        OdsAccountColumn column = new OdsAccountColumn("Balances", 4, institution == null ? "" : institution,
+                name == null ? "" : name,
                 List.of(SnapshotValue.ofBalance(OCTOBER, new BigDecimal("100"))));
         column.setInstitutionName(institution);
         column.setAccountName(name);

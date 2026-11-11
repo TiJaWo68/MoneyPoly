@@ -47,5 +47,47 @@ class DatabaseResetServiceTest {
         assertThat(statements).noneMatch(sql -> sql.contains("bank_directory"));
         assertThat(statements).noneMatch(sql -> sql.contains("flyway_schema_history"));
     }
+
+    @Test
+    void resetFinanceDataClearsOnlyFinanceTablesAndPreservesPersonsLoansAndEnergy() {
+        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
+        DatabaseResetService service = new DatabaseResetService(jdbcTemplate);
+
+        service.resetFinanceData();
+
+        ArgumentCaptor<String> sqlCaptor = ArgumentCaptor.forClass(String.class);
+        verify(jdbcTemplate, times(5)).update(sqlCaptor.capture());
+
+        List<String> statements = sqlCaptor.getAllValues();
+        assertThat(statements).containsExactly(
+                "DELETE FROM transaction_allocation",
+                "DELETE FROM bank_transaction",
+                "DELETE FROM account_snapshot",
+                "UPDATE finance_account SET parent_id = NULL",
+                "DELETE FROM finance_account");
+        assertThat(statements).noneMatch(sql -> sql.contains("person") || sql.contains("loan_contract")
+                || sql.contains("meter"));
+    }
+
+    @Test
+    void resetEnergyDataClearsOnlyEnergyTablesAndPreservesFinancePersonsAndLoans() {
+        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
+        DatabaseResetService service = new DatabaseResetService(jdbcTemplate);
+
+        service.resetEnergyData();
+
+        ArgumentCaptor<String> sqlCaptor = ArgumentCaptor.forClass(String.class);
+        verify(jdbcTemplate, times(5)).update(sqlCaptor.capture());
+
+        List<String> statements = sqlCaptor.getAllValues();
+        assertThat(statements).containsExactly(
+                "DELETE FROM ev_charging_reimbursement",
+                "DELETE FROM meter_reading",
+                "DELETE FROM meter",
+                "DELETE FROM energy_tariff",
+                "DELETE FROM energy_asset");
+        assertThat(statements).noneMatch(sql -> sql.contains("finance_account") || sql.contains("person")
+                || sql.contains("loan_contract"));
+    }
 }
 

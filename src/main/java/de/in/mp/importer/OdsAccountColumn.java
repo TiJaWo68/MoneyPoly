@@ -77,9 +77,7 @@ public class OdsAccountColumn {
      * Whether the account is grouped below an institution node.
      */
     public boolean grouped() {
-        return institutionName != null && !institutionName.isBlank()
-                && accountName != null && !accountName.isBlank()
-                && !institutionName.trim().equalsIgnoreCase(accountName.trim());
+        return institutionName != null && !institutionName.isBlank();
     }
 
     public String sheetName() {

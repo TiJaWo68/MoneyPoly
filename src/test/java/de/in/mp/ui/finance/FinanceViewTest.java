@@ -138,6 +138,57 @@ class FinanceViewTest {
         assertThat(view.hierarchyPathForTest(targoSavings)).containsExactly(1, 1);
     }
 
+    @Test
+    void rendersInstitutionWithoutBadgeAndSubAccountWithTypeBadgeInConsolidatedTree() {
+        AccountService accountService = mock(AccountService.class);
+        AccountSnapshotService snapshotService = mock(AccountSnapshotService.class);
+        BankLookupService bankLookupService = mock(BankLookupService.class);
+        StatementImportService statementImportService = mock(StatementImportService.class);
+
+        Account c24 = institution(UUID.randomUUID(), "C24");
+        Account giro = childAccount(UUID.randomUUID(), "Girokonto", c24.getId(), 1);
+        giro.setAccountHolder("Till");
+
+        when(accountService.findAll()).thenReturn(List.of(c24, giro));
+        when(accountService.calculateInstitutionTotals()).thenReturn(Map.of());
+        when(accountService.calculateNetWorth()).thenReturn(BigDecimal.ZERO);
+        when(accountService.countActiveAccounts()).thenReturn(1L);
+        when(snapshotService.buildDateRows()).thenReturn(List.of());
+
+        FinanceView view = new FinanceView(accountService, snapshotService, bankLookupService, statementImportService);
+
+        assertThat(view.treeColumnCountForTest()).isEqualTo(6);
+        assertThat(view.renderHierarchyCell(c24).getElement().getThemeList()).doesNotContain("badge");
+        assertThat(view.renderHierarchyCell(c24).getElement().getText()).isEqualTo("C24");
+        assertThat(view.renderHierarchyCell(giro).getElement().getThemeList()).contains("badge");
+    }
+
+    @Test
+    void rendersTwoLineAccountColumnHeaderUnderInstitutionWithIbanTooltip() {
+        AccountService accountService = mock(AccountService.class);
+        AccountSnapshotService snapshotService = mock(AccountSnapshotService.class);
+        BankLookupService bankLookupService = mock(BankLookupService.class);
+        StatementImportService statementImportService = mock(StatementImportService.class);
+
+        Account c24 = institution(UUID.randomUUID(), "C24");
+        Account giro = childAccount(UUID.randomUUID(), "Girokonto", c24.getId(), 1);
+        giro.setAccountHolder("Till Woitendorf");
+        giro.setAccountNumber("DE61500240245446454801");
+
+        when(accountService.findAll()).thenReturn(List.of(c24, giro));
+        when(accountService.calculateInstitutionTotals()).thenReturn(Map.of());
+        when(accountService.calculateNetWorth()).thenReturn(BigDecimal.ZERO);
+        when(accountService.countActiveAccounts()).thenReturn(1L);
+        when(snapshotService.buildDateRows()).thenReturn(List.of());
+
+        FinanceView view = new FinanceView(accountService, snapshotService, bankLookupService, statementImportService);
+
+        com.vaadin.flow.component.html.Div header = view.createAccountColumnHeader(giro);
+        assertThat(header.getChildren().count()).isEqualTo(2);
+        assertThat(header.getElement().getTextRecursively()).contains("Till Woitendorf");
+        assertThat(header.getElement().getAttribute("title")).isEqualTo("DE61500240245446454801");
+    }
+
     private static Account institution(UUID id, String name) {
         Account account = new Account();
         account.setId(id);

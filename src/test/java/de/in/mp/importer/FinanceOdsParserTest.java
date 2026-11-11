@@ -149,4 +149,58 @@ class FinanceOdsParserTest {
         assertThatThrownBy(() -> FinanceOdsParser.parse(ods(table("Other", row(text("x"))))))
                 .isInstanceOf(IllegalArgumentException.class);
     }
+
+    @Test
+    void extractsAccountHoldersFromInstitutionHeadersAndPersonSubHeaders() {
+        String sheet = table("Balances",
+                row(empty(1), text("Datum"), text("Gesamt"),
+                        text("C24 Birgit"), empty(1),
+                        text("C24 Till"),
+                        text("Trade Republic"), empty(1),
+                        text("VW Bank")),
+                row(empty(3),
+                        text("Giro"), text("Tagesgeld"),
+                        text("Giro"),
+                        text("Till"), text("Birgit"),
+                        text("Birgit")),
+                row(number("1"), date("2026-10-31"), number("10000"),
+                        number("1000"), number("500"),
+                        number("2000"),
+                        number("3000"), number("2500"),
+                        number("1000")));
+
+        List<OdsAccountColumn> columns = FinanceOdsParser.parse(ods(sheet));
+
+        assertThat(columns).hasSize(6);
+
+        OdsAccountColumn c24BirgitGiro = bySource(columns, "C24 Birgit / Giro");
+        assertThat(c24BirgitGiro.getInstitutionName()).isEqualTo("C24");
+        assertThat(c24BirgitGiro.getAccountHolder()).isEqualTo("Birgit");
+        assertThat(c24BirgitGiro.getAccountType()).isEqualTo(AccountType.CHECKING);
+
+        OdsAccountColumn c24BirgitSavings = bySource(columns, "C24 Birgit / Tagesgeld");
+        assertThat(c24BirgitSavings.getInstitutionName()).isEqualTo("C24");
+        assertThat(c24BirgitSavings.getAccountHolder()).isEqualTo("Birgit");
+        assertThat(c24BirgitSavings.getAccountType()).isEqualTo(AccountType.SAVINGS);
+
+        OdsAccountColumn c24TillGiro = bySource(columns, "C24 Till / Giro");
+        assertThat(c24TillGiro.getInstitutionName()).isEqualTo("C24");
+        assertThat(c24TillGiro.getAccountHolder()).isEqualTo("Till");
+        assertThat(c24TillGiro.getAccountType()).isEqualTo(AccountType.CHECKING);
+
+        OdsAccountColumn trTill = bySource(columns, "Trade Republic / Till");
+        assertThat(trTill.getInstitutionName()).isEqualTo("Trade Republic");
+        assertThat(trTill.getAccountHolder()).isEqualTo("Till");
+        assertThat(trTill.getAccountType()).isEqualTo(AccountType.INVESTMENT);
+        assertThat(trTill.grouped()).isTrue();
+
+        OdsAccountColumn trBirgit = bySource(columns, "Trade Republic / Birgit");
+        assertThat(trBirgit.getInstitutionName()).isEqualTo("Trade Republic");
+        assertThat(trBirgit.getAccountHolder()).isEqualTo("Birgit");
+        assertThat(trBirgit.getAccountType()).isEqualTo(AccountType.INVESTMENT);
+
+        OdsAccountColumn vwBirgit = bySource(columns, "VW Bank / Birgit");
+        assertThat(vwBirgit.getInstitutionName()).isEqualTo("VW Bank");
+        assertThat(vwBirgit.getAccountHolder()).isEqualTo("Birgit");
+    }
 }

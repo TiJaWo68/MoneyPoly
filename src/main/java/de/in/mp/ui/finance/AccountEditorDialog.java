@@ -17,6 +17,7 @@ import com.vaadin.flow.component.formlayout.FormLayout;
 import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.orderedlayout.FlexComponent.JustifyContentMode;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
+import com.vaadin.flow.component.textfield.Autocomplete;
 import com.vaadin.flow.component.textfield.BigDecimalField;
 import com.vaadin.flow.component.textfield.IntegerField;
 import com.vaadin.flow.component.textfield.TextArea;
@@ -128,8 +129,10 @@ public class AccountEditorDialog extends Dialog {
         accountType.setLabel(getTranslation("finance.editor.field.type"));
         parent.setLabel(getTranslation("finance.editor.field.parent"));
         accountNumber.setLabel(getTranslation("finance.editor.field.account-number"));
+        accountNumber.setAutocomplete(Autocomplete.OFF);
         bankName.setLabel(getTranslation("finance.editor.field.bank"));
         accountHolder.setLabel(getTranslation("finance.editor.field.holder"));
+        accountHolder.setAutocomplete(Autocomplete.OFF);
         accountHolder.setHelperText(getTranslation("finance.editor.hint.holder"));
         initialBalance.setLabel(getTranslation("finance.editor.field.initial-balance"));
         displayOrder.setLabel(getTranslation("finance.editor.field.display-order"));
@@ -146,8 +149,11 @@ public class AccountEditorDialog extends Dialog {
 
     private void configureBinder() {
         binder.forField(name)
-                .asRequired(getTranslation("finance.editor.error.name-required"))
-                .withValidator(value -> value.length() <= NAME_MAX_LENGTH,
+                .withValidator(
+                        value -> !AccountType.INSTITUTION.equals(accountType.getValue())
+                                || (value != null && !value.isBlank()),
+                        getTranslation("finance.editor.error.name-required"))
+                .withValidator(value -> value == null || value.length() <= NAME_MAX_LENGTH,
                         getTranslation("finance.editor.error.name-too-long"))
                 .bind(Account::getName, Account::setName);
 
@@ -184,6 +190,9 @@ public class AccountEditorDialog extends Dialog {
     }
 
     private String translateParent(Account account) {
+        if (account.getAccountType() == AccountType.INSTITUTION) {
+            return account.getName();
+        }
         return account.getName() + " (" + translateAccountType(account.getAccountType()) + ")";
     }
 
@@ -232,10 +241,14 @@ public class AccountEditorDialog extends Dialog {
 
     private void updateFieldVisibility() {
         boolean institution = AccountType.INSTITUTION.equals(accountType.getValue());
+        name.setVisible(institution);
+        parent.setVisible(!institution);
         accountNumber.setVisible(!institution);
         accountHolder.setVisible(!institution);
         initialBalance.setVisible(!institution);
+        bankName.setVisible(false);
         if (institution) {
+            parent.clear();
             initialBalance.clear();
         }
     }
@@ -267,6 +280,18 @@ public class AccountEditorDialog extends Dialog {
 
         Account selectedParent = parent.getValue();
         currentAccount.setParentId(selectedParent == null ? null : selectedParent.getId());
+
+        if (currentAccount.getAccountType() != AccountType.INSTITUTION) {
+            currentAccount.setName(translateAccountType(currentAccount.getAccountType()));
+            if (selectedParent != null) {
+                currentAccount.setBankName(selectedParent.getName());
+            } else if (currentAccount.getBankName() == null || currentAccount.getBankName().isBlank()) {
+                bankLookupService.findBankName(currentAccount.getAccountNumber())
+                        .ifPresent(currentAccount::setBankName);
+            }
+        } else {
+            currentAccount.setBankName(currentAccount.getName());
+        }
 
         try {
             accountService.save(currentAccount);

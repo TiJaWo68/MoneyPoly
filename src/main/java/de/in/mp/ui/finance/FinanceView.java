@@ -17,6 +17,7 @@ import com.vaadin.flow.component.grid.ColumnTextAlign;
 import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.grid.GridVariant;
 import com.vaadin.flow.component.grid.HeaderRow;
+import com.vaadin.flow.component.html.Div;
 import com.vaadin.flow.component.html.H2;
 import com.vaadin.flow.component.html.Span;
 import com.vaadin.flow.component.icon.VaadinIcon;
@@ -280,7 +281,7 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
             UUID accountId = account.getId();
             Grid.Column<BalanceDateRow> column = balanceGrid
                     .addColumn(row -> formatSnapshot(row.snapshotFor(accountId)))
-                    .setHeader(account.getName())
+                    .setHeader(createAccountColumnHeader(account))
                     .setTooltipGenerator(row -> tooltip(row.snapshotFor(accountId)))
                     .setTextAlign(ColumnTextAlign.END)
                     .setAutoWidth(true);
@@ -295,6 +296,29 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
 
         groupHeaderRow = balanceGrid.prependHeaderRow();
         applyGroupedHeaders(groupHeaderRow, accountColumns);
+    }
+
+    Div createAccountColumnHeader(Account account) {
+        String typeLabel = account.getAccountType() == null
+                ? account.getName()
+                : getTranslation("finance.account.type." + account.getAccountType().name());
+        Span typeSpan = new Span(typeLabel);
+
+        String holder = account.getAccountHolder() == null ? "" : account.getAccountHolder().trim();
+        Span holderSpan = new Span(holder);
+        holderSpan.addClassNames(LumoUtility.FontSize.XSMALL, LumoUtility.TextColor.SECONDARY);
+
+        Div header = new Div(typeSpan, holderSpan);
+        header.getStyle()
+                .set("display", "flex")
+                .set("flex-direction", "column")
+                .set("line-height", "1.25");
+
+        String iban = account.getAccountNumber();
+        if (iban != null && !iban.isBlank()) {
+            header.getElement().setAttribute("title", iban.trim());
+        }
+        return header;
     }
 
     private void applyGroupedHeaders(HeaderRow topRow, List<AccountColumnEntry> accountColumns) {
@@ -371,24 +395,16 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
     // ---------------------------------------------------------------- accounts
 
     private void configureTreeGrid() {
-        treeGrid.addHierarchyColumn(Account::getName)
-                .setHeader(getTranslation("finance.grid.column.name"))
-                .setAutoWidth(true);
-
-        treeGrid.addColumn(account -> account.getBankName() != null ? account.getBankName() : "")
-                .setHeader(getTranslation("finance.grid.column.bank"))
-                .setAutoWidth(true);
-
-        treeGrid.addColumn(new ComponentRenderer<>(this::renderTypeBadge))
+        treeGrid.addComponentHierarchyColumn(this::renderHierarchyCell)
                 .setHeader(getTranslation("finance.grid.column.type"))
-                .setAutoWidth(true);
-
-        treeGrid.addColumn(account -> account.getAccountNumber() != null ? account.getAccountNumber() : "")
-                .setHeader(getTranslation("finance.grid.column.account-number"))
                 .setAutoWidth(true);
 
         treeGrid.addColumn(account -> account.getAccountHolder() != null ? account.getAccountHolder() : "")
                 .setHeader(getTranslation("finance.grid.column.holder"))
+                .setAutoWidth(true);
+
+        treeGrid.addColumn(account -> account.getAccountNumber() != null ? account.getAccountNumber() : "")
+                .setHeader(getTranslation("finance.grid.column.account-number"))
                 .setAutoWidth(true);
 
         treeGrid.addColumn(new ComponentRenderer<>(this::renderBalance))
@@ -404,6 +420,15 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
                 .setAutoWidth(true);
 
         treeGrid.addThemeVariants(GridVariant.LUMO_ROW_STRIPES, GridVariant.LUMO_COLUMN_BORDERS);
+    }
+
+    Span renderHierarchyCell(Account account) {
+        if (account.getAccountType() == AccountType.INSTITUTION) {
+            Span institutionLabel = new Span(account.getName());
+            institutionLabel.addClassName(LumoUtility.FontWeight.SEMIBOLD);
+            return institutionLabel;
+        }
+        return renderTypeBadge(account);
     }
 
     private Span renderTypeBadge(Account account) {
@@ -557,6 +582,10 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
 
     TreeData<Account> treeDataForTest() {
         return treeGrid.getTreeData();
+    }
+
+    int treeColumnCountForTest() {
+        return treeGrid.getColumns().size();
     }
 
     void setShowInactiveForTest(boolean value) {

@@ -41,6 +41,9 @@ public final class FinanceOdsParser {
     private static final int DATE_SEARCH_ROWS = 20;
     private static final List<String> CHECKING_MARKERS = List.of("giro");
     private static final List<String> SAVINGS_MARKERS = List.of("tagesgeld", "pocket", "spar", "festgeld");
+    private static final List<String> INVESTMENT_MARKERS = List.of("depot", "broker", "wertpapier", "aktien", "etf");
+    private static final List<String> NON_HOLDER_MARKERS = List.of(
+            "kredit", "darlehen", "gesamt", "summe", "änderung", "bank", "capital", "republic");
 
     private FinanceOdsParser() {
     }
@@ -171,17 +174,49 @@ public final class FinanceOdsParser {
     }
 
     /**
-     * Pre-fills the editable settings: names from the headers, account type
-     * from the sub-account name and the active flag from whether the column
-     * has a value on the newest date of its sheet.
+     * Pre-fills the editable settings: institution name, account holder,
+     * account type and the active flag from whether the column has a value on
+     * the newest date of its sheet.
      */
     static void applyDefaults(List<OdsAccountColumn> columns) {
+        java.util.Map<String, String> holders = detectAccountHolders(columns);
+
         for (OdsAccountColumn column : columns) {
-            String name = column.subHeader().isEmpty() ? column.institutionHeader() : column.subHeader();
-            column.setInstitutionName(column.institutionHeader().isEmpty() ? null : column.institutionHeader());
+            AccountType type = suggestType(column.subHeader());
+            column.setAccountType(type);
+
+            String rawInstitution = column.institutionHeader().isEmpty()
+                    ? null
+                    : column.institutionHeader();
+            String holderFromInstitution = null;
+
+            if (rawInstitution != null) {
+                HolderSplit split = splitTrailingHolder(rawInstitution, holders);
+                rawInstitution = split.institution();
+                holderFromInstitution = split.holder();
+            } else {
+                HolderSplit sheetSplit = splitTrailingHolder(column.sheetName(), holders);
+                if (sheetSplit.holder() != null) {
+                    rawInstitution = sheetSplit.institution();
+                    holderFromInstitution = sheetSplit.holder();
+                }
+            }
+
+            String sub = column.subHeader().trim();
+            String holderFromSub = holders.get(sub.toLowerCase(Locale.ROOT));
+            String holder = holderFromSub != null ? holderFromSub : holderFromInstitution;
+
+            String name;
+            if (holderFromSub != null) {
+                name = defaultTypeName(type);
+            } else {
+                name = sub.isEmpty() ? column.institutionHeader() : sub;
+            }
+
+            column.setInstitutionName(rawInstitution);
             column.setAccountName(name);
-            column.setBankName(column.institutionHeader().isEmpty() ? column.sheetName() : column.institutionHeader());
-            column.setAccountType(suggestType(column.subHeader()));
+            column.setBankName(rawInstitution != null ? rawInstitution : column.sheetName());
+            column.setAccountHolder(holder);
 
             LocalDate newestOfSheet = columns.stream()
                     .filter(other -> other.sheetName().equals(column.sheetName()))
@@ -190,6 +225,111 @@ public final class FinanceOdsParser {
                     .orElse(null);
             column.setActive(newestOfSheet != null && newestOfSheet.equals(column.latestDate()));
         }
+
+        unifyInstitutionPrefixes(columns);
+    }
+
+    private static java.util.Map<String, String> detectAccountHolders(List<OdsAccountColumn> columns) {
+        java.util.Map<String, String> holders = new java.util.LinkedHashMap<>();
+
+        for (OdsAccountColumn column : columns) {
+            if (column.institutionHeader().isEmpty()) {
+                continue;
+            }
+            String sub = column.subHeader().trim();
+            if (isCandidateHolderToken(sub)) {
+                holders.putIfAbsent(sub.toLowerCase(Locale.ROOT), sub);
+            }
+        }
+
+        java.util.Map<String, List<String>> trailingByPrefix = new java.util.LinkedHashMap<>();
+        columns.stream()
+                .map(OdsAccountColumn::institutionHeader)
+                .filter(header -> !header.isEmpty())
+                .distinct()
+                .forEach(header -> {
+                    int lastSpace = header.lastIndexOf(' ');
+                    if (lastSpace > 0) {
+                        String prefix = header.substring(0, lastSpace).trim().toLowerCase(Locale.ROOT);
+                        String suffix = header.substring(lastSpace + 1).trim();
+                        if (isCandidateHolderToken(suffix)) {
+                            trailingByPrefix.computeIfAbsent(prefix, k -> new ArrayList<>()).add(suffix);
+                        }
+                    }
+                });
+
+        for (List<String> suffixes : trailingByPrefix.values()) {
+            if (suffixes.size() >= 2) {
+                for (String suffix : suffixes) {
+                    holders.putIfAbsent(suffix.toLowerCase(Locale.ROOT), suffix);
+                }
+            }
+        }
+        return holders;
+    }
+
+    private static boolean isCandidateHolderToken(String token) {
+        if (token == null || token.isBlank() || token.contains(" ") || token.contains("+")) {
+            return false;
+        }
+        String lower = token.toLowerCase(Locale.ROOT);
+        if (CHECKING_MARKERS.stream().anyMatch(lower::contains)
+                || SAVINGS_MARKERS.stream().anyMatch(lower::contains)
+                || INVESTMENT_MARKERS.stream().anyMatch(lower::contains)
+                || NON_HOLDER_MARKERS.stream().anyMatch(lower::contains)) {
+            return false;
+        }
+        return token.chars().anyMatch(Character::isLetter);
+    }
+
+    private static HolderSplit splitTrailingHolder(String header, java.util.Map<String, String> holders) {
+        int lastSpace = header.lastIndexOf(' ');
+        if (lastSpace > 0) {
+            String suffix = header.substring(lastSpace + 1).trim();
+            String matchedHolder = holders.get(suffix.toLowerCase(Locale.ROOT));
+            if (matchedHolder != null) {
+                return new HolderSplit(header.substring(0, lastSpace).trim(), matchedHolder);
+            }
+        }
+        return new HolderSplit(header, null);
+    }
+
+    private static void unifyInstitutionPrefixes(List<OdsAccountColumn> columns) {
+        List<String> distinctInstitutions = columns.stream()
+                .map(OdsAccountColumn::getInstitutionName)
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .toList();
+        for (OdsAccountColumn column : columns) {
+            String inst = column.getInstitutionName();
+            if (inst == null) {
+                continue;
+            }
+            String prefixLower = inst.toLowerCase(Locale.ROOT) + " ";
+            List<String> longerMatches = distinctInstitutions.stream()
+                    .filter(candidate -> candidate.toLowerCase(Locale.ROOT).startsWith(prefixLower))
+                    .toList();
+            if (longerMatches.size() == 1) {
+                column.setInstitutionName(longerMatches.get(0));
+                column.setBankName(longerMatches.get(0));
+            }
+        }
+    }
+
+    static String defaultTypeName(AccountType type) {
+        if (type == null) {
+            return "Girokonto";
+        }
+        return switch (type) {
+            case CHECKING -> "Girokonto";
+            case SAVINGS -> "Tagesgeld";
+            case INVESTMENT -> "Depot";
+            case LOAN -> "Darlehen";
+            case INSTITUTION -> "Institut";
+        };
+    }
+
+    private record HolderSplit(String institution, String holder) {
     }
 
     /**

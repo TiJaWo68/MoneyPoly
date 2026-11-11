@@ -167,7 +167,8 @@ public class StatementImportDialog extends Dialog {
     private ComboBox<Account> renderTarget(PreviewRow row) {
         ComboBox<Account> target = new ComboBox<>();
         target.setItems(selectableAccounts);
-        target.setItemLabelGenerator(account -> AccountLabels.qualifiedName(account, accountsById));
+        target.setItemLabelGenerator(account -> AccountLabels.qualifiedName(
+                account, accountsById, type -> getTranslation("finance.account.type." + type.name())));
         target.setPlaceholder(getTranslation("finance.statement.placeholder.choose"));
         target.setClearButtonVisible(true);
         target.setWidthFull();

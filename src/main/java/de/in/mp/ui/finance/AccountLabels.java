@@ -38,8 +38,27 @@ final class AccountLabels {
     }
 
     static String qualifiedName(Account account, Map<UUID, Account> byId) {
+        return qualifiedName(account, byId, type -> account.getName());
+    }
+
+    static String qualifiedName(Account account, Map<UUID, Account> byId,
+            Function<AccountType, String> typeTranslator) {
+        List<String> parts = new ArrayList<>();
         String institution = institutionName(account, byId);
-        return institution == null ? account.getName() : institution + SEPARATOR + account.getName();
+        if (institution != null && !institution.isBlank()) {
+            parts.add(institution.trim());
+        }
+        String typeLabel = account.getAccountType() == null
+                ? account.getName()
+                : typeTranslator.apply(account.getAccountType());
+        if (typeLabel != null && !typeLabel.isBlank()) {
+            parts.add(typeLabel.trim());
+        }
+        String holder = account.getAccountHolder();
+        if (holder != null && !holder.isBlank()) {
+            parts.add(holder.trim());
+        }
+        return String.join(SEPARATOR, parts);
     }
 
     /**
