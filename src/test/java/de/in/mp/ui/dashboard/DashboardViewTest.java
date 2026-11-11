@@ -6,6 +6,9 @@ import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
+import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -17,21 +20,29 @@ import com.vaadin.flow.data.event.SortEvent;
 import com.vaadin.flow.data.provider.SortDirection;
 
 import de.in.mp.admin.PersonService;
+import de.in.mp.finance.Account;
 import de.in.mp.finance.AccountService;
+import de.in.mp.finance.AccountType;
 import de.in.mp.finance.DashboardKpis;
 import de.in.mp.finance.DashboardService;
+import de.in.mp.finance.Person;
+import de.in.mp.i18n.MoneyPolyI18nProvider;
+import de.in.mp.loans.LoanContract;
 import de.in.mp.loans.LoanContractService;
 
 class DashboardViewTest {
 
+    private AccountService accountService;
+    private LoanContractService loanContractService;
+    private PersonService personService;
     private DashboardView view;
 
     @BeforeEach
     void setUp() {
         DashboardService dashboardService = mock(DashboardService.class);
-        AccountService accountService = mock(AccountService.class);
-        LoanContractService loanContractService = mock(LoanContractService.class);
-        PersonService personService = mock(PersonService.class);
+        accountService = mock(AccountService.class);
+        loanContractService = mock(LoanContractService.class);
+        personService = mock(PersonService.class);
 
         when(dashboardService.calculateKpis()).thenReturn(
                 new DashboardKpis(BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO));
@@ -80,6 +91,78 @@ class DashboardViewTest {
                 assertThat(grid.getSortOrder()).isEmpty();
             }
         }
+    }
+
+    @Test
+    void rendersOnlyFirstNameOfAccountHolderInAccountLabel() {
+        Account institution = new Account();
+        institution.setId(UUID.randomUUID());
+        institution.setName("C24");
+        institution.setAccountType(AccountType.INSTITUTION);
+
+        Account checking = new Account();
+        checking.setId(UUID.randomUUID());
+        checking.setParentId(institution.getId());
+        checking.setName("Girokonto");
+        checking.setAccountType(AccountType.CHECKING);
+        checking.setAccountHolder("Max Mustermann");
+
+        when(accountService.findAll()).thenReturn(List.of(institution, checking));
+        DashboardView refreshed = new DashboardView(mockDashboardService(), accountService, loanContractService,
+                personService);
+
+        String rendered = refreshed.renderAccountLabel(checking).getElement().getTextRecursively();
+        assertThat(rendered).contains("Max").doesNotContain("Mustermann");
+    }
+
+    @Test
+    void rendersLoanDebtorNamesWithoutDebtorLabelPrefix() {
+        Person debtor = new Person();
+        debtor.setId(UUID.randomUUID());
+        debtor.setName("Person A");
+        when(personService.findAll()).thenReturn(List.of(debtor));
+
+        LoanContract contract = new LoanContract();
+        contract.setDesignation("Auto");
+        contract.setDebtorIds(Set.of(debtor.getId()));
+
+        DashboardView refreshed = new DashboardView(mockDashboardService(), accountService, loanContractService,
+                personService);
+
+        String rendered = refreshed.renderLoanLabel(contract).getElement().getTextRecursively();
+        assertThat(rendered).isEqualTo("Auto · Person A");
+    }
+
+    @Test
+    void blockSumTranslationUsesSummationSymbol() {
+        MoneyPolyI18nProvider i18n = new MoneyPolyI18nProvider();
+        assertThat(i18n.getTranslation("dashboard.block.sum", Locale.GERMAN, "1.000,00 €"))
+                .isEqualTo("∑ 1.000,00 €");
+        assertThat(i18n.getTranslation("dashboard.block.sum", Locale.ENGLISH, "1,000.00 €"))
+                .isEqualTo("∑ 1,000.00 €");
+    }
+
+    @Test
+    void dashboardKpiAndBlockLabelsAreConcise() {
+        MoneyPolyI18nProvider i18n = new MoneyPolyI18nProvider();
+        assertThat(i18n.getTranslation("dashboard.kpi.net-worth", Locale.GERMAN)).isEqualTo("Gesamtvermögen");
+        assertThat(i18n.getTranslation("dashboard.kpi.invested", Locale.GERMAN)).isEqualTo("Investments");
+        assertThat(i18n.getTranslation("dashboard.kpi.loan-receivables", Locale.GERMAN)).isEqualTo("Private-Kredite");
+        assertThat(i18n.getTranslation("dashboard.block.investments", Locale.GERMAN)).isEqualTo("Investments");
+        assertThat(i18n.getTranslation("dashboard.block.loans", Locale.GERMAN)).isEqualTo("Private-Kredite");
+
+        assertThat(i18n.getTranslation("dashboard.kpi.net-worth", Locale.ENGLISH)).isEqualTo("Net worth");
+        assertThat(i18n.getTranslation("dashboard.kpi.invested", Locale.ENGLISH)).isEqualTo("Investments");
+        assertThat(i18n.getTranslation("dashboard.kpi.loan-receivables", Locale.ENGLISH)).isEqualTo("Private loans");
+        assertThat(i18n.getTranslation("dashboard.block.investments", Locale.ENGLISH)).isEqualTo("Investments");
+        assertThat(i18n.getTranslation("dashboard.block.loans", Locale.ENGLISH)).isEqualTo("Private loans");
+    }
+
+    private static DashboardService mockDashboardService() {
+        DashboardService service = mock(DashboardService.class);
+        when(service.calculateKpis()).thenReturn(
+                new DashboardKpis(BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO));
+        return service;
     }
 
     private static <T> void fireClientSort(Grid<T> grid, DashboardSortColumn sortColumn, SortDirection direction) {

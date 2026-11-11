@@ -326,22 +326,26 @@ public class DashboardView extends VerticalLayout implements HasDynamicTitle {
         return parent != null ? parent.getName() : null;
     }
 
-    private Component renderAccountLabel(Account account) {
+    Component renderAccountLabel(Account account) {
         return renderLabel(accountLabel(account), maskIban(account.getAccountNumber()));
     }
-
 
     private String accountLabel(Account account) {
         String typeLabel = account.getAccountType() == null
                 ? account.getName()
                 : getTranslation("finance.account.type." + account.getAccountType().name());
-        return join(" · ", parentName(account), typeLabel, account.getAccountHolder());
+        return join(" · ", parentName(account), typeLabel, firstName(account.getAccountHolder()));
     }
 
-    private Component renderLoanLabel(LoanContract contract) {
-        String debtors = renderDebtorNames(contract);
-        String secondary = debtors.isBlank() ? "" : getTranslation("dashboard.label.debtors", debtors);
-        return renderLabel(contract.getDesignation(), secondary);
+    private static String firstName(String fullName) {
+        if (fullName == null || fullName.isBlank()) {
+            return "";
+        }
+        return fullName.trim().split("\\s+", 2)[0];
+    }
+
+    Component renderLoanLabel(LoanContract contract) {
+        return renderLabel(contract.getDesignation(), renderDebtorNames(contract));
     }
 
     /**
