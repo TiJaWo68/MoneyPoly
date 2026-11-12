@@ -117,7 +117,9 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
         balanceGrid.addThemeVariants(GridVariant.LUMO_ROW_STRIPES, GridVariant.LUMO_COLUMN_BORDERS,
                 GridVariant.LUMO_COMPACT);
         balanceGrid.setSizeFull();
+        balanceGrid.getStyle().set("min-height", "380px");
         treeGrid.setSizeFull();
+        treeGrid.getStyle().set("min-height", "380px");
 
         add(createHeader(), createKpiRow(), tabBar, tabContent);
         expand(tabContent);
@@ -220,6 +222,7 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
                 createKpiCard(getTranslation("finance.view.kpi.latest-date"), latestDateValue));
         row.setWidthFull();
         row.setSpacing(true);
+        row.getStyle().set("flex-wrap", "wrap");
         row.addClassName(LumoUtility.Margin.Bottom.MEDIUM);
         return row;
     }
@@ -233,7 +236,8 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
         VerticalLayout card = new VerticalLayout(labelSpan, value);
         card.setPadding(true);
         card.setSpacing(false);
-        card.setMinWidth("220px");
+        card.getStyle().set("flex", "1 1 150px");
+        card.setMinWidth("150px");
         card.addClassNames(
                 LumoUtility.Background.CONTRAST_5,
                 LumoUtility.BorderRadius.LARGE,

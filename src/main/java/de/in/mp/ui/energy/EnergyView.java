@@ -136,6 +136,7 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle {
         tabContent.setPadding(false);
 
         add(createHeader(), createKpiRow(), tabBar, tabContent);
+        expand(tabContent);
         refreshAll();
         renderSelectedTab();
     }
@@ -177,6 +178,7 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle {
         HorizontalLayout row = new HorizontalLayout(investmentCard, amortizedCard, remainingCard, metersCard);
         row.setWidthFull();
         row.setSpacing(true);
+        row.getStyle().set("flex-wrap", "wrap");
         row.addClassName(LumoUtility.Margin.Bottom.MEDIUM);
         return row;
     }
@@ -190,7 +192,8 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle {
         VerticalLayout card = new VerticalLayout(labelSpan, value);
         card.setPadding(true);
         card.setSpacing(false);
-        card.setMinWidth("200px");
+        card.getStyle().set("flex", "1 1 150px");
+        card.setMinWidth("150px");
         card.addClassNames(
                 LumoUtility.Background.CONTRAST_5,
                 LumoUtility.BorderRadius.LARGE,
@@ -203,7 +206,9 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle {
         Tab selected = tabBar.getSelectedTab();
         if (selected == readingsTab) {
             readingsGrid.setSizeFull();
+            readingsGrid.getStyle().set("min-height", "380px");
             tabContent.add(readingsGrid);
+            tabContent.expand(readingsGrid);
         } else if (selected == amortizationTab) {
             Button newAssetButton = new Button(
                     getTranslation("energy.button.new-asset"),
@@ -215,9 +220,13 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle {
             HorizontalLayout toolbar = new HorizontalLayout(newAssetButton);
             toolbar.setWidthFull();
             amortizationGrid.setSizeFull();
+            amortizationGrid.getStyle().set("min-height", "380px");
             tabContent.add(toolbar, amortizationGrid);
+            tabContent.expand(amortizationGrid);
         } else {
-            tabContent.add(createMasterDataLayout());
+            Component masterDataLayout = createMasterDataLayout();
+            tabContent.add(masterDataLayout);
+            tabContent.expand(masterDataLayout);
         }
     }
 
