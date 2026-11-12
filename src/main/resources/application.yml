@@ -5,8 +5,9 @@ moneypoly:
   logging:
     tcp:
       enabled: ${LOGGING_TCP_ENABLED:false}
-      host: ${LOGGING_TCP_HOST:192.168.178.x}
+      host: ${LOGGING_TCP_HOST:127.0.0.1}
       port: ${LOGGING_TCP_PORT:4560}
+      destinations: ${LOGGING_TCP_DESTINATIONS:${LOGGING_TCP_HOST:127.0.0.1}:${LOGGING_TCP_PORT:4560}}
 
 spring:
   application:

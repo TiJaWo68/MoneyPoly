@@ -22,4 +22,6 @@ jobs:
           cache: maven
 
       - name: Build & run tests
+        env:
+          DOCKER_API_VERSION: '1.44'
         run: mvn --batch-mode clean test -Pintegration-tests
