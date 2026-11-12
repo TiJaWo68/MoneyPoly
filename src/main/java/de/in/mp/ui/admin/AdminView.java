@@ -57,8 +57,9 @@ public class AdminView extends VerticalLayout implements HasDynamicTitle {
         tabBar.addSelectedChangeListener(event -> showSelectedTab());
 
         add(tabBar, content);
+        expand(content);
 
-        tabBar.setSelectedIndex(0);
+        showSelectedTab();
     }
 
     @Override
