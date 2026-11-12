@@ -129,10 +129,12 @@ class FinanceViewTest {
         when(snapshotService.buildDateRows()).thenReturn(List.of());
 
         FinanceView view = new FinanceView(accountService, snapshotService, bankLookupService, statementImportService);
+        assertThat(view.isChartTabSelected()).isTrue();
         assertThat(view.isAccountsTabSelected()).isFalse();
 
         view.focusAccount(targoSavings.getId());
 
+        assertThat(view.isChartTabSelected()).isFalse();
         assertThat(view.isAccountsTabSelected()).isTrue();
         assertThat(view.selectedTreeAccount()).isEqualTo(targoSavings);
         assertThat(view.hierarchyPathForTest(targoSavings)).containsExactly(1, 1);

@@ -74,10 +74,12 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
     private final Span latestDateValue = new Span();
 
     private final Tabs tabBar = new Tabs();
+    private final Tab chartTab = new Tab();
     private final Tab balancesTab = new Tab();
     private final Tab accountsTab = new Tab();
     private final VerticalLayout tabContent = new VerticalLayout();
 
+    private final BalanceChartPanel chartPanel = new BalanceChartPanel();
     private final Grid<BalanceDateRow> balanceGrid = new Grid<>();
     private final Checkbox showInactive = new Checkbox();
     private final TreeGrid<Account> treeGrid = new TreeGrid<>();
@@ -98,9 +100,10 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
         setPadding(true);
         setSpacing(false);
 
+        chartTab.setLabel(getTranslation("finance.tab.chart"));
         balancesTab.setLabel(getTranslation("finance.tab.balances"));
         accountsTab.setLabel(getTranslation("finance.tab.accounts"));
-        tabBar.add(balancesTab, accountsTab);
+        tabBar.add(chartTab, balancesTab, accountsTab);
         tabBar.setWidthFull();
         tabBar.addSelectedChangeListener(event -> renderSelectedTab());
 
@@ -117,6 +120,7 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
         treeGrid.setSizeFull();
 
         add(createHeader(), createKpiRow(), tabBar, tabContent);
+        expand(tabContent);
         refresh();
         renderSelectedTab();
     }
@@ -239,19 +243,32 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
 
     private void renderSelectedTab() {
         tabContent.removeAll();
-        if (tabBar.getSelectedTab() == accountsTab) {
+        if (tabBar.getSelectedTab() == chartTab) {
+            tabContent.add(chartPanel);
+            tabContent.expand(chartPanel);
+        } else if (tabBar.getSelectedTab() == accountsTab) {
             Button newAccountButton = new Button(getTranslation("finance.view.button.new-account"),
                     VaadinIcon.PLUS.create(), event -> editorDialog.openForCreate(this::refresh));
             newAccountButton.setTooltipText(getTranslation("finance.view.button.new-account"));
             HorizontalLayout toolbar = new HorizontalLayout(newAccountButton, showInactive);
             toolbar.setDefaultVerticalComponentAlignment(Alignment.CENTER);
             tabContent.add(toolbar, treeGrid);
+            tabContent.expand(treeGrid);
         } else {
             tabContent.add(showInactive, balanceGrid);
+            tabContent.expand(balanceGrid);
         }
     }
 
     // ---------------------------------------------------------------- balances
+
+    private List<Account> visibleBalanceAccounts(List<Account> accounts, List<BalanceDateRow> rows) {
+        Map<UUID, Account> byId = AccountLabels.byId(accounts);
+        return AccountLabels.matrixOrder(accounts, byId).stream()
+                .filter(account -> showInactive.getValue() || account.isActive())
+                .filter(account -> account.isActive() || hasSnapshots(account, rows))
+                .toList();
+    }
 
     private void rebuildBalanceColumns(List<Account> accounts, List<BalanceDateRow> rows) {
         if (groupHeaderRow != null) {
@@ -261,10 +278,7 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
         balanceGrid.removeAllColumns();
 
         Map<UUID, Account> byId = AccountLabels.byId(accounts);
-        List<Account> columns = AccountLabels.matrixOrder(accounts, byId).stream()
-                .filter(account -> showInactive.getValue() || account.isActive())
-                .filter(account -> account.isActive() || hasSnapshots(account, rows))
-                .toList();
+        List<Account> columns = visibleBalanceAccounts(accounts, rows);
 
         balanceGrid.addColumn(row -> DateFormatter.format(row.date(), locale()))
                 .setHeader(getTranslation("finance.balance.field.date"))
@@ -567,6 +581,7 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
         this.currentAccounts = accounts;
         List<BalanceDateRow> rows = snapshotService.buildDateRows();
 
+        chartPanel.setData(accounts, rows);
         rebuildBalanceColumns(accounts, rows);
         balanceGrid.setItems(rows);
 
@@ -590,6 +605,10 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
 
     void setShowInactiveForTest(boolean value) {
         showInactive.setValue(value);
+    }
+
+    boolean isChartTabSelected() {
+        return tabBar.getSelectedTab() == chartTab;
     }
 
     boolean isAccountsTabSelected() {
