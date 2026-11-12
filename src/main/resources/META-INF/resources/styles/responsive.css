@@ -1,0 +1,11 @@
+/*
+ * Smartphones in landscape orientation only offer ~300-350px of viewport height.
+ * Secondary content (KPI cards, session info) is hidden there so that data grids
+ * can show several rows instead of a single one.
+ */
+@media (orientation: landscape) and (max-height: 500px) {
+    .mp-hide-on-short-screen {
+        display: none !important;
+    }
+}
+

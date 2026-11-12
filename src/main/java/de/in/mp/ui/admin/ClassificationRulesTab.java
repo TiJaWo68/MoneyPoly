@@ -143,14 +143,17 @@ public class ClassificationRulesTab extends VerticalLayout implements AdminTab {
 
     private Span renderTargetFlow(ClassificationRule rule) {
         Span badge = new Span(getTranslation("admin.flow." + rule.getTargetFlow().name()));
-        badge.getElement().getThemeList().add("badge pill primary");
+        badge.getElement().getThemeList().add("badge");
+        badge.getElement().getThemeList().add("pill");
+        badge.getElement().getThemeList().add("primary");
         return badge;
     }
 
     private Span renderReviewFlag(ClassificationRule rule) {
         String key = rule.isFlagForReview() ? "admin.rule.review.yes" : "admin.rule.review.no";
         Span badge = new Span(getTranslation(key));
-        badge.getElement().getThemeList().add("badge pill");
+        badge.getElement().getThemeList().add("badge");
+        badge.getElement().getThemeList().add("pill");
         badge.getElement().getThemeList().add(rule.isFlagForReview() ? "warning" : "contrast");
         return badge;
     }

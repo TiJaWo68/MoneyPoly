@@ -27,6 +27,8 @@ import com.vaadin.flow.theme.lumo.LumoUtility;
 
 import jakarta.annotation.security.PermitAll;
 
+import de.in.mp.ui.ResponsiveStyles;
+
 /**
  * Application shell for all protected views: responsive navigation drawer,
  * header with session information and a logout action.
@@ -57,6 +59,8 @@ public class MainLayout extends AppLayout {
         String displayName = resolveDisplayName(SecurityContextHolder.getContext().getAuthentication());
         Span userBadge = new Span(getTranslation("ui.header.logged-in-as", displayName));
         userBadge.addClassNames(LumoUtility.TextColor.SECONDARY, LumoUtility.FontSize.SMALL);
+        userBadge.addClassNames(LumoUtility.TextColor.SECONDARY, LumoUtility.FontSize.SMALL,
+                ResponsiveStyles.HIDE_ON_SHORT_SCREEN);
 
         Button logoutButton = new Button(
                 VaadinIcon.SIGN_OUT.create(),

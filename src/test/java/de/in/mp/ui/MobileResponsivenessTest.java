@@ -10,6 +10,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 import com.vaadin.flow.component.Component;
+import com.vaadin.flow.component.details.Details;
 import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
@@ -46,8 +47,19 @@ class MobileResponsivenessTest {
 
         FinanceView view = new FinanceView(accountService, snapshotService, bankLookupService, statementImportService);
 
-        // 1. KPI cards must wrap on mobile viewports (< 450px)
-        HorizontalLayout kpiRow = findChild(view, HorizontalLayout.class, 1);
+        // 1. View must be scrollable on small-height viewports (e.g. landscape mode on smartphones)
+        assertThat(view.getStyle().get("overflow-y"))
+                .as("FinanceView must have overflow-y: auto for landscape/small-height viewports")
+                .isEqualTo("auto");
+
+        // 2. KPI cards are inside a collapsible Details section with wrap on mobile viewports (< 450px)
+        Details kpiDetails = findChild(view, Details.class, 0);
+        assertThat(kpiDetails.isOpened()).isTrue();
+        assertThat(kpiDetails.getClassNames())
+                .as("KPI section must be hidden on short (landscape) viewports")
+                .contains(ResponsiveStyles.HIDE_ON_SHORT_SCREEN);
+
+        HorizontalLayout kpiRow = findKpiRow(kpiDetails);
         assertThat(kpiRow.getStyle().get("flex-wrap"))
                 .as("Finance KPI row must have flex-wrap: wrap for smartphone displays")
                 .isEqualTo("wrap");
@@ -60,13 +72,13 @@ class MobileResponsivenessTest {
                     .matches("^(1[0-7][0-9]px|[1-9][0-9]px)$");
         }
 
-        // 2. tabContent must expand to take all available vertical space
+        // 3. tabContent must expand to take all available vertical space
         VerticalLayout tabContent = findChild(view, VerticalLayout.class, 0);
         assertThat(view.getFlexGrow(tabContent))
                 .as("FinanceView must expand tabContent vertically")
                 .isEqualTo(1.0);
 
-        // 3. Switch to Balances tab and verify balanceGrid has expand and min-height >= 350px
+        // 4. Switch to Balances tab and verify balanceGrid has expand and min-height >= 350px
         Tabs tabBar = findChild(view, Tabs.class, 0);
         Tab balancesTab = (Tab) tabBar.getChildren().toList().get(1);
         tabBar.setSelectedTab(balancesTab);
@@ -99,8 +111,19 @@ class MobileResponsivenessTest {
 
         EnergyView view = new EnergyView(assetService, meterService, readingService, tariffService, amortizationService);
 
-        // 1. KPI cards must wrap on mobile viewports (< 450px)
-        HorizontalLayout kpiRow = findChild(view, HorizontalLayout.class, 1);
+        // 1. View must be scrollable on small-height viewports (e.g. landscape mode on smartphones)
+        assertThat(view.getStyle().get("overflow-y"))
+                .as("EnergyView must have overflow-y: auto for landscape/small-height viewports")
+                .isEqualTo("auto");
+
+        // 2. KPI cards are inside a collapsible Details section with wrap on mobile viewports (< 450px)
+        Details kpiDetails = findChild(view, Details.class, 0);
+        assertThat(kpiDetails.isOpened()).isTrue();
+        assertThat(kpiDetails.getClassNames())
+                .as("KPI section must be hidden on short (landscape) viewports")
+                .contains(ResponsiveStyles.HIDE_ON_SHORT_SCREEN);
+
+        HorizontalLayout kpiRow = findKpiRow(kpiDetails);
         assertThat(kpiRow.getStyle().get("flex-wrap"))
                 .as("Energy KPI row must have flex-wrap: wrap for smartphone displays")
                 .isEqualTo("wrap");
@@ -113,13 +136,13 @@ class MobileResponsivenessTest {
                     .matches("^(1[0-7][0-9]px|[1-9][0-9]px)$");
         }
 
-        // 2. tabContent must expand to take all available vertical space
+        // 3. tabContent must expand to take all available vertical space
         VerticalLayout tabContent = findChild(view, VerticalLayout.class, 0);
         assertThat(view.getFlexGrow(tabContent))
                 .as("EnergyView must expand tabContent vertically")
                 .isEqualTo(1.0);
 
-        // 3. On Readings tab, readingsGrid must have expand and min-height >= 350px
+        // 4. On Readings tab, readingsGrid must have expand and min-height >= 350px
         Grid<?> readingsGrid = findChild(tabContent, Grid.class, 0);
         assertThat(tabContent.getFlexGrow(readingsGrid))
                 .as("tabContent must expand readingsGrid")
@@ -127,6 +150,16 @@ class MobileResponsivenessTest {
         assertThat(parsePixelDimension(readingsGrid.getStyle().get("min-height")))
                 .as("readingsGrid must have min-height >= 350px so it never collapses to a single row")
                 .isGreaterThanOrEqualTo(350);
+    }
+
+    private static HorizontalLayout findKpiRow(Details kpiDetails) {
+        List<Component> content = kpiDetails.getContent()
+                .filter(HorizontalLayout.class::isInstance)
+                .toList();
+        assertThat(content)
+                .as("KPI Details section must contain the KPI row as content")
+                .hasSize(1);
+        return (HorizontalLayout) content.get(0);
     }
 
     @SuppressWarnings("unchecked")

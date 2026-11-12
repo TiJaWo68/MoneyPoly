@@ -29,9 +29,12 @@ public class SecurityConfig {
 
     private static final String SETUP_ROUTE = "/setup";
 
-    private static final String[] OAUTH2_PUBLIC_ENDPOINTS = {
+    static final String[] PUBLIC_ENDPOINTS = {
             "/oauth2/authorization/**",
-            "/login/oauth2/code/**"
+            "/login/oauth2/code/**",
+            "/icons/**",
+            "/styles/**",
+            "/favicon.ico"
     };
 
     @Bean
@@ -40,7 +43,7 @@ public class SecurityConfig {
             @Value("${GOOGLE_CLIENT_ID:}") String googleClientId) throws Exception {
         http
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(OAUTH2_PUBLIC_ENDPOINTS).permitAll()
+                        .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
                         .requestMatchers(SETUP_ROUTE).permitAll());
 
         if (GoogleOAuth2Config.isConfigured(googleClientId)) {

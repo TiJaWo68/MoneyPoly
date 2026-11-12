@@ -15,6 +15,8 @@ import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
+import com.vaadin.flow.component.details.Details;
+import com.vaadin.flow.component.details.DetailsVariant;
 import com.vaadin.flow.component.grid.ColumnTextAlign;
 import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.grid.GridVariant;
@@ -49,6 +51,7 @@ import de.in.mp.energy.MeterService;
 import de.in.mp.energy.MeterType;
 import de.in.mp.i18n.MoneyFormatter;
 import de.in.mp.ui.GridActionButton;
+import de.in.mp.ui.ResponsiveStyles;
 import de.in.mp.ui.layout.MainLayout;
 import jakarta.annotation.security.PermitAll;
 
@@ -121,8 +124,10 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle {
         this.masterDataTab = new Tab(getTranslation("energy.tab.masterdata"));
 
         setSizeFull();
-        setPadding(true);
+        setPadding(false);
+        addClassNames(LumoUtility.Padding.Horizontal.MEDIUM, LumoUtility.Padding.Vertical.XSMALL);
         setSpacing(false);
+        getStyle().set("overflow-y", "auto");
 
         configureAmortizationGrid();
         configureMetersGrid();
@@ -134,8 +139,9 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle {
 
         tabContent.setSizeFull();
         tabContent.setPadding(false);
+        tabContent.getStyle().set("min-height", "400px");
 
-        add(createHeader(), createKpiRow(), tabBar, tabContent);
+        add(createHeader(), createKpiSection(), tabBar, tabContent);
         expand(tabContent);
         refreshAll();
         renderSelectedTab();
@@ -148,21 +154,34 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle {
 
     private HorizontalLayout createHeader() {
         H2 title = new H2(getTranslation("energy.view.title"));
-        title.addClassName(LumoUtility.Margin.NONE);
+        title.addClassNames(LumoUtility.FontSize.XLARGE, LumoUtility.Margin.NONE);
 
         Button batchEntryButton = new Button(
                 getTranslation("energy.button.batch-entry"),
                 VaadinIcon.PLUS.create());
         batchEntryButton.setTooltipText(getTranslation("energy.button.batch-entry"));
-        batchEntryButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+        batchEntryButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY, ButtonVariant.LUMO_SMALL);
         batchEntryButton.addClickListener(event -> batchReadingDialog.openForCreate(this::refreshAll));
 
         HorizontalLayout header = new HorizontalLayout(title, batchEntryButton);
         header.setWidthFull();
         header.setDefaultVerticalComponentAlignment(Alignment.CENTER);
         header.expand(title);
-        header.addClassName(LumoUtility.Margin.Bottom.MEDIUM);
+        header.addClassName(LumoUtility.Margin.Bottom.XSMALL);
         return header;
+    }
+
+    private Component createKpiSection() {
+        Span summaryLabel = new Span(getTranslation("energy.view.kpi.title"));
+        summaryLabel.addClassNames(LumoUtility.FontWeight.SEMIBOLD, LumoUtility.FontSize.SMALL);
+
+        Details details = new Details(summaryLabel, createKpiRow());
+        details.setWidthFull();
+        details.addThemeVariants(DetailsVariant.SMALL);
+        details.setOpened(true);
+        details.addClassName(LumoUtility.Margin.Bottom.XSMALL);
+        details.addClassNames(LumoUtility.Margin.Bottom.XSMALL, ResponsiveStyles.HIDE_ON_SHORT_SCREEN);
+        return details;
     }
 
     private HorizontalLayout createKpiRow() {
@@ -179,24 +198,25 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle {
         row.setWidthFull();
         row.setSpacing(true);
         row.getStyle().set("flex-wrap", "wrap");
-        row.addClassName(LumoUtility.Margin.Bottom.MEDIUM);
         return row;
     }
 
     private VerticalLayout createKpiCard(String label, Span value) {
-        value.addClassNames(LumoUtility.FontSize.XXLARGE, LumoUtility.FontWeight.BOLD);
+        value.addClassNames(LumoUtility.FontSize.LARGE, LumoUtility.FontWeight.BOLD);
 
         Span labelSpan = new Span(label);
-        labelSpan.addClassNames(LumoUtility.TextColor.SECONDARY, LumoUtility.FontSize.SMALL);
+        labelSpan.addClassNames(LumoUtility.TextColor.SECONDARY, LumoUtility.FontSize.XSMALL);
 
         VerticalLayout card = new VerticalLayout(labelSpan, value);
-        card.setPadding(true);
+        card.setPadding(false);
         card.setSpacing(false);
         card.getStyle().set("flex", "1 1 150px");
         card.setMinWidth("150px");
         card.addClassNames(
+                LumoUtility.Padding.Vertical.XSMALL,
+                LumoUtility.Padding.Horizontal.MEDIUM,
                 LumoUtility.Background.CONTRAST_5,
-                LumoUtility.BorderRadius.LARGE,
+                LumoUtility.BorderRadius.MEDIUM,
                 LumoUtility.BoxShadow.SMALL);
         return card;
     }
@@ -553,7 +573,8 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle {
                 ? "energy.amortization.status.amortized"
                 : "energy.amortization.status.running";
         Span badge = new Span(getTranslation(key));
-        badge.getElement().getThemeList().add("badge pill");
+        badge.getElement().getThemeList().add("badge");
+        badge.getElement().getThemeList().add("pill");
         badge.getElement().getThemeList().add(summary.amortized() ? "success" : "primary");
         return badge;
     }

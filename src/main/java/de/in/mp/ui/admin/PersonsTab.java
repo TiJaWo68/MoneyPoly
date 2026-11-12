@@ -100,7 +100,8 @@ public class PersonsTab extends VerticalLayout implements AdminTab {
 
     private Span renderRole(Person person) {
         Span badge = new Span(getTranslation("admin.person.role." + person.getRole().name()));
-        badge.getElement().getThemeList().add("badge pill");
+        badge.getElement().getThemeList().add("badge");
+        badge.getElement().getThemeList().add("pill");
         return badge;
     }
 

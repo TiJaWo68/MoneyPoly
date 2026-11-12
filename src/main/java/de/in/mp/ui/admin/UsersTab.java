@@ -140,7 +140,9 @@ public class UsersTab extends VerticalLayout implements AdminTab {
         badges.setSpacing(false);
         for (AppRole role : user.getRoles()) {
             Span badge = new Span(getTranslation("admin.role." + role.name()));
-            badge.getElement().getThemeList().add("badge pill success");
+            badge.getElement().getThemeList().add("badge");
+            badge.getElement().getThemeList().add("pill");
+            badge.getElement().getThemeList().add("success");
             badges.add(badge);
         }
         return badges;
@@ -148,14 +150,17 @@ public class UsersTab extends VerticalLayout implements AdminTab {
 
     private Span renderAuthProvider(AppUser user) {
         Span badge = new Span(getTranslation("admin.auth." + user.getAuthProvider().name()));
-        badge.getElement().getThemeList().add("badge pill contrast");
+        badge.getElement().getThemeList().add("badge");
+        badge.getElement().getThemeList().add("pill");
+        badge.getElement().getThemeList().add("contrast");
         return badge;
     }
 
     private Span renderStatus(AppUser user) {
         String key = user.isEnabled() ? "admin.user.status.enabled" : "admin.user.status.disabled";
         Span badge = new Span(getTranslation(key));
-        badge.getElement().getThemeList().add("badge pill");
+        badge.getElement().getThemeList().add("badge");
+        badge.getElement().getThemeList().add("pill");
         badge.getElement().getThemeList().add(user.isEnabled() ? "success" : "error");
         return badge;
     }

@@ -9,10 +9,13 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.checkbox.Checkbox;
+import com.vaadin.flow.component.details.Details;
+import com.vaadin.flow.component.details.DetailsVariant;
 import com.vaadin.flow.component.grid.ColumnTextAlign;
 import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.grid.GridVariant;
@@ -46,6 +49,7 @@ import de.in.mp.i18n.DateFormatter;
 import de.in.mp.i18n.MoneyFormatter;
 import de.in.mp.importer.StatementImportService;
 import de.in.mp.ui.GridActionButton;
+import de.in.mp.ui.ResponsiveStyles;
 import de.in.mp.ui.layout.MainLayout;
 import jakarta.annotation.security.PermitAll;
 
@@ -97,8 +101,10 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
         this.statementDialog = new StatementImportDialog(statementImportService, accountService);
 
         setSizeFull();
-        setPadding(true);
+        setPadding(false);
+        addClassNames(LumoUtility.Padding.Horizontal.MEDIUM, LumoUtility.Padding.Vertical.XSMALL);
         setSpacing(false);
+        getStyle().set("overflow-y", "auto");
 
         chartTab.setLabel(getTranslation("finance.tab.chart"));
         balancesTab.setLabel(getTranslation("finance.tab.balances"));
@@ -109,6 +115,7 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
 
         tabContent.setSizeFull();
         tabContent.setPadding(false);
+        tabContent.getStyle().set("min-height", "400px");
 
         showInactive.setLabel(getTranslation("finance.balance.show-inactive"));
         showInactive.addValueChangeListener(event -> refresh());
@@ -121,7 +128,7 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
         treeGrid.setSizeFull();
         treeGrid.getStyle().set("min-height", "380px");
 
-        add(createHeader(), createKpiRow(), tabBar, tabContent);
+        add(createHeader(), createKpiSection(), tabBar, tabContent);
         expand(tabContent);
         refresh();
         renderSelectedTab();
@@ -194,25 +201,39 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
 
     private HorizontalLayout createHeader() {
         H2 title = new H2(getTranslation("finance.view.title"));
-        title.addClassName(LumoUtility.Margin.NONE);
+        title.addClassNames(LumoUtility.FontSize.XLARGE, LumoUtility.Margin.NONE);
 
         Button importButton = new Button(getTranslation("finance.view.button.import-statement"),
                 VaadinIcon.FILE_TEXT_O.create());
+        importButton.addThemeVariants(ButtonVariant.LUMO_SMALL);
         importButton.setTooltipText(getTranslation("finance.view.button.import-statement"));
         importButton.addClickListener(event -> statementDialog.openForImport(this::refresh));
 
         Button balanceButton = new Button(getTranslation("finance.view.button.record-balances"),
                 VaadinIcon.PLUS.create());
+        balanceButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY, ButtonVariant.LUMO_SMALL);
         balanceButton.setTooltipText(getTranslation("finance.view.button.record-balances"));
-        balanceButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
         balanceButton.addClickListener(event -> balanceDialog.openForCreate(this::refresh));
 
         HorizontalLayout header = new HorizontalLayout(title, importButton, balanceButton);
         header.setWidthFull();
         header.setDefaultVerticalComponentAlignment(Alignment.CENTER);
         header.expand(title);
-        header.addClassName(LumoUtility.Margin.Bottom.MEDIUM);
+        header.addClassName(LumoUtility.Margin.Bottom.XSMALL);
         return header;
+    }
+
+    private Component createKpiSection() {
+        Span summaryLabel = new Span(getTranslation("finance.view.kpi.title"));
+        summaryLabel.addClassNames(LumoUtility.FontWeight.SEMIBOLD, LumoUtility.FontSize.SMALL);
+
+        Details details = new Details(summaryLabel, createKpiRow());
+        details.setWidthFull();
+        details.addThemeVariants(DetailsVariant.SMALL);
+        details.setOpened(true);
+        details.addClassName(LumoUtility.Margin.Bottom.XSMALL);
+        details.addClassNames(LumoUtility.Margin.Bottom.XSMALL, ResponsiveStyles.HIDE_ON_SHORT_SCREEN);
+        return details;
     }
 
     private HorizontalLayout createKpiRow() {
@@ -223,24 +244,25 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
         row.setWidthFull();
         row.setSpacing(true);
         row.getStyle().set("flex-wrap", "wrap");
-        row.addClassName(LumoUtility.Margin.Bottom.MEDIUM);
         return row;
     }
 
     private VerticalLayout createKpiCard(String label, Span value) {
-        value.addClassNames(LumoUtility.FontSize.XXLARGE, LumoUtility.FontWeight.BOLD);
+        value.addClassNames(LumoUtility.FontSize.LARGE, LumoUtility.FontWeight.BOLD);
 
         Span labelSpan = new Span(label);
-        labelSpan.addClassNames(LumoUtility.TextColor.SECONDARY, LumoUtility.FontSize.SMALL);
+        labelSpan.addClassNames(LumoUtility.TextColor.SECONDARY, LumoUtility.FontSize.XSMALL);
 
         VerticalLayout card = new VerticalLayout(labelSpan, value);
-        card.setPadding(true);
+        card.setPadding(false);
         card.setSpacing(false);
         card.getStyle().set("flex", "1 1 150px");
         card.setMinWidth("150px");
         card.addClassNames(
+                LumoUtility.Padding.Vertical.XSMALL,
+                LumoUtility.Padding.Horizontal.MEDIUM,
                 LumoUtility.Background.CONTRAST_5,
-                LumoUtility.BorderRadius.LARGE,
+                LumoUtility.BorderRadius.MEDIUM,
                 LumoUtility.BoxShadow.SMALL);
         return card;
     }

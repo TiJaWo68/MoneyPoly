@@ -19,4 +19,11 @@ class SecurityConfigTest {
 
         assertThat(config.passwordEncoder()).isInstanceOf(BCryptPasswordEncoder.class);
     }
+
+    @Test
+    void publicEndpointsIncludeStaticAssetsToPreventAuthRedirectLoops() {
+        assertThat(SecurityConfig.PUBLIC_ENDPOINTS)
+                .as("Static resources must be public so they never trigger a 403 or redirect after login")
+                .contains("/icons/**", "/styles/**", "/favicon.ico");
+    }
 }

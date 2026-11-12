@@ -192,7 +192,8 @@ public class PrivateLoanView extends VerticalLayout implements HasDynamicTitle {
                 ? "loans.status.paid-off"
                 : "loans.status.active";
         Span badge = new Span(getTranslation(key));
-        badge.getElement().getThemeList().add("badge pill");
+        badge.getElement().getThemeList().add("badge");
+        badge.getElement().getThemeList().add("pill");
         badge.getElement().getThemeList().add(loanContractService.isPaidOff(contract) ? "success" : "primary");
         return badge;
     }
