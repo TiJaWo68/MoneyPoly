@@ -180,9 +180,8 @@ class DashboardViewTest {
         assertThat(primary.get().getStyle().get("color")).isEqualTo("var(--lumo-warning-text-color, #e65100)");
 
         List<Component> children = span.getChildren().toList();
-        assertThat(children).hasSizeGreaterThan(1);
-        Span badge = (Span) children.get(1);
-        assertThat(badge.getElement().getThemeList()).contains("badge", "pill");
+        assertThat(children).hasSize(1);
+        assertThat(span.getTitle()).isNotEmpty();
     }
 
     @Test

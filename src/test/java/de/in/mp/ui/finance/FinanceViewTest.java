@@ -217,8 +217,10 @@ class FinanceViewTest {
         com.vaadin.flow.component.Component cell = view.renderInterestRate(savings);
         assertThat(cell).isInstanceOf(com.vaadin.flow.component.orderedlayout.HorizontalLayout.class);
         com.vaadin.flow.component.orderedlayout.HorizontalLayout layout = (com.vaadin.flow.component.orderedlayout.HorizontalLayout) cell;
-        assertThat(layout.getChildren().count()).isEqualTo(2);
-        assertThat(layout.getElement().getTextRecursively()).contains("1,50 %");
+        assertThat(layout.getChildren().count()).isEqualTo(1);
+        com.vaadin.flow.component.html.Span rateSpan = (com.vaadin.flow.component.html.Span) layout.getChildren().findFirst().orElseThrow();
+        assertThat(rateSpan.getStyle().get("color")).isEqualTo("var(--lumo-warning-text-color, #e65100)");
+        assertThat(rateSpan.getText()).isEqualTo("1,50 %");
     }
 
     @Test

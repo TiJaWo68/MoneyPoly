@@ -20,8 +20,6 @@ import com.vaadin.flow.component.grid.GridVariant;
 import com.vaadin.flow.component.html.H2;
 import com.vaadin.flow.component.html.H3;
 import com.vaadin.flow.component.html.Span;
-import com.vaadin.flow.component.icon.Icon;
-import com.vaadin.flow.component.icon.VaadinIcon;
 import com.vaadin.flow.component.orderedlayout.FlexComponent.Alignment;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
@@ -351,29 +349,14 @@ public class DashboardView extends VerticalLayout implements HasDynamicTitle {
         primarySpan.addClassName(LumoUtility.FontWeight.MEDIUM);
         if (warnInterest) {
             primarySpan.getStyle().set("color", "var(--lumo-warning-text-color, #e65100)");
+            if (account != null) {
+                BigDecimal rate = account.getCurrentInterestRate();
+                String rateStr = rate != null ? MoneyFormatter.formatPercent(rate, locale()) : "-";
+                container.setTitle(getTranslation("dashboard.savings.warning.tooltip", rateStr,
+                        MoneyFormatter.formatPercent(warningThreshold, locale())));
+            }
         }
         container.add(primarySpan);
-
-        if (warnInterest && account != null) {
-            Span warningBadge = new Span();
-            Icon warnIcon = VaadinIcon.WARNING.create();
-            warnIcon.setSize("12px");
-            warnIcon.getStyle().set("margin-right", "2px");
-            BigDecimal rate = account.getCurrentInterestRate();
-            String rateStr = rate != null ? MoneyFormatter.formatPercent(rate, locale()) : "-";
-            Span rateText = new Span(rateStr);
-            warningBadge.add(warnIcon, rateText);
-            warningBadge.getElement().getThemeList().add("badge");
-            warningBadge.getElement().getThemeList().add("pill");
-            warningBadge.getStyle().set("background-color", "var(--lumo-warning-color-10, #fff3e0)");
-            warningBadge.getStyle().set("color", "var(--lumo-warning-text-color, #e65100)");
-            warningBadge.getStyle().set("margin-left", "var(--lumo-space-xs)");
-            warningBadge.getStyle().set("font-size", "var(--lumo-font-size-xxs)");
-            warningBadge.getStyle().set("font-weight", "600");
-            warningBadge.setTitle(getTranslation("dashboard.savings.warning.tooltip", rateStr,
-                    MoneyFormatter.formatPercent(warningThreshold, locale())));
-            container.add(warningBadge);
-        }
 
         if (secondary != null && !secondary.isBlank()) {
             Span secondarySpan = new Span(" · " + secondary);

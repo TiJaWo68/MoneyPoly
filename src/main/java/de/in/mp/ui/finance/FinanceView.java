@@ -25,7 +25,6 @@ import com.vaadin.flow.component.html.Div;
 import com.vaadin.flow.component.html.H2;
 import com.vaadin.flow.component.html.Paragraph;
 import com.vaadin.flow.component.html.Span;
-import com.vaadin.flow.component.icon.Icon;
 import com.vaadin.flow.component.icon.VaadinIcon;
 import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
@@ -536,10 +535,6 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
         if (below) {
             span.getStyle().set("color", "var(--lumo-warning-text-color, #e65100)");
             span.addClassName(LumoUtility.FontWeight.BOLD);
-            Icon icon = VaadinIcon.WARNING.create();
-            icon.setSize("14px");
-            icon.getStyle().set("color", "var(--lumo-warning-text-color, #e65100)");
-            layout.add(icon);
         }
         layout.add(span);
 
