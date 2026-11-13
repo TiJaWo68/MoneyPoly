@@ -27,6 +27,16 @@ public final class MoneyFormatter {
         return format.format(amount);
     }
 
+    public static String formatPercent(BigDecimal rate, Locale locale) {
+        if (rate == null) {
+            return "-";
+        }
+        NumberFormat format = NumberFormat.getNumberInstance(normalize(locale));
+        format.setMinimumFractionDigits(2);
+        format.setMaximumFractionDigits(2);
+        return format.format(rate) + " %";
+    }
+
     private static Locale normalize(Locale locale) {
         if (locale == null) {
             return Locale.GERMANY;

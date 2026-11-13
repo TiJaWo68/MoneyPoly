@@ -35,4 +35,14 @@ class MoneyFormatterTest {
         assertThat(result).contains("€");
         assertThat(result).contains("1.000,00");
     }
+
+    @Test
+    void formatsPercentWithLocaleSpecificSeparators() {
+        assertThat(MoneyFormatter.formatPercent(new BigDecimal("3.5"), Locale.GERMAN))
+                .isEqualTo("3,50 %");
+        assertThat(MoneyFormatter.formatPercent(new BigDecimal("3.5"), Locale.ENGLISH))
+                .isEqualTo("3.50 %");
+        assertThat(MoneyFormatter.formatPercent(null, Locale.GERMAN))
+                .isEqualTo("-");
+    }
 }

@@ -55,6 +55,11 @@ public class AccountService {
             account.setInitialBalance(BigDecimal.ZERO);
             account.setCurrentBalance(BigDecimal.ZERO);
         }
+        if (account.getAccountType() != AccountType.SAVINGS) {
+            account.setPromotionalInterestRate(null);
+            account.setPromotionalUntil(null);
+            account.setSubsequentInterestRate(null);
+        }
 
         if (account.getId() == null) {
             account.setCurrentBalance(account.getInitialBalance());
@@ -202,6 +207,16 @@ public class AccountService {
         }
         if (account.getCurrentBalance() == null) {
             account.setCurrentBalance(BigDecimal.ZERO);
+        }
+        if (account.getAccountType() == AccountType.SAVINGS) {
+            if (account.getPromotionalInterestRate() != null
+                    && account.getPromotionalInterestRate().compareTo(BigDecimal.ZERO) < 0) {
+                throw new IllegalArgumentException("Promotional interest rate cannot be negative");
+            }
+            if (account.getSubsequentInterestRate() != null
+                    && account.getSubsequentInterestRate().compareTo(BigDecimal.ZERO) < 0) {
+                throw new IllegalArgumentException("Subsequent interest rate cannot be negative");
+            }
         }
         validateParent(account);
     }

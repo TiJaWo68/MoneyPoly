@@ -1,6 +1,7 @@
 package de.in.mp.finance;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
@@ -84,6 +85,15 @@ public class Account {
 
     @Column(name = "description", columnDefinition = "text")
     private String description;
+
+    @Column(name = "promotional_interest_rate", precision = 8, scale = 4)
+    private BigDecimal promotionalInterestRate;
+
+    @Column(name = "promotional_until")
+    private LocalDate promotionalUntil;
+
+    @Column(name = "subsequent_interest_rate", precision = 8, scale = 4)
+    private BigDecimal subsequentInterestRate;
 
     @Column(name = "created_at", nullable = false, insertable = false, updatable = false)
     private OffsetDateTime createdAt;
@@ -241,5 +251,73 @@ public class Account {
 
     public OffsetDateTime getUpdatedAt() {
         return updatedAt;
+    }
+
+    public BigDecimal getPromotionalInterestRate() {
+        return promotionalInterestRate;
+    }
+
+    public void setPromotionalInterestRate(BigDecimal promotionalInterestRate) {
+        this.promotionalInterestRate = promotionalInterestRate;
+    }
+
+    public LocalDate getPromotionalUntil() {
+        return promotionalUntil;
+    }
+
+    public void setPromotionalUntil(LocalDate promotionalUntil) {
+        this.promotionalUntil = promotionalUntil;
+    }
+
+    public BigDecimal getSubsequentInterestRate() {
+        return subsequentInterestRate;
+    }
+
+    public void setSubsequentInterestRate(BigDecimal subsequentInterestRate) {
+        this.subsequentInterestRate = subsequentInterestRate;
+    }
+
+    /**
+     * Resolves the interest rate currently in effect as of today.
+     * For promotional terms, returns the promo rate while still within the
+     * validity period; otherwise falls back to the subsequent interest rate.
+     */
+    public BigDecimal getCurrentInterestRate() {
+        return getCurrentInterestRate(LocalDate.now());
+    }
+
+    public BigDecimal getCurrentInterestRate(LocalDate asOfDate) {
+        if (accountType != AccountType.SAVINGS) {
+            return null;
+        }
+        if (promotionalInterestRate != null) {
+            if (promotionalUntil == null || asOfDate == null || !asOfDate.isAfter(promotionalUntil)) {
+                return promotionalInterestRate;
+            }
+        }
+        return subsequentInterestRate;
+    }
+
+    /**
+     * Checks whether this savings account is subject to a low-interest warning
+     * against the given threshold.
+     */
+    public boolean isInterestRateBelow(BigDecimal threshold) {
+        return isInterestRateBelow(threshold, LocalDate.now());
+    }
+
+    public boolean isInterestRateBelow(BigDecimal threshold, LocalDate asOfDate) {
+        if (accountType != AccountType.SAVINGS || threshold == null) {
+            return false;
+        }
+        BigDecimal current = getCurrentInterestRate(asOfDate);
+        if (current != null) {
+            return current.compareTo(threshold) < 0;
+        }
+        if (promotionalInterestRate != null && promotionalUntil != null && asOfDate != null
+                && asOfDate.isAfter(promotionalUntil)) {
+            return true;
+        }
+        return false;
     }
 }
