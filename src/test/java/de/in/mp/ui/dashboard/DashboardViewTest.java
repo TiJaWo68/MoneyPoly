@@ -7,18 +7,22 @@ import static org.mockito.Mockito.when;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.ComponentUtil;
 import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.grid.GridSortOrder;
+import com.vaadin.flow.component.html.Span;
 import com.vaadin.flow.data.event.SortEvent;
 import com.vaadin.flow.data.provider.SortDirection;
 
+import de.in.mp.admin.AppSettingService;
 import de.in.mp.admin.PersonService;
 import de.in.mp.finance.Account;
 import de.in.mp.finance.AccountService;
@@ -35,6 +39,7 @@ class DashboardViewTest {
     private AccountService accountService;
     private LoanContractService loanContractService;
     private PersonService personService;
+    private AppSettingService appSettingService;
     private DashboardView view;
 
     @BeforeEach
@@ -43,6 +48,7 @@ class DashboardViewTest {
         accountService = mock(AccountService.class);
         loanContractService = mock(LoanContractService.class);
         personService = mock(PersonService.class);
+        appSettingService = mock(AppSettingService.class);
 
         when(dashboardService.calculateKpis()).thenReturn(
                 new DashboardKpis(BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO));
@@ -50,8 +56,9 @@ class DashboardViewTest {
         when(loanContractService.findAll()).thenReturn(List.of());
         when(loanContractService.calculateActiveOutstanding()).thenReturn(BigDecimal.ZERO);
         when(personService.findAll()).thenReturn(List.of());
+        when(appSettingService.getSavingsInterestWarningThreshold()).thenReturn(new BigDecimal("2.00"));
 
-        view = new DashboardView(dashboardService, accountService, loanContractService, personService);
+        view = new DashboardView(dashboardService, accountService, loanContractService, personService, appSettingService);
     }
 
     @Test
@@ -109,7 +116,7 @@ class DashboardViewTest {
 
         when(accountService.findAll()).thenReturn(List.of(institution, checking));
         DashboardView refreshed = new DashboardView(mockDashboardService(), accountService, loanContractService,
-                personService);
+                personService, appSettingService);
 
         String rendered = refreshed.renderAccountLabel(checking).getElement().getTextRecursively();
         assertThat(rendered).contains("Max").doesNotContain("Mustermann");
@@ -127,7 +134,7 @@ class DashboardViewTest {
         contract.setDebtorIds(Set.of(debtor.getId()));
 
         DashboardView refreshed = new DashboardView(mockDashboardService(), accountService, loanContractService,
-                personService);
+                personService, appSettingService);
 
         String rendered = refreshed.renderLoanLabel(contract).getElement().getTextRecursively();
         assertThat(rendered).isEqualTo("Auto · Person A");
@@ -156,6 +163,57 @@ class DashboardViewTest {
         assertThat(i18n.getTranslation("dashboard.kpi.loan-receivables", Locale.ENGLISH)).isEqualTo("Private loans");
         assertThat(i18n.getTranslation("dashboard.block.investments", Locale.ENGLISH)).isEqualTo("Investments");
         assertThat(i18n.getTranslation("dashboard.block.loans", Locale.ENGLISH)).isEqualTo("Private loans");
+    }
+
+    @Test
+    void savingsAccountBelowWarningThresholdShowsWarning() {
+        Account savings = new Account();
+        savings.setName("Tagesgeld");
+        savings.setAccountType(AccountType.SAVINGS);
+        savings.setSubsequentInterestRate(new BigDecimal("1.50"));
+
+        Component comp = view.renderAccountLabel(savings);
+        assertThat(comp).isInstanceOf(Span.class);
+        Span span = (Span) comp;
+        Optional<Component> primary = span.getChildren().findFirst();
+        assertThat(primary).isPresent();
+        assertThat(primary.get().getStyle().get("color")).isEqualTo("var(--lumo-warning-text-color, #e65100)");
+
+        List<Component> children = span.getChildren().toList();
+        assertThat(children).hasSizeGreaterThan(1);
+        Span badge = (Span) children.get(1);
+        assertThat(badge.getElement().getThemeList()).contains("badge", "pill");
+    }
+
+    @Test
+    void savingsAccountAtOrAboveWarningThresholdShowsNoWarning() {
+        Account savings = new Account();
+        savings.setName("Tagesgeld");
+        savings.setAccountType(AccountType.SAVINGS);
+        savings.setSubsequentInterestRate(new BigDecimal("2.50"));
+
+        Component comp = view.renderAccountLabel(savings);
+        assertThat(comp).isInstanceOf(Span.class);
+        Span span = (Span) comp;
+        Optional<Component> primary = span.getChildren().findFirst();
+        assertThat(primary).isPresent();
+        assertThat(primary.get().getStyle().get("color")).isNull();
+        assertThat(span.getChildren().toList()).hasSize(1);
+    }
+
+    @Test
+    void checkingAccountShowsNoWarningEvenWithoutInterestRate() {
+        Account checking = new Account();
+        checking.setName("Girokonto");
+        checking.setAccountType(AccountType.CHECKING);
+
+        Component comp = view.renderAccountLabel(checking);
+        assertThat(comp).isInstanceOf(Span.class);
+        Span span = (Span) comp;
+        Optional<Component> primary = span.getChildren().findFirst();
+        assertThat(primary).isPresent();
+        assertThat(primary.get().getStyle().get("color")).isNull();
+        assertThat(span.getChildren().toList()).hasSize(1);
     }
 
     private static DashboardService mockDashboardService() {

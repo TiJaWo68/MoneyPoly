@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Test;
 
 import com.vaadin.flow.data.provider.hierarchy.TreeData;
 
+import de.in.mp.admin.AppSettingService;
 import de.in.mp.finance.Account;
 import de.in.mp.finance.AccountService;
 import de.in.mp.finance.AccountSnapshot;
@@ -64,7 +65,7 @@ class FinanceViewTest {
         snap.setBalance(new BigDecimal("100.00"));
         when(snapshotService.buildDateRows()).thenReturn(List.of(new BalanceDateRow(date, Map.of(c24Main.getId(), snap))));
 
-        assertThatCode(() -> new FinanceView(accountService, snapshotService, bankLookupService, statementImportService))
+        assertThatCode(() -> new FinanceView(accountService, snapshotService, bankLookupService, statementImportService, mockAppSettingService()))
                 .doesNotThrowAnyException();
     }
 
@@ -93,7 +94,7 @@ class FinanceViewTest {
         when(accountService.countActiveAccounts()).thenReturn(1L);
         when(snapshotService.buildDateRows()).thenReturn(List.of());
 
-        FinanceView view = new FinanceView(accountService, snapshotService, bankLookupService, statementImportService);
+        FinanceView view = new FinanceView(accountService, snapshotService, bankLookupService, statementImportService, mockAppSettingService());
 
         TreeData<Account> activeOnlyTree = view.treeDataForTest();
         assertThat(activeOnlyTree.getRootItems()).containsExactly(c24, emptyNewInst);
@@ -128,7 +129,7 @@ class FinanceViewTest {
         when(accountService.countActiveAccounts()).thenReturn(3L);
         when(snapshotService.buildDateRows()).thenReturn(List.of());
 
-        FinanceView view = new FinanceView(accountService, snapshotService, bankLookupService, statementImportService);
+        FinanceView view = new FinanceView(accountService, snapshotService, bankLookupService, statementImportService, mockAppSettingService());
         assertThat(view.isChartTabSelected()).isTrue();
         assertThat(view.isAccountsTabSelected()).isFalse();
 
@@ -157,9 +158,9 @@ class FinanceViewTest {
         when(accountService.countActiveAccounts()).thenReturn(1L);
         when(snapshotService.buildDateRows()).thenReturn(List.of());
 
-        FinanceView view = new FinanceView(accountService, snapshotService, bankLookupService, statementImportService);
+        FinanceView view = new FinanceView(accountService, snapshotService, bankLookupService, statementImportService, mockAppSettingService());
 
-        assertThat(view.treeColumnCountForTest()).isEqualTo(6);
+        assertThat(view.treeColumnCountForTest()).isEqualTo(7);
         assertThat(view.renderHierarchyCell(c24).getElement().getThemeList()).doesNotContain("badge");
         assertThat(view.renderHierarchyCell(c24).getElement().getText()).isEqualTo("C24");
         assertThat(view.renderHierarchyCell(giro).getElement().getThemeList()).contains("badge");
@@ -183,12 +184,106 @@ class FinanceViewTest {
         when(accountService.countActiveAccounts()).thenReturn(1L);
         when(snapshotService.buildDateRows()).thenReturn(List.of());
 
-        FinanceView view = new FinanceView(accountService, snapshotService, bankLookupService, statementImportService);
+        FinanceView view = new FinanceView(accountService, snapshotService, bankLookupService, statementImportService, mockAppSettingService());
 
         com.vaadin.flow.component.html.Div header = view.createAccountColumnHeader(giro);
         assertThat(header.getChildren().count()).isEqualTo(2);
         assertThat(header.getElement().getTextRecursively()).contains("Till Woitendorf");
         assertThat(header.getElement().getAttribute("title")).isEqualTo("DE61500240245446454801");
+    }
+
+    @Test
+    void rendersInterestRateCellForSavingsAccountBelowThreshold() {
+        AccountService accountService = mock(AccountService.class);
+        AccountSnapshotService snapshotService = mock(AccountSnapshotService.class);
+        BankLookupService bankLookupService = mock(BankLookupService.class);
+        StatementImportService statementImportService = mock(StatementImportService.class);
+        AppSettingService appSettingService = mockAppSettingService();
+
+        Account savings = new Account();
+        savings.setId(UUID.randomUUID());
+        savings.setName("Tagesgeld");
+        savings.setAccountType(AccountType.SAVINGS);
+        savings.setSubsequentInterestRate(new BigDecimal("1.50"));
+
+        when(accountService.findAll()).thenReturn(List.of(savings));
+        when(accountService.calculateInstitutionTotals()).thenReturn(Map.of());
+        when(accountService.calculateNetWorth()).thenReturn(BigDecimal.ZERO);
+        when(accountService.countActiveAccounts()).thenReturn(1L);
+        when(snapshotService.buildDateRows()).thenReturn(List.of());
+
+        FinanceView view = new FinanceView(accountService, snapshotService, bankLookupService, statementImportService, appSettingService);
+
+        com.vaadin.flow.component.Component cell = view.renderInterestRate(savings);
+        assertThat(cell).isInstanceOf(com.vaadin.flow.component.orderedlayout.HorizontalLayout.class);
+        com.vaadin.flow.component.orderedlayout.HorizontalLayout layout = (com.vaadin.flow.component.orderedlayout.HorizontalLayout) cell;
+        assertThat(layout.getChildren().count()).isEqualTo(2);
+        assertThat(layout.getElement().getTextRecursively()).contains("1,50 %");
+    }
+
+    @Test
+    void rendersInterestRateCellForSavingsAccountAtOrAboveThreshold() {
+        AccountService accountService = mock(AccountService.class);
+        AccountSnapshotService snapshotService = mock(AccountSnapshotService.class);
+        BankLookupService bankLookupService = mock(BankLookupService.class);
+        StatementImportService statementImportService = mock(StatementImportService.class);
+        AppSettingService appSettingService = mockAppSettingService();
+
+        Account savings = new Account();
+        savings.setId(UUID.randomUUID());
+        savings.setName("Tagesgeld");
+        savings.setAccountType(AccountType.SAVINGS);
+        savings.setSubsequentInterestRate(new BigDecimal("2.50"));
+
+        when(accountService.findAll()).thenReturn(List.of(savings));
+        when(accountService.calculateInstitutionTotals()).thenReturn(Map.of());
+        when(accountService.calculateNetWorth()).thenReturn(BigDecimal.ZERO);
+        when(accountService.countActiveAccounts()).thenReturn(1L);
+        when(snapshotService.buildDateRows()).thenReturn(List.of());
+
+        FinanceView view = new FinanceView(accountService, snapshotService, bankLookupService, statementImportService, appSettingService);
+
+        com.vaadin.flow.component.Component cell = view.renderInterestRate(savings);
+        assertThat(cell).isInstanceOf(com.vaadin.flow.component.orderedlayout.HorizontalLayout.class);
+        com.vaadin.flow.component.orderedlayout.HorizontalLayout layout = (com.vaadin.flow.component.orderedlayout.HorizontalLayout) cell;
+        assertThat(layout.getChildren().count()).isEqualTo(1);
+        assertThat(layout.getElement().getTextRecursively()).contains("2,50 %");
+    }
+
+    @Test
+    void interestTooltipFormatsAllThreeInterestParts() {
+        AccountService accountService = mock(AccountService.class);
+        AccountSnapshotService snapshotService = mock(AccountSnapshotService.class);
+        BankLookupService bankLookupService = mock(BankLookupService.class);
+        StatementImportService statementImportService = mock(StatementImportService.class);
+        AppSettingService appSettingService = mockAppSettingService();
+
+        Account savings = new Account();
+        savings.setId(UUID.randomUUID());
+        savings.setName("Tagesgeld");
+        savings.setAccountType(AccountType.SAVINGS);
+        savings.setPromotionalInterestRate(new BigDecimal("3.50"));
+        savings.setPromotionalUntil(LocalDate.of(2026, 6, 30));
+        savings.setSubsequentInterestRate(new BigDecimal("1.25"));
+
+        when(accountService.findAll()).thenReturn(List.of(savings));
+        when(accountService.calculateInstitutionTotals()).thenReturn(Map.of());
+        when(accountService.calculateNetWorth()).thenReturn(BigDecimal.ZERO);
+        when(accountService.countActiveAccounts()).thenReturn(1L);
+        when(snapshotService.buildDateRows()).thenReturn(List.of());
+
+        FinanceView view = new FinanceView(accountService, snapshotService, bankLookupService, statementImportService, appSettingService);
+
+        String tooltip = view.interestTooltip(savings);
+        assertThat(tooltip).contains("3,50 %");
+        assertThat(tooltip).contains("30.06.2026");
+        assertThat(tooltip).contains("1,25 %");
+    }
+
+    private static AppSettingService mockAppSettingService() {
+        AppSettingService service = mock(AppSettingService.class);
+        when(service.getSavingsInterestWarningThreshold()).thenReturn(new BigDecimal("2.00"));
+        return service;
     }
 
     private static Account institution(UUID id, String name) {

@@ -10,6 +10,7 @@ import com.vaadin.flow.router.HasDynamicTitle;
 import com.vaadin.flow.router.Route;
 import com.vaadin.flow.spring.security.AuthenticationContext;
 
+import de.in.mp.admin.AppSettingService;
 import de.in.mp.admin.CategoryService;
 import de.in.mp.admin.ClassificationRuleService;
 import de.in.mp.admin.DatabaseResetService;
@@ -38,7 +39,8 @@ public class AdminView extends VerticalLayout implements HasDynamicTitle {
             CategoryService categoryService, ClassificationRuleService classificationRuleService,
             SystemHealthService systemHealthService, AuthenticationContext authenticationContext,
             LoanContractRepository loanContractRepository, FinanceOdsImportService financeOdsImportService,
-            EnergyOdsImportService energyOdsImportService, DatabaseResetService databaseResetService) {
+            EnergyOdsImportService energyOdsImportService, DatabaseResetService databaseResetService,
+            AppSettingService appSettingService) {
         setSizeFull();
         setPadding(true);
         setSpacing(false);
@@ -51,6 +53,7 @@ public class AdminView extends VerticalLayout implements HasDynamicTitle {
         registerTab(new PersonsTab(personService));
         registerTab(new CategoriesTab(categoryService));
         registerTab(new ClassificationRulesTab(classificationRuleService, categoryService, loanContractRepository));
+        registerTab(new SettingsTab(appSettingService));
         registerTab(new DataMigrationTab(financeOdsImportService, energyOdsImportService, databaseResetService));
         registerTab(new SystemHealthTab(systemHealthService));
 

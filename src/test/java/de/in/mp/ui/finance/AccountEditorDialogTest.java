@@ -7,6 +7,8 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 
 import org.junit.jupiter.api.AfterEach;
@@ -85,5 +87,65 @@ class AccountEditorDialogTest {
 
         verify(accountService, never()).save(any());
         assertThat(dialog.validationSummary()).contains("type-required");
+    }
+
+    @Test
+    void interestRateFieldsOnlyVisibleForSavingsAccount() {
+        dialog.initForCreate(() -> {
+        });
+
+        dialog.accountType.setValue(AccountType.CHECKING);
+        assertThat(dialog.promotionalInterestRate.isVisible()).isFalse();
+        assertThat(dialog.promotionalUntil.isVisible()).isFalse();
+        assertThat(dialog.subsequentInterestRate.isVisible()).isFalse();
+
+        dialog.accountType.setValue(AccountType.SAVINGS);
+        assertThat(dialog.promotionalInterestRate.isVisible()).isTrue();
+        assertThat(dialog.promotionalUntil.isVisible()).isTrue();
+        assertThat(dialog.subsequentInterestRate.isVisible()).isTrue();
+
+        dialog.promotionalInterestRate.setValue(new BigDecimal("3.50"));
+        dialog.promotionalUntil.setValue(LocalDate.of(2026, 6, 30));
+        dialog.subsequentInterestRate.setValue(new BigDecimal("1.75"));
+
+        dialog.accountType.setValue(AccountType.INVESTMENT);
+        assertThat(dialog.promotionalInterestRate.isVisible()).isFalse();
+        assertThat(dialog.promotionalUntil.isVisible()).isFalse();
+        assertThat(dialog.subsequentInterestRate.isVisible()).isFalse();
+        assertThat(dialog.promotionalInterestRate.getValue()).isNull();
+        assertThat(dialog.promotionalUntil.getValue()).isNull();
+        assertThat(dialog.subsequentInterestRate.getValue()).isNull();
+    }
+
+    @Test
+    void rejectsNegativeInterestRates() {
+        dialog.initForCreate(() -> {
+        });
+        dialog.accountType.setValue(AccountType.SAVINGS);
+        dialog.promotionalInterestRate.setValue(new BigDecimal("-1.00"));
+
+        dialog.save();
+
+        verify(accountService, never()).save(any());
+        assertThat(dialog.validationSummary()).contains("interest-negative");
+    }
+
+    @Test
+    void savesSavingsAccountWithInterestRates() {
+        dialog.initForCreate(() -> {
+        });
+        dialog.accountType.setValue(AccountType.SAVINGS);
+        dialog.promotionalInterestRate.setValue(new BigDecimal("3.50"));
+        LocalDate promoUntil = LocalDate.of(2026, 12, 31);
+        dialog.promotionalUntil.setValue(promoUntil);
+        dialog.subsequentInterestRate.setValue(new BigDecimal("1.50"));
+
+        dialog.save();
+
+        ArgumentCaptor<Account> saved = ArgumentCaptor.forClass(Account.class);
+        verify(accountService).save(saved.capture());
+        assertThat(saved.getValue().getPromotionalInterestRate()).isEqualByComparingTo("3.50");
+        assertThat(saved.getValue().getPromotionalUntil()).isEqualTo(promoUntil);
+        assertThat(saved.getValue().getSubsequentInterestRate()).isEqualByComparingTo("1.50");
     }
 }

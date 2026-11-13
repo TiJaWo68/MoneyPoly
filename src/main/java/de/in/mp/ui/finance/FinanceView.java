@@ -16,19 +16,23 @@ import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.checkbox.Checkbox;
 import com.vaadin.flow.component.details.Details;
 import com.vaadin.flow.component.details.DetailsVariant;
+import com.vaadin.flow.component.dialog.Dialog;
 import com.vaadin.flow.component.grid.ColumnTextAlign;
 import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.grid.GridVariant;
 import com.vaadin.flow.component.grid.HeaderRow;
 import com.vaadin.flow.component.html.Div;
 import com.vaadin.flow.component.html.H2;
+import com.vaadin.flow.component.html.Paragraph;
 import com.vaadin.flow.component.html.Span;
+import com.vaadin.flow.component.icon.Icon;
 import com.vaadin.flow.component.icon.VaadinIcon;
 import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.tabs.Tab;
 import com.vaadin.flow.component.tabs.Tabs;
+import com.vaadin.flow.component.textfield.BigDecimalField;
 import com.vaadin.flow.component.treegrid.TreeGrid;
 import com.vaadin.flow.data.provider.hierarchy.TreeData;
 import com.vaadin.flow.data.renderer.ComponentRenderer;
@@ -38,6 +42,7 @@ import com.vaadin.flow.router.HasDynamicTitle;
 import com.vaadin.flow.router.Route;
 import com.vaadin.flow.theme.lumo.LumoUtility;
 
+import de.in.mp.admin.AppSettingService;
 import de.in.mp.finance.Account;
 import de.in.mp.finance.AccountService;
 import de.in.mp.finance.AccountSnapshot;
@@ -47,6 +52,7 @@ import de.in.mp.finance.BalanceDateRow;
 import de.in.mp.finance.BankLookupService;
 import de.in.mp.i18n.DateFormatter;
 import de.in.mp.i18n.MoneyFormatter;
+import de.in.mp.i18n.MoneyPolyI18nProvider;
 import de.in.mp.importer.StatementImportService;
 import de.in.mp.ui.GridActionButton;
 import de.in.mp.ui.ResponsiveStyles;
@@ -69,6 +75,7 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
 
     private final AccountService accountService;
     private final AccountSnapshotService snapshotService;
+    private final AppSettingService appSettingService;
     private final AccountEditorDialog editorDialog;
     private final BalanceEntryDialog balanceDialog;
     private final StatementImportDialog statementDialog;
@@ -93,9 +100,11 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
     private List<Account> currentAccounts = List.of();
 
     public FinanceView(AccountService accountService, AccountSnapshotService snapshotService,
-            BankLookupService bankLookupService, StatementImportService statementImportService) {
+            BankLookupService bankLookupService, StatementImportService statementImportService,
+            AppSettingService appSettingService) {
         this.accountService = accountService;
         this.snapshotService = snapshotService;
+        this.appSettingService = appSettingService;
         this.editorDialog = new AccountEditorDialog(accountService, bankLookupService);
         this.balanceDialog = new BalanceEntryDialog(accountService, snapshotService);
         this.statementDialog = new StatementImportDialog(statementImportService, accountService);
@@ -276,7 +285,10 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
             Button newAccountButton = new Button(getTranslation("finance.view.button.new-account"),
                     VaadinIcon.PLUS.create(), event -> editorDialog.openForCreate(this::refresh));
             newAccountButton.setTooltipText(getTranslation("finance.view.button.new-account"));
-            HorizontalLayout toolbar = new HorizontalLayout(newAccountButton, showInactive);
+            Button thresholdButton = new Button(getTranslation("finance.view.button.threshold"),
+                    VaadinIcon.SLIDERS.create(), event -> openThresholdDialog());
+            thresholdButton.setTooltipText(getTranslation("finance.view.button.threshold"));
+            HorizontalLayout toolbar = new HorizontalLayout(newAccountButton, thresholdButton, showInactive);
             toolbar.setDefaultVerticalComponentAlignment(Alignment.CENTER);
             tabContent.add(toolbar, treeGrid);
             tabContent.expand(treeGrid);
@@ -447,6 +459,12 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
                 .setHeader(getTranslation("finance.grid.column.account-number"))
                 .setAutoWidth(true);
 
+        treeGrid.addColumn(new ComponentRenderer<>(this::renderInterestRate))
+                .setHeader(getTranslation("finance.grid.column.interest-rate"))
+                .setTooltipGenerator(this::interestTooltip)
+                .setTextAlign(ColumnTextAlign.END)
+                .setAutoWidth(true);
+
         treeGrid.addColumn(new ComponentRenderer<>(this::renderBalance))
                 .setHeader(getTranslation("finance.grid.column.balance"))
                 .setAutoWidth(true);
@@ -496,6 +514,95 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
         Span span = new Span(formatMoney(balance));
         span.addClassName(balance.signum() < 0 ? LumoUtility.TextColor.ERROR : LumoUtility.TextColor.SUCCESS);
         return span;
+    }
+
+    Component renderInterestRate(Account account) {
+        if (account.getAccountType() != AccountType.SAVINGS) {
+            return new Span();
+        }
+        BigDecimal currentRate = account.getCurrentInterestRate();
+        String formattedRate = currentRate != null ? MoneyFormatter.formatPercent(currentRate, locale()) : "-";
+        Span span = new Span(formattedRate);
+        span.addClassName(LumoUtility.FontWeight.MEDIUM);
+
+        BigDecimal threshold = appSettingService.getSavingsInterestWarningThreshold();
+        boolean below = account.isInterestRateBelow(threshold);
+
+        HorizontalLayout layout = new HorizontalLayout();
+        layout.setSpacing(true);
+        layout.setJustifyContentMode(com.vaadin.flow.component.orderedlayout.FlexComponent.JustifyContentMode.END);
+        layout.setDefaultVerticalComponentAlignment(Alignment.CENTER);
+
+        if (below) {
+            span.getStyle().set("color", "var(--lumo-warning-text-color, #e65100)");
+            span.addClassName(LumoUtility.FontWeight.BOLD);
+            Icon icon = VaadinIcon.WARNING.create();
+            icon.setSize("14px");
+            icon.getStyle().set("color", "var(--lumo-warning-text-color, #e65100)");
+            layout.add(icon);
+        }
+        layout.add(span);
+
+        String tooltipText = interestTooltip(account);
+        layout.getElement().setAttribute("title", tooltipText);
+        span.setTitle(tooltipText);
+        return layout;
+    }
+
+    String interestTooltip(Account account) {
+        if (account.getAccountType() != AccountType.SAVINGS) {
+            return "";
+        }
+        String promo = account.getPromotionalInterestRate() != null
+                ? MoneyFormatter.formatPercent(account.getPromotionalInterestRate(), locale())
+                : "-";
+        String until = account.getPromotionalUntil() != null
+                ? DateFormatter.format(account.getPromotionalUntil(), locale())
+                : "-";
+        String subsequent = account.getSubsequentInterestRate() != null
+                ? MoneyFormatter.formatPercent(account.getSubsequentInterestRate(), locale())
+                : "-";
+        return getTranslation("finance.grid.interest.tooltip", promo, until, subsequent);
+    }
+
+    void openThresholdDialog() {
+        Dialog dialog = new Dialog();
+        dialog.setHeaderTitle(getTranslation("finance.threshold.dialog.title"));
+
+        Paragraph desc = new Paragraph(getTranslation("finance.threshold.dialog.description"));
+        desc.addClassNames(LumoUtility.TextColor.SECONDARY, LumoUtility.Margin.Top.NONE);
+
+        BigDecimalField thresholdField = new BigDecimalField(getTranslation("finance.threshold.field.threshold"));
+        thresholdField.setSuffixComponent(new Span("%"));
+        thresholdField.setValue(appSettingService.getSavingsInterestWarningThreshold());
+        thresholdField.setWidthFull();
+
+        Button saveButton = new Button(getTranslation("finance.threshold.button.save"), event -> {
+            BigDecimal value = thresholdField.getValue();
+            if (value == null || value.compareTo(BigDecimal.ZERO) < 0) {
+                thresholdField.setErrorMessage(getTranslation("finance.editor.error.interest-negative"));
+                thresholdField.setInvalid(true);
+                return;
+            }
+            appSettingService.setSavingsInterestWarningThreshold(value);
+            dialog.close();
+            Notification.show(getTranslation("finance.threshold.notification.saved"), 3000,
+                    Notification.Position.MIDDLE);
+            refresh();
+        });
+        saveButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+
+        Button cancelButton = new Button(getTranslation("finance.threshold.button.cancel"), event -> dialog.close());
+
+        HorizontalLayout actions = new HorizontalLayout(cancelButton, saveButton);
+        actions.setWidthFull();
+        actions.setJustifyContentMode(com.vaadin.flow.component.orderedlayout.FlexComponent.JustifyContentMode.END);
+
+        VerticalLayout content = new VerticalLayout(desc, thresholdField, actions);
+        content.setPadding(false);
+        dialog.add(content);
+        dialog.setWidth("450px");
+        dialog.open();
     }
 
     private Span renderStatus(Account account) {
@@ -663,6 +770,15 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
             current = parent;
         }
         return indices.stream().mapToInt(Integer::intValue).toArray();
+    }
+
+    @Override
+    public String getTranslation(String key, Object... params) {
+        String translation = super.getTranslation(key, params);
+        if (translation != null && translation.startsWith("!{") && translation.endsWith("}!")) {
+            return new MoneyPolyI18nProvider().getTranslation(key, locale(), params);
+        }
+        return translation;
     }
 
     private static String formatMoney(BigDecimal amount) {

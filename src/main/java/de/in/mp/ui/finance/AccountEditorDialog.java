@@ -1,5 +1,6 @@
 package de.in.mp.ui.finance;
 
+import java.math.BigDecimal;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.HashSet;
@@ -12,8 +13,10 @@ import java.util.stream.Collectors;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.combobox.ComboBox;
+import com.vaadin.flow.component.datepicker.DatePicker;
 import com.vaadin.flow.component.dialog.Dialog;
 import com.vaadin.flow.component.formlayout.FormLayout;
+import com.vaadin.flow.component.html.Span;
 import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.orderedlayout.FlexComponent.JustifyContentMode;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
@@ -56,6 +59,9 @@ public class AccountEditorDialog extends Dialog {
     private final TextField accountNumber = new TextField();
     private final TextField bankName = new TextField();
     private final TextField accountHolder = new TextField();
+    final BigDecimalField promotionalInterestRate = new BigDecimalField();
+    final DatePicker promotionalUntil = new DatePicker();
+    final BigDecimalField subsequentInterestRate = new BigDecimalField();
     private final BigDecimalField initialBalance = new BigDecimalField();
     private final IntegerField displayOrder = new IntegerField();
     private final TextArea description = new TextArea();
@@ -82,6 +88,7 @@ public class AccountEditorDialog extends Dialog {
         cancelButton.addClickListener(event -> close());
 
         FormLayout form = new FormLayout(name, accountType, parent, accountNumber, bankName, accountHolder,
+                promotionalInterestRate, promotionalUntil, subsequentInterestRate,
                 initialBalance, displayOrder, description);
         form.setResponsiveSteps(
                 new FormLayout.ResponsiveStep("0", 1),
@@ -134,6 +141,12 @@ public class AccountEditorDialog extends Dialog {
         accountHolder.setLabel(getTranslation("finance.editor.field.holder"));
         accountHolder.setAutocomplete(Autocomplete.OFF);
         accountHolder.setHelperText(getTranslation("finance.editor.hint.holder"));
+        promotionalInterestRate.setLabel(getTranslation("finance.editor.field.promotional-interest-rate"));
+        promotionalInterestRate.setSuffixComponent(new Span("%"));
+        promotionalUntil.setLabel(getTranslation("finance.editor.field.promotional-until"));
+        promotionalUntil.setClearButtonVisible(true);
+        subsequentInterestRate.setLabel(getTranslation("finance.editor.field.subsequent-interest-rate"));
+        subsequentInterestRate.setSuffixComponent(new Span("%"));
         initialBalance.setLabel(getTranslation("finance.editor.field.initial-balance"));
         displayOrder.setLabel(getTranslation("finance.editor.field.display-order"));
         description.setLabel(getTranslation("finance.editor.field.note"));
@@ -171,6 +184,19 @@ public class AccountEditorDialog extends Dialog {
                 .withValidator(value -> value == null || value.length() <= HOLDER_MAX_LENGTH,
                         getTranslation("finance.editor.error.holder-too-long"))
                 .bind(Account::getAccountHolder, Account::setAccountHolder);
+
+        binder.forField(promotionalInterestRate)
+                .withValidator(value -> value == null || value.compareTo(BigDecimal.ZERO) >= 0,
+                        getTranslation("finance.editor.error.interest-negative"))
+                .bind(Account::getPromotionalInterestRate, Account::setPromotionalInterestRate);
+
+        binder.forField(promotionalUntil)
+                .bind(Account::getPromotionalUntil, Account::setPromotionalUntil);
+
+        binder.forField(subsequentInterestRate)
+                .withValidator(value -> value == null || value.compareTo(BigDecimal.ZERO) >= 0,
+                        getTranslation("finance.editor.error.interest-negative"))
+                .bind(Account::getSubsequentInterestRate, Account::setSubsequentInterestRate);
 
         binder.forField(initialBalance)
                 .bind(Account::getInitialBalance, Account::setInitialBalance);
@@ -241,15 +267,26 @@ public class AccountEditorDialog extends Dialog {
 
     private void updateFieldVisibility() {
         boolean institution = AccountType.INSTITUTION.equals(accountType.getValue());
+        boolean savings = AccountType.SAVINGS.equals(accountType.getValue());
         name.setVisible(institution);
         parent.setVisible(!institution);
         accountNumber.setVisible(!institution);
         accountHolder.setVisible(!institution);
         initialBalance.setVisible(!institution);
         bankName.setVisible(false);
+
+        promotionalInterestRate.setVisible(savings);
+        promotionalUntil.setVisible(savings);
+        subsequentInterestRate.setVisible(savings);
+
         if (institution) {
             parent.clear();
             initialBalance.clear();
+        }
+        if (!savings) {
+            promotionalInterestRate.clear();
+            promotionalUntil.clear();
+            subsequentInterestRate.clear();
         }
     }
 

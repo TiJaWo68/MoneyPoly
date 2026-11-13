@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -18,6 +19,9 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+
+import de.in.mp.admin.AppSetting;
+import de.in.mp.admin.AppSettingRepository;
 
 /**
  * Persistence integration test that runs all Flyway migrations against a real
@@ -45,6 +49,9 @@ class AccountRepositoryIntegrationTest {
 
     @Autowired
     private AccountRepository accountRepository;
+
+    @Autowired
+    private AppSettingRepository appSettingRepository;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -115,6 +122,29 @@ class AccountRepositoryIntegrationTest {
         Account reloaded = accountRepository.findById(savedCash.getId()).orElseThrow();
         assertThat(reloaded.getAccountType()).isEqualTo(AccountType.CHECKING);
         assertThat(reloaded.getParentId()).isEqualTo(savedInstitution.getId());
+    }
+
+    @Test
+    void persistsSavingsAccountWithInterestRates() {
+        Account savings = account("Tagesgeld Plus", AccountType.SAVINGS, new BigDecimal("10000.00"));
+        savings.setPromotionalInterestRate(new BigDecimal("3.50"));
+        savings.setPromotionalUntil(LocalDate.of(2026, 12, 31));
+        savings.setSubsequentInterestRate(new BigDecimal("1.50"));
+
+        Account saved = accountRepository.save(savings);
+
+        Account reloaded = accountRepository.findById(saved.getId()).orElseThrow();
+        assertThat(reloaded.getPromotionalInterestRate()).isEqualByComparingTo("3.50");
+        assertThat(reloaded.getPromotionalUntil()).isEqualTo(LocalDate.of(2026, 12, 31));
+        assertThat(reloaded.getSubsequentInterestRate()).isEqualByComparingTo("1.50");
+    }
+
+    @Test
+    void persistsAndLoadsAppSetting() {
+        appSettingRepository.save(new AppSetting("custom.key", "custom.value", "desc"));
+
+        AppSetting setting = appSettingRepository.findById("custom.key").orElseThrow();
+        assertThat(setting.getSettingValue()).isEqualTo("custom.value");
     }
 
     private Account account(String name, AccountType type, BigDecimal balance) {

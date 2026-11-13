@@ -266,6 +266,40 @@ class AccountServiceTest {
         assertThat(service.calculateInvestedAssets()).isEqualByComparingTo("4000.00");
     }
 
+    @Test
+    void saveRejectsNegativePromotionalInterestRate() {
+        Account account = account(AccountType.SAVINGS, BigDecimal.ZERO);
+        account.setPromotionalInterestRate(new BigDecimal("-0.50"));
+
+        assertThatThrownBy(() -> service.save(account))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void saveRejectsNegativeSubsequentInterestRate() {
+        Account account = account(AccountType.SAVINGS, BigDecimal.ZERO);
+        account.setSubsequentInterestRate(new BigDecimal("-0.01"));
+
+        assertThatThrownBy(() -> service.save(account))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void saveClearsInterestRatesForNonSavingsAccount() {
+        when(repository.save(any(Account.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        Account account = account(AccountType.CHECKING, BigDecimal.ZERO);
+        account.setPromotionalInterestRate(new BigDecimal("3.00"));
+        account.setPromotionalUntil(java.time.LocalDate.of(2026, 12, 31));
+        account.setSubsequentInterestRate(new BigDecimal("1.50"));
+
+        Account saved = service.save(account);
+
+        assertThat(saved.getPromotionalInterestRate()).isNull();
+        assertThat(saved.getPromotionalUntil()).isNull();
+        assertThat(saved.getSubsequentInterestRate()).isNull();
+    }
+
     private Account account(AccountType type, BigDecimal currentBalance) {
         Account account = new Account();
         account.setName("account-" + type.name());

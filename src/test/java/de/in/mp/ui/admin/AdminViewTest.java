@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.spring.security.AuthenticationContext;
 
+import de.in.mp.admin.AppSettingService;
 import de.in.mp.admin.CategoryService;
 import de.in.mp.admin.ClassificationRuleService;
 import de.in.mp.admin.DatabaseResetService;
@@ -32,10 +33,12 @@ class AdminViewTest {
         FinanceOdsImportService financeOdsImportService = mock(FinanceOdsImportService.class);
         EnergyOdsImportService energyOdsImportService = mock(EnergyOdsImportService.class);
         DatabaseResetService databaseResetService = mock(DatabaseResetService.class);
+        AppSettingService appSettingService = mock(AppSettingService.class);
 
         AdminView view = new AdminView(userService, personService, categoryService, classificationRuleService,
                 systemHealthService, authenticationContext, loanContractRepository,
-                financeOdsImportService, energyOdsImportService, databaseResetService);
+                financeOdsImportService, energyOdsImportService, databaseResetService,
+                appSettingService);
 
         VerticalLayout content = (VerticalLayout) view.getChildren()
                 .filter(VerticalLayout.class::isInstance)
