@@ -175,12 +175,16 @@ class DashboardViewTest {
         Component comp = view.renderAccountLabel(savings);
         assertThat(comp).isInstanceOf(Span.class);
         Span span = (Span) comp;
-        Optional<Component> primary = span.getChildren().findFirst();
-        assertThat(primary).isPresent();
-        assertThat(primary.get().getStyle().get("color")).isEqualTo("var(--lumo-warning-text-color, #e65100)");
-
         List<Component> children = span.getChildren().toList();
-        assertThat(children).hasSize(1);
+        assertThat(children).hasSize(2);
+
+        Span badge = (Span) children.get(0);
+        assertThat(badge.getText()).isEqualTo("🐷");
+        assertThat(badge.getElement().getThemeList()).contains("badge", "pill", "small", "success");
+
+        Span textWrapper = (Span) children.get(1);
+        Span primary = (Span) textWrapper.getChildren().findFirst().orElseThrow();
+        assertThat(primary.getStyle().get("color")).isEqualTo("var(--lumo-warning-text-color, #e65100)");
         assertThat(span.getTitle()).isNotEmpty();
     }
 
@@ -194,10 +198,12 @@ class DashboardViewTest {
         Component comp = view.renderAccountLabel(savings);
         assertThat(comp).isInstanceOf(Span.class);
         Span span = (Span) comp;
-        Optional<Component> primary = span.getChildren().findFirst();
-        assertThat(primary).isPresent();
-        assertThat(primary.get().getStyle().get("color")).isNull();
-        assertThat(span.getChildren().toList()).hasSize(1);
+        List<Component> children = span.getChildren().toList();
+        assertThat(children).hasSize(2);
+
+        Span textWrapper = (Span) children.get(1);
+        Span primary = (Span) textWrapper.getChildren().findFirst().orElseThrow();
+        assertThat(primary.getStyle().get("color")).isNull();
     }
 
     @Test
@@ -209,10 +215,46 @@ class DashboardViewTest {
         Component comp = view.renderAccountLabel(checking);
         assertThat(comp).isInstanceOf(Span.class);
         Span span = (Span) comp;
-        Optional<Component> primary = span.getChildren().findFirst();
-        assertThat(primary).isPresent();
-        assertThat(primary.get().getStyle().get("color")).isNull();
-        assertThat(span.getChildren().toList()).hasSize(1);
+        List<Component> children = span.getChildren().toList();
+        assertThat(children).hasSize(2);
+
+        Span badge = (Span) children.get(0);
+        assertThat(badge.getText()).isEqualTo("🪙");
+        assertThat(badge.getElement().getThemeList()).contains("badge", "pill", "small", "primary");
+
+        Span textWrapper = (Span) children.get(1);
+        Span primary = (Span) textWrapper.getChildren().findFirst().orElseThrow();
+        assertThat(primary.getStyle().get("color")).isNull();
+    }
+
+    @Test
+    void rendersAccountTypeIconsAtFrontWithoutBulkyTypeText() {
+        Account bank = new Account();
+        bank.setId(UUID.randomUUID());
+        bank.setName("Trade Republic");
+        bank.setAccountType(AccountType.INSTITUTION);
+
+        Account investment = new Account();
+        investment.setId(UUID.randomUUID());
+        investment.setParentId(bank.getId());
+        investment.setName("Depot / Wertpapiere");
+        investment.setAccountType(AccountType.INVESTMENT);
+        investment.setAccountHolder("Person A");
+
+        when(accountService.findAll()).thenReturn(List.of(bank, investment));
+        DashboardView refreshed = new DashboardView(mockDashboardService(), accountService, loanContractService,
+                personService, appSettingService);
+
+        Span container = (Span) refreshed.renderAccountLabel(investment);
+        List<Component> children = container.getChildren().toList();
+        assertThat(children).hasSize(2);
+
+        Span badge = (Span) children.get(0);
+        assertThat(badge.getText()).isEqualTo("📈");
+        assertThat(badge.getElement().getThemeList()).contains("badge", "pill", "small", "contrast");
+
+        String text = children.get(1).getElement().getTextRecursively();
+        assertThat(text).isEqualTo("Trade Republic · Person");
     }
 
     private static DashboardService mockDashboardService() {

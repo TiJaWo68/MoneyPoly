@@ -342,8 +342,21 @@ public class DashboardView extends VerticalLayout implements HasDynamicTitle {
             Account account) {
         Span container = new Span();
         container.setWidthFull();
-        container.getStyle().set("display", "block");
-        applyEllipsis(container.getStyle());
+        container.getStyle().set("display", "flex");
+        container.getStyle().set("align-items", "center");
+        container.getStyle().set("gap", "var(--lumo-space-xs)");
+        container.getStyle().set("min-width", "0");
+
+        if (account != null) {
+            Span typeBadge = renderAccountTypeBadge(account.getAccountType());
+            if (typeBadge != null) {
+                container.add(typeBadge);
+            }
+        }
+
+        Span textWrapper = new Span();
+        textWrapper.getStyle().set("display", "block");
+        applyEllipsis(textWrapper.getStyle());
 
         Span primarySpan = new Span(primary);
         primarySpan.addClassName(LumoUtility.FontWeight.MEDIUM);
@@ -356,21 +369,53 @@ public class DashboardView extends VerticalLayout implements HasDynamicTitle {
                         MoneyFormatter.formatPercent(warningThreshold, locale())));
             }
         }
-        container.add(primarySpan);
+        textWrapper.add(primarySpan);
 
         if (secondary != null && !secondary.isBlank()) {
             Span secondarySpan = new Span(" · " + secondary);
             secondarySpan.addClassNames(LumoUtility.TextColor.SECONDARY, LumoUtility.FontSize.SMALL);
-            container.add(secondarySpan);
+            textWrapper.add(secondarySpan);
         }
+        container.add(textWrapper);
         return container;
     }
 
+    private Span renderAccountTypeBadge(AccountType type) {
+        if (type == null) {
+            return null;
+        }
+        String icon;
+        String themeVariant;
+        switch (type) {
+            case CHECKING -> {
+                icon = "🪙";
+                themeVariant = "primary";
+            }
+            case SAVINGS -> {
+                icon = "🐷";
+                themeVariant = "success";
+            }
+            case INVESTMENT -> {
+                icon = "📈";
+                themeVariant = "contrast";
+            }
+            default -> {
+                return null;
+            }
+        }
+        Span badge = new Span(icon);
+        badge.getElement().getThemeList().add("badge");
+        badge.getElement().getThemeList().add("pill");
+        badge.getElement().getThemeList().add("small");
+        badge.getElement().getThemeList().add(themeVariant);
+        badge.getStyle().set(FLEX_SHRINK, NO_SHRINK);
+        badge.setTitle(getTranslation("finance.account.type." + type.name()));
+        return badge;
+    }
+
     private String accountLabel(Account account) {
-        String typeLabel = account.getAccountType() == null
-                ? account.getName()
-                : getTranslation("finance.account.type." + account.getAccountType().name());
-        return join(" · ", parentName(account), typeLabel, firstName(account.getAccountHolder()));
+        String name = join(" · ", parentName(account), firstName(account.getAccountHolder()));
+        return name.isBlank() && account.getName() != null ? account.getName() : name;
     }
 
     private static String firstName(String fullName) {
