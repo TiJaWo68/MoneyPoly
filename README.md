@@ -7,17 +7,21 @@ Selbst gehostete Webanwendung für Haushaltsfinanz-Kaskaden, private Familienkre
 * **Dashboard**: Zentrale Übersicht über Gesamtvermögen, Liquidität, Investments und offene Private-Kredite mit responsivem KPI-Layout.
 * **Finanzen**:
   * Strukturierte Kontoführung (Girokonto, Tagesgeld/Sparen, Depot/Wertpapiere, etc.) mit Hierarchie- und Inhaber-Zuordnung.
+  * Tagesgeld-Konditionen & Zinshopping-Visualisierung (Aktionszins, Befristung, Folgezins und konfigurierbare Warnschwelle).
+  * Optionales Investment-Performance-Tracking über eingezahltes Kapital je Stichtag.
   * Interaktive Vermögensvisualisierung: Dynamisches Strecken- und Flächendiagramm (Stacked Area) mit Zeitraum-Schiebereglern und Schnellwahl-Filtern (1J, 3J, 5J, 10J, Max).
   * Stichtagsbezogene Kontostands-Matrix und historische Salden.
   * Automatisierter Kontoauszug-Import (PDF für C24, Targobank; OpenDocument Spreadsheet ODS).
   * Integrierte Bankverzeichnis-Abfrage via OpenIBAN / BIC.
 * **Private-Kredite**: Verwaltung von Kreditverträgen, Ratenplänen, Sondertilgungen und offenen Restforderungen im Familien- und Freundeskreis.
 * **Energie & Amortisation („Black Zero")**:
-  * Zähler- und Zählerstandsverwaltung (Strom, Gas, Wasser, PV-Einspeisung/Erzeugung, Wärmepumpe).
+  * Zähler- und Zählerstandsverwaltung (Strom, Gas, Wasser, PV-Einspeisung/Erzeugung, Wärmepumpe, Wallbox) inklusive ODS-Import.
+  * KI-gestützte Zählerstandserfassung aus Fotos & Portal-Screenshots (Upload, Drag & Drop oder Zwischenablage per `Strg+V`, EXIF-Datumserkennung, Zähler-Erkennungshinweise, Delta-Modus und Plausibilitätsprüfung).
   * Tarifverwaltung für Arbeitspreise und Grundgebühren.
   * Wirtschaftlichkeits- und Amortisationsberechnung für Investitionsgüter (PV-Anlagen, Wallboxen, Speicher).
 * **Administration**:
   * Benutzer- und Rollenverwaltung (`ROLE_ADMIN`, `ROLE_USER`).
+  * Einstellungen für KI-/Vision-Anbindung (Anbieter-Presets, API-Key, Base-URL, Live-Modellabruf und Verbindungstest) sowie Fach-Schwellenwerte.
   * Personenverwaltung und Kategorisierungsregeln für Buchungen.
   * Datenbank-Reset- und Datenmigrations-Werkzeuge.
 * **Mobile Responsiveness**: Optimierte Benutzeroberfläche für Mobilgeräte und Smartphones (Touch-freundliche Filter, automatische KPI-Karten-Umbrüche und kollapssichere Tabellen-Layouts).
@@ -27,7 +31,7 @@ Selbst gehostete Webanwendung für Haushaltsfinanz-Kaskaden, private Familienkre
 * **Backend**: Java 25 (OpenJDK / Eclipse Temurin), Spring Boot 4
 * **Frontend**: Vaadin Flow 25 (Full-Stack Java, Lumo Dark/Light-Theme, serverseitiges Event-Handling, SVG-Visualisierung)
 * **Persistenz**: PostgreSQL, Spring Data JPA / Hibernate (`ddl-auto: none`, `open-in-view: false`)
-* **Datenbank-Migrationen**: Flyway (`V1`–`V12`)
+* **Datenbank-Migrationen**: Flyway (`V1`–`V15`)
 * **Sicherheit**: Spring Security (Form-Login mit BCrypt und optionales Google OAuth2/OIDC)
 * **Testing**: JUnit 5, Mockito, Testcontainers (PostgreSQL)
 * **Logging**: Logback mit Logstash-JSON-Streaming über TCP
@@ -68,7 +72,7 @@ Bitte diesen Token zur Freischaltung auf /setup eingeben.
 | `LOGGING_TCP_HOST` | `127.0.0.1` | Fallback-Host des Log-Receivers (z. B. Chainsaw / Logstash) |
 | `LOGGING_TCP_PORT` | `4560` | Fallback-Port des TCP-Log-Receivers |
 
-Die Flyway-Migrationen (`V1`–`V12`) werden beim Start automatisch angewendet.
+Die Flyway-Migrationen (`V1`–`V15`) werden beim Start automatisch angewendet.
 
 ## Download & Ausführung
 
@@ -88,7 +92,7 @@ Die Flyway-Migrationen (`V1`–`V12`) werden beim Start automatisch angewendet.
 
 | Kommando | Beschreibung |
 | --- | --- |
-| `mvn clean test` | Führt alle Unit- und UI-Tests aus (schnell, ca. 15s; Integrationstests übersprungen) |
+| `mvn clean test` | Führt alle Unit- und UI-Tests aus (schnell, ca. 30s; Integrationstests übersprungen) |
 | `mvn clean test -Pintegration-tests` | Führt zusätzlich alle Integrationstests mit Testcontainers (PostgreSQL in Docker) aus |
 | `mvn clean package -Pproduction -DskipTests` | Baut das produktionsreife Fat-JAR inklusive kompilierter und minifizierter Vaadin-Frontend-Assets |
 | `mvn spring-boot:run` | Startet die Anwendung lokal im Entwicklungsmodus |
