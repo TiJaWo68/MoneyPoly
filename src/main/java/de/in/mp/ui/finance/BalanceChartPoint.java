@@ -28,7 +28,17 @@ record BalanceChartPoint(
         BigDecimal checking,
         BigDecimal savings,
         BigDecimal investment,
-        BigDecimal total) {
+        BigDecimal total,
+        BigDecimal investedCapital) {
+
+    BalanceChartPoint(
+            LocalDate date,
+            BigDecimal checking,
+            BigDecimal savings,
+            BigDecimal investment,
+            BigDecimal total) {
+        this(date, checking, savings, investment, total, BigDecimal.ZERO);
+    }
 
     BigDecimal stackedSavings() {
         return checking.add(savings);
@@ -62,6 +72,7 @@ record BalanceChartPoint(
         }
 
         Map<UUID, BigDecimal> lastKnownBalance = new HashMap<>();
+        Map<UUID, BigDecimal> lastKnownInvestedCapital = new HashMap<>();
         List<BalanceChartPoint> points = new ArrayList<>(chronological.size());
         for (BalanceDateRow row : chronological) {
             LocalDate date = row.date();
@@ -69,9 +80,13 @@ record BalanceChartPoint(
                 AccountSnapshot snap = row.snapshotFor(account.getId());
                 if (snap != null && snap.getBalance() != null) {
                     lastKnownBalance.put(account.getId(), snap.getBalance());
+                    if (snap.getInvestedCapital() != null) {
+                        lastKnownInvestedCapital.put(account.getId(), snap.getInvestedCapital());
+                    }
                 }
             }
-            points.add(aggregateAtDate(balanceAccounts, date, firstSnapshotDate, lastSnapshotDate, lastKnownBalance));
+            points.add(aggregateAtDate(balanceAccounts, date, firstSnapshotDate, lastSnapshotDate,
+                    lastKnownBalance, lastKnownInvestedCapital));
         }
         return points;
     }
@@ -81,11 +96,13 @@ record BalanceChartPoint(
             LocalDate date,
             Map<UUID, LocalDate> firstSnapshotDate,
             Map<UUID, LocalDate> lastSnapshotDate,
-            Map<UUID, BigDecimal> lastKnownBalance) {
+            Map<UUID, BigDecimal> lastKnownBalance,
+            Map<UUID, BigDecimal> lastKnownInvestedCapital) {
         BigDecimal checking = BigDecimal.ZERO;
         BigDecimal savings = BigDecimal.ZERO;
         BigDecimal investment = BigDecimal.ZERO;
         BigDecimal total = BigDecimal.ZERO;
+        BigDecimal investedCapital = BigDecimal.ZERO;
 
         for (Account account : accounts) {
             UUID id = account.getId();
@@ -108,10 +125,11 @@ record BalanceChartPoint(
             } else if (type == AccountType.INVESTMENT) {
                 investment = investment.add(balance);
                 total = total.add(balance);
+                investedCapital = investedCapital.add(lastKnownInvestedCapital.getOrDefault(id, BigDecimal.ZERO));
             } else if (type == AccountType.LOAN) {
                 total = total.subtract(balance);
             }
         }
-        return new BalanceChartPoint(date, checking, savings, investment, total);
+        return new BalanceChartPoint(date, checking, savings, investment, total, investedCapital);
     }
 }

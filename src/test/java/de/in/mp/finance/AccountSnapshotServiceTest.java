@@ -153,6 +153,46 @@ class AccountSnapshotServiceTest {
                 .isEqualByComparingTo("1200.00");
     }
 
+    @Test
+    void recordBatchStoresAndClearsOptionalInvestedCapitalForInvestmentAccounts() {
+        Account depot = account(AccountType.INVESTMENT);
+        when(accountRepository.findById(depot.getId())).thenReturn(Optional.of(depot));
+
+        service.recordBatch(OCTOBER,
+                Map.of(depot.getId(), new BigDecimal("52210.00")),
+                Map.of(depot.getId(), new BigDecimal("48000.00")));
+
+        AccountSnapshot stored = store.get(0);
+        assertThat(stored.getInvestedCapital()).isEqualByComparingTo("48000.00");
+
+        // Regular batch without investedCapital map preserves existing investedCapital
+        service.recordBatch(OCTOBER, Map.of(depot.getId(), new BigDecimal("53000.00")));
+        assertThat(stored.getInvestedCapital()).isEqualByComparingTo("48000.00");
+
+        // Explicit null in investedCapital map clears previously stored value
+        Map<UUID, BigDecimal> cleared = new java.util.HashMap<>();
+        cleared.put(depot.getId(), null);
+        service.recordBatch(OCTOBER, Map.of(depot.getId(), new BigDecimal("53000.00")), cleared);
+        assertThat(stored.getInvestedCapital()).isNull();
+    }
+
+    @Test
+    void investmentPerformanceComputesGainAndReturnSafely() {
+        InvestmentPerformance positive = InvestmentPerformance.of(
+                new BigDecimal("52210.00"), new BigDecimal("48000.00")).orElseThrow();
+        assertThat(positive.gain()).isEqualByComparingTo("4210.00");
+        assertThat(positive.returnPercent()).isEqualByComparingTo("8.8");
+        assertThat(positive.isPositive()).isTrue();
+        assertThat(positive.format(java.util.Locale.GERMANY)).contains("+4.210,00").contains("+8,8 %");
+
+        InvestmentPerformance zeroCostBasis = InvestmentPerformance.of(
+                new BigDecimal("1000.00"), BigDecimal.ZERO).orElseThrow();
+        assertThat(zeroCostBasis.gain()).isEqualByComparingTo("1000.00");
+        assertThat(zeroCostBasis.returnPercent()).isNull();
+
+        assertThat(InvestmentPerformance.of(new BigDecimal("1000.00"), null)).isEmpty();
+    }
+
     private static Account account(AccountType type) {
         Account account = new Account();
         account.setId(UUID.randomUUID());

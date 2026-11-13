@@ -42,6 +42,9 @@ public class AccountSnapshot {
     @Column(name = "outflow", precision = 12, scale = 2)
     private BigDecimal outflow;
 
+    @Column(name = "invested_capital", precision = 12, scale = 2)
+    private BigDecimal investedCapital;
+
     @Column(name = "notes", length = 255)
     private String notes;
 
@@ -91,6 +94,14 @@ public class AccountSnapshot {
 
     public void setOutflow(BigDecimal outflow) {
         this.outflow = outflow;
+    }
+
+    public BigDecimal getInvestedCapital() {
+        return investedCapital;
+    }
+
+    public void setInvestedCapital(BigDecimal investedCapital) {
+        this.investedCapital = investedCapital;
     }
 
     public String getNotes() {

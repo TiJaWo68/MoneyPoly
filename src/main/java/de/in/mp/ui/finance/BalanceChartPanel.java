@@ -48,6 +48,7 @@ class BalanceChartPanel extends VerticalLayout {
     private static final String COLOR_SAVINGS = "#10b981";
     private static final String COLOR_INVESTMENT = "#8b5cf6";
     private static final String COLOR_TOTAL = "#38bdf8";
+    private static final String COLOR_INVESTED_CAPITAL = "#f59e0b";
 
     private static final List<Integer> YEAR_PRESETS = List.of(1, 3, 5, 10);
     private static final double[] NICE_STEPS = { 1.0, 2.0, 2.5, 5.0, 10.0 };
@@ -62,6 +63,7 @@ class BalanceChartPanel extends VerticalLayout {
     private final Span startDateLabel = new Span();
     private final Span endDateLabel = new Span();
     private final HorizontalLayout sliderRow = new HorizontalLayout();
+    private HorizontalLayout investedLegendItem;
 
     private List<BalanceChartPoint> allPoints = List.of();
     private int startIndex;
@@ -153,8 +155,13 @@ class BalanceChartPanel extends VerticalLayout {
     }
 
     private HorizontalLayout createToolbar() {
+        investedLegendItem = createLegendItem(
+                COLOR_INVESTED_CAPITAL, getTranslation("finance.chart.legend.invested-capital"), true);
+        investedLegendItem.setVisible(false);
+
         HorizontalLayout legend = new HorizontalLayout(
                 createLegendItem(COLOR_TOTAL, getTranslation("finance.view.kpi.net-worth"), true),
+                investedLegendItem,
                 createLegendItem(COLOR_INVESTMENT, getTranslation("finance.account.type.INVESTMENT"), false),
                 createLegendItem(COLOR_SAVINGS, getTranslation("finance.account.type.SAVINGS"), false),
                 createLegendItem(COLOR_CHECKING, getTranslation("finance.account.type.CHECKING"), false));
@@ -328,6 +335,9 @@ class BalanceChartPanel extends VerticalLayout {
         updateDeltaBadge(firstPoint.total(), lastPoint.total());
 
         lastSvgMarkup = buildSvg(visible);
+        if (investedLegendItem != null) {
+            investedLegendItem.setVisible(hasInvestedCapital(visible));
+        }
         chartContainer.getElement().setProperty("innerHTML", lastSvgMarkup);
     }
 
@@ -371,6 +381,9 @@ class BalanceChartPanel extends VerticalLayout {
                 BalanceChartPoint::stackedSavings, BalanceChartPoint::stackedInvestment);
 
         appendAxesLines(svg);
+        if (hasInvestedCapital(points)) {
+            appendInvestedCapitalLine(svg, points, xs, maxDouble);
+        }
         appendTotalLineAndMarkers(svg, points, xs, maxDouble);
 
         svg.append("</svg>");
@@ -525,13 +538,43 @@ class BalanceChartPanel extends VerticalLayout {
         }
     }
 
+    private static boolean hasInvestedCapital(List<BalanceChartPoint> points) {
+        return points.stream().anyMatch(point -> point.investedCapital().signum() > 0);
+    }
+
+    private void appendInvestedCapitalLine(
+            StringBuilder svg, List<BalanceChartPoint> points, double[] xs, double maxDouble) {
+        if (points.size() == 1) {
+            double x = xs[0];
+            double y = yFor(points.get(0).investedCapital().doubleValue(), maxDouble);
+            svg.append("<circle data-series=\"INVESTED_CAPITAL\" cx=\"").append(fmt(x))
+                    .append("\" cy=\"").append(fmt(y))
+                    .append("\" r=\"4\" fill=\"").append(COLOR_INVESTED_CAPITAL).append("\"/>");
+            return;
+        }
+        StringBuilder path = new StringBuilder();
+        for (int i = 0; i < points.size(); i++) {
+            double x = xs[i];
+            double y = yFor(points.get(i).investedCapital().doubleValue(), maxDouble);
+            path.append(i == 0 ? "M " : " L ").append(fmt(x)).append(' ').append(fmt(y));
+        }
+        svg.append("<path data-series=\"INVESTED_CAPITAL\" d=\"").append(path)
+                .append("\" fill=\"none\" stroke=\"").append(COLOR_INVESTED_CAPITAL)
+                .append("\" stroke-width=\"2.5\" stroke-dasharray=\"6 4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>");
+    }
+
     private String buildPointTooltip(BalanceChartPoint point) {
         Locale loc = locale();
-        return DateFormatter.format(point.date(), loc) + "\n"
+        String base = DateFormatter.format(point.date(), loc) + "\n"
                 + getTranslation("finance.view.kpi.net-worth") + ": " + MoneyFormatter.format(point.total(), loc) + "\n"
                 + getTranslation("finance.account.type.INVESTMENT") + ": " + MoneyFormatter.format(point.investment(), loc) + "\n"
                 + getTranslation("finance.account.type.SAVINGS") + ": " + MoneyFormatter.format(point.savings(), loc) + "\n"
                 + getTranslation("finance.account.type.CHECKING") + ": " + MoneyFormatter.format(point.checking(), loc);
+        if (point.investedCapital().signum() > 0) {
+            base += "\n" + getTranslation("finance.chart.legend.invested-capital") + ": "
+                    + MoneyFormatter.format(point.investedCapital(), loc);
+        }
+        return base;
     }
 
     private static List<Integer> selectTickIndices(int totalPoints, int maxTicks) {
@@ -554,7 +597,7 @@ class BalanceChartPanel extends VerticalLayout {
     private static YScale computeYScale(List<BalanceChartPoint> points) {
         BigDecimal max = BigDecimal.ZERO;
         for (BalanceChartPoint point : points) {
-            max = max.max(point.total()).max(point.stackedInvestment());
+            max = max.max(point.total()).max(point.stackedInvestment()).max(point.investedCapital());
         }
         if (max.signum() <= 0) {
             return new YScale(new BigDecimal("250"), 4, new BigDecimal("1000"));

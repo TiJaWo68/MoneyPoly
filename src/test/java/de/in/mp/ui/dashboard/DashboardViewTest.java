@@ -7,6 +7,7 @@ import static org.mockito.Mockito.when;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -26,6 +27,8 @@ import de.in.mp.admin.AppSettingService;
 import de.in.mp.admin.PersonService;
 import de.in.mp.finance.Account;
 import de.in.mp.finance.AccountService;
+import de.in.mp.finance.AccountSnapshot;
+import de.in.mp.finance.AccountSnapshotService;
 import de.in.mp.finance.AccountType;
 import de.in.mp.finance.DashboardKpis;
 import de.in.mp.finance.DashboardService;
@@ -37,6 +40,7 @@ import de.in.mp.loans.LoanContractService;
 class DashboardViewTest {
 
     private AccountService accountService;
+    private AccountSnapshotService snapshotService;
     private LoanContractService loanContractService;
     private PersonService personService;
     private AppSettingService appSettingService;
@@ -46,6 +50,7 @@ class DashboardViewTest {
     void setUp() {
         DashboardService dashboardService = mock(DashboardService.class);
         accountService = mock(AccountService.class);
+        snapshotService = mock(AccountSnapshotService.class);
         loanContractService = mock(LoanContractService.class);
         personService = mock(PersonService.class);
         appSettingService = mock(AppSettingService.class);
@@ -53,12 +58,16 @@ class DashboardViewTest {
         when(dashboardService.calculateKpis()).thenReturn(
                 new DashboardKpis(BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO));
         when(accountService.findAll()).thenReturn(List.of());
+        when(snapshotService.findLatestSnapshots(org.mockito.ArgumentMatchers.anyCollection())).thenReturn(Map.of());
         when(loanContractService.findAll()).thenReturn(List.of());
         when(loanContractService.calculateActiveOutstanding()).thenReturn(BigDecimal.ZERO);
         when(personService.findAll()).thenReturn(List.of());
         when(appSettingService.getSavingsInterestWarningThreshold()).thenReturn(new BigDecimal("2.00"));
 
-        view = new DashboardView(dashboardService, accountService, loanContractService, personService, appSettingService);
+        view = new DashboardView(dashboardService, accountService, loanContractService, personService,
+                appSettingService);
+        view = new DashboardView(dashboardService, accountService, snapshotService,
+                loanContractService, personService, appSettingService);
     }
 
     @Test
@@ -117,6 +126,8 @@ class DashboardViewTest {
         when(accountService.findAll()).thenReturn(List.of(institution, checking));
         DashboardView refreshed = new DashboardView(mockDashboardService(), accountService, loanContractService,
                 personService, appSettingService);
+        DashboardView refreshed = new DashboardView(mockDashboardService(), accountService, snapshotService,
+                loanContractService, personService, appSettingService);
 
         String rendered = refreshed.renderAccountLabel(checking).getElement().getTextRecursively();
         assertThat(rendered).contains("Max").doesNotContain("Mustermann");
@@ -135,6 +146,8 @@ class DashboardViewTest {
 
         DashboardView refreshed = new DashboardView(mockDashboardService(), accountService, loanContractService,
                 personService, appSettingService);
+        DashboardView refreshed = new DashboardView(mockDashboardService(), accountService, snapshotService,
+                loanContractService, personService, appSettingService);
 
         String rendered = refreshed.renderLoanLabel(contract).getElement().getTextRecursively();
         assertThat(rendered).isEqualTo("Auto · Person A");
@@ -244,6 +257,8 @@ class DashboardViewTest {
         when(accountService.findAll()).thenReturn(List.of(bank, investment));
         DashboardView refreshed = new DashboardView(mockDashboardService(), accountService, loanContractService,
                 personService, appSettingService);
+        DashboardView refreshed = new DashboardView(mockDashboardService(), accountService, snapshotService,
+                loanContractService, personService, appSettingService);
 
         Span container = (Span) refreshed.renderAccountLabel(investment);
         List<Component> children = container.getChildren().toList();
@@ -255,6 +270,41 @@ class DashboardViewTest {
 
         String text = children.get(1).getElement().getTextRecursively();
         assertThat(text).isEqualTo("Trade Republic · Person");
+    }
+
+    @Test
+    void rendersInvestmentPerformanceSublineOnlyWhenInvestedCapitalIsPresent() {
+        Account withCostBasis = new Account();
+        withCostBasis.setId(UUID.randomUUID());
+        withCostBasis.setName("Depot A");
+        withCostBasis.setAccountType(AccountType.INVESTMENT);
+        withCostBasis.setCurrentBalance(new BigDecimal("52210.00"));
+        withCostBasis.setActive(true);
+
+        Account withoutCostBasis = new Account();
+        withoutCostBasis.setId(UUID.randomUUID());
+        withoutCostBasis.setName("Depot B");
+        withoutCostBasis.setAccountType(AccountType.INVESTMENT);
+        withoutCostBasis.setCurrentBalance(new BigDecimal("10000.00"));
+        withoutCostBasis.setActive(true);
+
+        AccountSnapshot snap = new AccountSnapshot();
+        snap.setAccountId(withCostBasis.getId());
+        snap.setBalance(new BigDecimal("52210.00"));
+        snap.setInvestedCapital(new BigDecimal("48000.00"));
+
+        when(accountService.findAll()).thenReturn(List.of(withCostBasis, withoutCostBasis));
+        when(snapshotService.findLatestSnapshots(org.mockito.ArgumentMatchers.anyCollection()))
+                .thenReturn(Map.of(withCostBasis.getId(), snap));
+
+        DashboardView refreshed = new DashboardView(mockDashboardService(), accountService, snapshotService,
+                loanContractService, personService, appSettingService);
+
+        String withPerfText = refreshed.renderAccountAmount(withCostBasis).getElement().getTextRecursively();
+        assertThat(withPerfText).contains("52.210,00").contains("+4.210,00").contains("+8,8 %");
+
+        String withoutPerfText = refreshed.renderAccountAmount(withoutCostBasis).getElement().getTextRecursively();
+        assertThat(withoutPerfText).contains("10.000,00").doesNotContain("%");
     }
 
     private static DashboardService mockDashboardService() {

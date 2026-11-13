@@ -35,9 +35,12 @@ import de.in.mp.admin.AppSettingService;
 import de.in.mp.admin.PersonService;
 import de.in.mp.finance.Account;
 import de.in.mp.finance.AccountService;
+import de.in.mp.finance.AccountSnapshot;
+import de.in.mp.finance.AccountSnapshotService;
 import de.in.mp.finance.AccountType;
 import de.in.mp.finance.DashboardKpis;
 import de.in.mp.finance.DashboardService;
+import de.in.mp.finance.InvestmentPerformance;
 import de.in.mp.finance.Person;
 import de.in.mp.i18n.MoneyFormatter;
 import de.in.mp.loans.LoanContract;
@@ -64,6 +67,7 @@ public class DashboardView extends VerticalLayout implements HasDynamicTitle {
 
     private final DashboardService dashboardService;
     private final AccountService accountService;
+    private final AccountSnapshotService snapshotService;
     private final LoanContractService loanContractService;
     private final PersonService personService;
     private final AppSettingService appSettingService;
@@ -91,12 +95,14 @@ public class DashboardView extends VerticalLayout implements HasDynamicTitle {
     private BigDecimal warningThreshold = new BigDecimal("2.00");
     private Map<UUID, String> personNames = Map.of();
     private Map<UUID, Account> accountsById = Map.of();
+    private Map<UUID, BigDecimal> investedCapitalByAccount = Map.of();
 
     public DashboardView(DashboardService dashboardService, AccountService accountService,
-            LoanContractService loanContractService, PersonService personService,
-            AppSettingService appSettingService) {
+            AccountSnapshotService snapshotService, LoanContractService loanContractService,
+            PersonService personService, AppSettingService appSettingService) {
         this.dashboardService = dashboardService;
         this.accountService = accountService;
+        this.snapshotService = snapshotService;
         this.loanContractService = loanContractService;
         this.personService = personService;
         this.appSettingService = appSettingService;
@@ -220,7 +226,7 @@ public class DashboardView extends VerticalLayout implements HasDynamicTitle {
                 .setComparator(Comparator.comparing(this::accountLabel, String.CASE_INSENSITIVE_ORDER))
                 .setHeader(getTranslation("dashboard.grid.column.name"))
                 .setFlexGrow(1);
-        grid.addColumn(account -> MoneyFormatter.format(account.getCurrentBalance(), locale()))
+        grid.addColumn(new ComponentRenderer<>(this::renderAccountAmount))
                 .setKey(DashboardSortColumn.AMOUNT.key())
                 .setComparator(byBalance)
                 .setHeader(rightAlignedHeader("dashboard.grid.column.balance"))
@@ -486,6 +492,12 @@ public class DashboardView extends VerticalLayout implements HasDynamicTitle {
                 .map(Account::getCurrentBalance)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
+        Map<UUID, AccountSnapshot> latestInvestmentSnapshots = snapshotService.findLatestSnapshots(
+                investments.stream().map(Account::getId).toList());
+        investedCapitalByAccount = latestInvestmentSnapshots.entrySet().stream()
+                .filter(entry -> entry.getValue().getInvestedCapital() != null)
+                .collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().getInvestedCapital()));
+
         personNames = personService.findAll().stream()
                 .collect(Collectors.toMap(Person::getId, Person::getName));
 
@@ -497,7 +509,63 @@ public class DashboardView extends VerticalLayout implements HasDynamicTitle {
 
         renderBlockHeader(liquiditySum, liquidityHeaderProgress, liquidityTotal);
         renderBlockHeader(investedSum, investedHeaderProgress, investedTotal);
+        updateInvestmentsPerformanceTooltip(investments);
         renderBlockHeader(loanSum, loanHeaderProgress, loanContractService.calculateActiveOutstanding());
+    }
+
+    private void updateInvestmentsPerformanceTooltip(List<Account> investments) {
+        BigDecimal balanceWithCostBasis = BigDecimal.ZERO;
+        BigDecimal totalInvestedCapital = BigDecimal.ZERO;
+        boolean hasAny = false;
+        for (Account investment : investments) {
+            BigDecimal costBasis = investedCapitalByAccount.get(investment.getId());
+            if (costBasis == null) {
+                continue;
+            }
+            hasAny = true;
+            balanceWithCostBasis = balanceWithCostBasis.add(
+                    investment.getCurrentBalance() == null ? BigDecimal.ZERO : investment.getCurrentBalance());
+            totalInvestedCapital = totalInvestedCapital.add(costBasis);
+        }
+        if (!hasAny) {
+            investedSum.getElement().removeAttribute("title");
+            return;
+        }
+        BigDecimal finalInvested = totalInvestedCapital;
+        InvestmentPerformance.of(balanceWithCostBasis, totalInvestedCapital).ifPresent(perf ->
+                investedSum.setTitle(getTranslation("finance.balance.tooltip.invested",
+                        MoneyFormatter.format(finalInvested, locale()),
+                        perf.format(locale()))));
+    }
+
+    Component renderAccountAmount(Account account) {
+        Span balanceSpan = new Span(MoneyFormatter.format(account.getCurrentBalance(), locale()));
+        balanceSpan.getStyle().set("white-space", "nowrap");
+        if (account.getAccountType() != AccountType.INVESTMENT) {
+            return balanceSpan;
+        }
+        Optional<InvestmentPerformance> performance = InvestmentPerformance.of(
+                account.getCurrentBalance(), investedCapitalByAccount.get(account.getId()));
+        if (performance.isEmpty()) {
+            return balanceSpan;
+        }
+        InvestmentPerformance perf = performance.get();
+        Span perfSpan = new Span(perf.format(locale()));
+        perfSpan.addClassName(LumoUtility.FontSize.XSMALL);
+        if (perf.isPositive()) {
+            perfSpan.addClassName(LumoUtility.TextColor.SUCCESS);
+        } else if (perf.isNegative()) {
+            perfSpan.addClassName(LumoUtility.TextColor.ERROR);
+        } else {
+            perfSpan.addClassName(LumoUtility.TextColor.SECONDARY);
+        }
+        perfSpan.getStyle().set("white-space", "nowrap");
+
+        VerticalLayout cell = new VerticalLayout(balanceSpan, perfSpan);
+        cell.setPadding(false);
+        cell.setSpacing(false);
+        cell.setDefaultHorizontalComponentAlignment(Alignment.END);
+        return cell;
     }
 
     private void renderBlockHeader(Span sumValue, ProgressIndicator headerProgress, BigDecimal total) {

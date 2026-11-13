@@ -134,6 +134,30 @@ class BalanceChartPanelTest {
         panel.setRangeIndices(1, 2);
         assertThat(panel.visiblePointsForTest()).extracting(BalanceChartPoint::date)
                 .containsExactly(d2020, d2024);
+        assertThat(panel.svgMarkupForTest()).doesNotContain("data-series=\"INVESTED_CAPITAL\"");
+    }
+
+    @Test
+    void rendersInvestedCapitalLineWhenInvestmentSnapshotsContainCostBasis() {
+        Account investment = account(AccountType.INVESTMENT, true);
+        LocalDate d1 = LocalDate.of(2024, 1, 1);
+        LocalDate d2 = LocalDate.of(2025, 1, 1);
+
+        AccountSnapshot s1 = snapshot(investment.getId(), d1, "20000.00");
+        s1.setInvestedCapital(new BigDecimal("18000.00"));
+        AccountSnapshot s2 = snapshot(investment.getId(), d2, "25000.00");
+        s2.setInvestedCapital(new BigDecimal("21000.00"));
+
+        BalanceDateRow r1 = new BalanceDateRow(d1, Map.of(investment.getId(), s1));
+        BalanceDateRow r2 = new BalanceDateRow(d2, Map.of(investment.getId(), s2));
+
+        BalanceChartPanel panel = new BalanceChartPanel();
+        panel.setData(List.of(investment), List.of(r2, r1));
+
+        assertThat(panel.visiblePointsForTest())
+                .extracting(BalanceChartPoint::investedCapital)
+                .containsExactly(new BigDecimal("18000.00"), new BigDecimal("21000.00"));
+        assertThat(panel.svgMarkupForTest()).contains("data-series=\"INVESTED_CAPITAL\"");
     }
 
     private static Account account(AccountType type, boolean active) {

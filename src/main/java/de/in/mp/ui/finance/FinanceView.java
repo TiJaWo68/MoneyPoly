@@ -440,13 +440,22 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
 
     private String tooltip(AccountSnapshot snapshot) {
         if (snapshot == null || (snapshot.getInflow() == null && snapshot.getOutflow() == null
-                && snapshot.getNotes() == null)) {
+                && snapshot.getNotes() == null && snapshot.getInvestedCapital() == null)) {
             return "";
         }
-        return getTranslation("finance.balance.tooltip",
-                formatMoney(snapshot.getInflow()),
-                formatMoney(snapshot.getOutflow()),
-                snapshot.getNotes() == null ? "" : snapshot.getNotes());
+        List<String> parts = new java.util.ArrayList<>();
+        if (snapshot.getInflow() != null || snapshot.getOutflow() != null
+                || (snapshot.getNotes() != null && !snapshot.getNotes().isBlank())) {
+            parts.add(getTranslation("finance.balance.tooltip",
+                    formatMoney(snapshot.getInflow()),
+                    formatMoney(snapshot.getOutflow()),
+                    snapshot.getNotes() == null ? "" : snapshot.getNotes()));
+        }
+        de.in.mp.finance.InvestmentPerformance.of(snapshot.getBalance(), snapshot.getInvestedCapital())
+                .ifPresent(perf -> parts.add(getTranslation("finance.balance.tooltip.invested",
+                        formatMoney(snapshot.getInvestedCapital()),
+                        perf.format(locale()))));
+        return String.join(" | ", parts);
     }
 
     private HorizontalLayout renderRowActions(BalanceDateRow row) {

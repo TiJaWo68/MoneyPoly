@@ -23,6 +23,7 @@ import de.in.mp.finance.Account;
 import de.in.mp.finance.AccountService;
 import de.in.mp.finance.AccountSnapshot;
 import de.in.mp.finance.AccountSnapshotService;
+import de.in.mp.finance.AccountType;
 import de.in.mp.finance.BalanceDateRow;
 import de.in.mp.i18n.DateFormatter;
 import de.in.mp.i18n.MoneyFormatter;
@@ -40,6 +41,7 @@ public class BalanceEntryDialog extends Dialog {
     private final DatePicker date = new DatePicker();
     private final FormLayout accountFields = new FormLayout();
     private final Map<UUID, BigDecimalField> fieldsByAccount = new LinkedHashMap<>();
+    private final Map<UUID, BigDecimalField> investedFieldsByAccount = new LinkedHashMap<>();
 
     private List<BalanceDateRow> history = List.of();
     private Runnable onSaved;
@@ -90,6 +92,7 @@ public class BalanceEntryDialog extends Dialog {
     private void rebuildFields(Map<UUID, AccountSnapshot> existing) {
         accountFields.removeAll();
         fieldsByAccount.clear();
+        investedFieldsByAccount.clear();
 
         List<Account> all = accountService.findAll();
         Map<UUID, Account> byId = AccountLabels.byId(all);
@@ -98,14 +101,26 @@ public class BalanceEntryDialog extends Dialog {
             if (!account.isActive() && snapshot == null) {
                 continue;
             }
-            BigDecimalField field = new BigDecimalField(AccountLabels.qualifiedName(
-                    account, byId, type -> getTranslation("finance.account.type." + type.name())));
+            String label = AccountLabels.qualifiedName(
+                    account, byId, type -> getTranslation("finance.account.type." + type.name()));
+            BigDecimalField field = new BigDecimalField(label);
             field.setWidthFull();
             if (snapshot != null) {
                 field.setValue(snapshot.getBalance());
             }
             fieldsByAccount.put(account.getId(), field);
             accountFields.add(field);
+
+            if (account.getAccountType() == AccountType.INVESTMENT) {
+                BigDecimalField investedField = new BigDecimalField(
+                        getTranslation("finance.balance.field.invested-capital", label));
+                investedField.setWidthFull();
+                if (snapshot != null) {
+                    investedField.setValue(snapshot.getInvestedCapital());
+                }
+                investedFieldsByAccount.put(account.getId(), investedField);
+                accountFields.add(investedField);
+            }
         }
     }
 
@@ -120,6 +135,16 @@ public class BalanceEntryDialog extends Dialog {
                             MoneyFormatter.format(previous.getBalance(), locale),
                             DateFormatter.format(previous.getSnapshotDate(), locale)));
         }
+        for (Map.Entry<UUID, BigDecimalField> entry : investedFieldsByAccount.entrySet()) {
+            AccountSnapshot previous = reference == null
+                    ? null
+                    : previousInvestedSnapshot(entry.getKey(), reference);
+            entry.getValue().setHelperText(previous == null
+                    ? getTranslation("finance.balance.hint.invested-none")
+                    : getTranslation("finance.balance.hint.previous",
+                            MoneyFormatter.format(previous.getInvestedCapital(), locale),
+                            DateFormatter.format(previous.getSnapshotDate(), locale)));
+        }
     }
 
     /** {@code history} is ordered newest first. */
@@ -127,6 +152,16 @@ public class BalanceEntryDialog extends Dialog {
         for (BalanceDateRow row : history) {
             if (row.date().isBefore(reference) && row.snapshotFor(accountId) != null) {
                 return row.snapshotFor(accountId);
+            }
+        }
+        return null;
+    }
+
+    private AccountSnapshot previousInvestedSnapshot(UUID accountId, LocalDate reference) {
+        for (BalanceDateRow row : history) {
+            AccountSnapshot snap = row.snapshotFor(accountId);
+            if (row.date().isBefore(reference) && snap != null && snap.getInvestedCapital() != null) {
+                return snap;
             }
         }
         return null;
@@ -140,8 +175,10 @@ public class BalanceEntryDialog extends Dialog {
         }
         Map<UUID, BigDecimal> values = new LinkedHashMap<>();
         fieldsByAccount.forEach((accountId, field) -> values.put(accountId, field.getValue()));
+        Map<UUID, BigDecimal> investedValues = new LinkedHashMap<>();
+        investedFieldsByAccount.forEach((accountId, field) -> investedValues.put(accountId, field.getValue()));
         try {
-            int saved = snapshotService.recordBatch(date.getValue(), values);
+            int saved = snapshotService.recordBatch(date.getValue(), values, investedValues);
             Notification.show(getTranslation("finance.balance.notification.saved", saved), 3000,
                     Notification.Position.BOTTOM_START);
             close();
@@ -152,6 +189,18 @@ public class BalanceEntryDialog extends Dialog {
             Notification.show(getTranslation("finance.notification.error", exception.getMessage()), 5000,
                     Notification.Position.MIDDLE);
         }
+    }
+
+    void saveForTest() {
+        save();
+    }
+
+    Map<UUID, BigDecimalField> getFieldsByAccountForTest() {
+        return fieldsByAccount;
+    }
+
+    Map<UUID, BigDecimalField> getInvestedFieldsByAccountForTest() {
+        return investedFieldsByAccount;
     }
 
     private static Locale locale() {

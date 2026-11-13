@@ -4,7 +4,9 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -70,15 +72,39 @@ public class AccountSnapshotService {
      */
     @Transactional
     public int recordBatch(LocalDate date, Map<UUID, BigDecimal> balancesByAccount) {
-        int saved = 0;
+        return recordBatch(date, balancesByAccount, Map.of());
+    }
+
+    /**
+     * Records the balances and optional invested capital (cost basis) of several
+     * accounts for one reference date. If {@code investedCapitalByAccount}
+     * explicitly maps an account to {@code null}, any previously stored
+     * invested capital on that date is cleared.
+     */
+    @Transactional
+    public int recordBatch(
+            LocalDate date,
+            Map<UUID, BigDecimal> balancesByAccount,
+            Map<UUID, BigDecimal> investedCapitalByAccount) {
+        int savedCount = 0;
         for (Map.Entry<UUID, BigDecimal> entry : balancesByAccount.entrySet()) {
             if (entry.getValue() == null) {
                 continue;
             }
-            recordSnapshot(entry.getKey(), SnapshotValue.ofBalance(date, entry.getValue()));
-            saved++;
+            UUID accountId = entry.getKey();
+            boolean hasInvestedEntry = investedCapitalByAccount != null
+                    && investedCapitalByAccount.containsKey(accountId);
+            BigDecimal invested = hasInvestedEntry ? investedCapitalByAccount.get(accountId) : null;
+            AccountSnapshot saved = recordSnapshot(
+                    accountId,
+                    SnapshotValue.ofBalanceAndInvestedCapital(date, entry.getValue(), invested));
+            if (hasInvestedEntry && invested == null && saved.getInvestedCapital() != null) {
+                saved.setInvestedCapital(null);
+                snapshotRepository.save(saved);
+            }
+            savedCount++;
         }
-        return saved;
+        return savedCount;
     }
 
     /**
@@ -97,6 +123,20 @@ public class AccountSnapshotService {
     @Transactional(readOnly = true)
     public Optional<AccountSnapshot> findLatest(UUID accountId) {
         return snapshotRepository.findFirstByAccountIdOrderBySnapshotDateDesc(accountId);
+    }
+
+    @Transactional(readOnly = true)
+    public Map<UUID, AccountSnapshot> findLatestSnapshots(Collection<UUID> accountIds) {
+        Map<UUID, AccountSnapshot> result = new HashMap<>();
+        if (accountIds == null) {
+            return result;
+        }
+        for (UUID accountId : accountIds) {
+            if (accountId != null) {
+                findLatest(accountId).ifPresent(snapshot -> result.put(accountId, snapshot));
+            }
+        }
+        return result;
     }
 
     @Transactional(readOnly = true)
@@ -147,6 +187,9 @@ public class AccountSnapshotService {
         }
         if (value.outflow() != null) {
             snapshot.setOutflow(scale(value.outflow().abs()));
+        }
+        if (value.investedCapital() != null) {
+            snapshot.setInvestedCapital(scale(value.investedCapital()));
         }
         if (value.notes() != null && !value.notes().isBlank()) {
             snapshot.setNotes(value.notes().trim());
