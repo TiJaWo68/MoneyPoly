@@ -27,5 +27,10 @@ docs/*
 src/main/frontend/generated/
 src/main/bundles/
 node_modules/
+/package.json
+/package-lock.json
+/tsconfig.json
+/types.d.ts
+/.vaadin-node-tasks.lock
 /build_and_deploy2dev.cmd
 /.vscode/

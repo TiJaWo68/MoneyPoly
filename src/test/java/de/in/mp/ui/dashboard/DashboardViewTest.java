@@ -64,8 +64,6 @@ class DashboardViewTest {
         when(personService.findAll()).thenReturn(List.of());
         when(appSettingService.getSavingsInterestWarningThreshold()).thenReturn(new BigDecimal("2.00"));
 
-        view = new DashboardView(dashboardService, accountService, loanContractService, personService,
-                appSettingService);
         view = new DashboardView(dashboardService, accountService, snapshotService,
                 loanContractService, personService, appSettingService);
     }
@@ -124,8 +122,6 @@ class DashboardViewTest {
         checking.setAccountHolder("Max Mustermann");
 
         when(accountService.findAll()).thenReturn(List.of(institution, checking));
-        DashboardView refreshed = new DashboardView(mockDashboardService(), accountService, loanContractService,
-                personService, appSettingService);
         DashboardView refreshed = new DashboardView(mockDashboardService(), accountService, snapshotService,
                 loanContractService, personService, appSettingService);
 
@@ -144,8 +140,6 @@ class DashboardViewTest {
         contract.setDesignation("Auto");
         contract.setDebtorIds(Set.of(debtor.getId()));
 
-        DashboardView refreshed = new DashboardView(mockDashboardService(), accountService, loanContractService,
-                personService, appSettingService);
         DashboardView refreshed = new DashboardView(mockDashboardService(), accountService, snapshotService,
                 loanContractService, personService, appSettingService);
 
@@ -255,8 +249,6 @@ class DashboardViewTest {
         investment.setAccountHolder("Person A");
 
         when(accountService.findAll()).thenReturn(List.of(bank, investment));
-        DashboardView refreshed = new DashboardView(mockDashboardService(), accountService, loanContractService,
-                personService, appSettingService);
         DashboardView refreshed = new DashboardView(mockDashboardService(), accountService, snapshotService,
                 loanContractService, personService, appSettingService);
 
