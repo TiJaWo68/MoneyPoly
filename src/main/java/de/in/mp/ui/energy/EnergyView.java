@@ -11,6 +11,8 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import org.springframework.beans.factory.annotation.Autowired;
+
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.button.Button;
@@ -18,7 +20,6 @@ import com.vaadin.flow.component.grid.ColumnTextAlign;
 import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.grid.GridVariant;
 import com.vaadin.flow.component.grid.HeaderRow;
-import com.vaadin.flow.component.html.H2;
 import com.vaadin.flow.component.html.H3;
 import com.vaadin.flow.component.html.Span;
 import com.vaadin.flow.component.icon.VaadinIcon;
@@ -34,6 +35,7 @@ import com.vaadin.flow.router.HasDynamicTitle;
 import com.vaadin.flow.router.Route;
 import com.vaadin.flow.theme.lumo.LumoUtility;
 
+import de.in.mp.admin.AppSettingService;
 import de.in.mp.energy.AssetAmortizationSummary;
 import de.in.mp.energy.EnergyAmortizationService;
 import de.in.mp.energy.EnergyAsset;
@@ -46,6 +48,7 @@ import de.in.mp.energy.MeterReading;
 import de.in.mp.energy.MeterReadingService;
 import de.in.mp.energy.MeterService;
 import de.in.mp.energy.MeterType;
+import de.in.mp.energy.vision.VisionMeterClient;
 import de.in.mp.i18n.MoneyFormatter;
 import de.in.mp.ui.ActionMenu;
 import de.in.mp.ui.GridActionButton;
@@ -74,8 +77,10 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle {
     private final MeterReadingService readingService;
     private final EnergyTariffService tariffService;
     private final EnergyAmortizationService amortizationService;
+    private final AppSettingService appSettingService;
 
     private final BatchMeterReadingDialog batchReadingDialog;
+    private final PhotoReadingImportDialog photoImportDialog;
     private final EnergyAssetEditorDialog assetEditorDialog;
     private final MeterEditorDialog meterEditorDialog;
     private final EnergyTariffEditorDialog tariffEditorDialog;
@@ -85,7 +90,7 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle {
     private final Span remainingCostValue = new Span();
     private final Span activeMetersValue = new Span();
 
-    private final Grid<EnergyDateRow> readingsGrid = new Grid<>(EnergyDateRow.class, false);
+    private Grid<EnergyDateRow> readingsGrid = new Grid<>(EnergyDateRow.class, false);
     private final Grid<AssetAmortizationSummary> amortizationGrid = new Grid<>(AssetAmortizationSummary.class, false);
     private final Grid<Meter> metersGrid = new Grid<>(Meter.class, false);
     private final Grid<EnergyTariff> tariffsGrid = new Grid<>(EnergyTariff.class, false);
@@ -101,6 +106,7 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle {
     private boolean kpisVisible = true;
     private Map<UUID, String> assetNamesById = Map.of();
     private Map<UUID, BigDecimal> averageDeltasByMeter = Map.of();
+    private List<String> configuredMeterSignature;
     private HeaderRow groupHeaderRow;
 
     public EnergyView(
@@ -109,13 +115,29 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle {
             MeterReadingService readingService,
             EnergyTariffService tariffService,
             EnergyAmortizationService amortizationService) {
+        this(assetService, meterService, readingService, tariffService, amortizationService, null, null);
+    }
+
+    @Autowired
+    public EnergyView(
+            EnergyAssetService assetService,
+            MeterService meterService,
+            MeterReadingService readingService,
+            EnergyTariffService tariffService,
+            EnergyAmortizationService amortizationService,
+            AppSettingService appSettingService,
+            VisionMeterClient visionMeterClient) {
         this.assetService = assetService;
         this.meterService = meterService;
         this.readingService = readingService;
         this.tariffService = tariffService;
         this.amortizationService = amortizationService;
+        this.appSettingService = appSettingService;
 
         this.batchReadingDialog = new BatchMeterReadingDialog(meterService, readingService);
+        this.photoImportDialog = (appSettingService != null && visionMeterClient != null)
+                ? new PhotoReadingImportDialog(meterService, readingService, appSettingService, visionMeterClient)
+                : null;
         this.assetEditorDialog = new EnergyAssetEditorDialog(assetService);
         this.meterEditorDialog = new MeterEditorDialog(meterService, assetService);
         this.tariffEditorDialog = new EnergyTariffEditorDialog(tariffService);
@@ -146,7 +168,7 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle {
         tabContent.setPadding(false);
         tabContent.getStyle().set("min-height", "400px");
 
-        add(createHeader(), kpiRow, tabBar, tabContent);
+        add(actionMenu.createTitleHeader(getTranslation("energy.view.title")), kpiRow, tabBar, tabContent);
         expand(tabContent);
         refreshAll();
         renderSelectedTab();
@@ -157,18 +179,6 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle {
         return getTranslation("energy.view.page-title");
     }
 
-    private HorizontalLayout createHeader() {
-        H2 title = new H2(getTranslation("energy.view.title"));
-        title.addClassNames(LumoUtility.FontSize.XLARGE, LumoUtility.Margin.NONE);
-
-        HorizontalLayout header = new HorizontalLayout(title, actionMenu.getMenuBar());
-        header.setWidthFull();
-        header.setDefaultVerticalComponentAlignment(Alignment.CENTER);
-        header.expand(title);
-        header.addClassName(LumoUtility.Margin.Bottom.XSMALL);
-        return header;
-    }
-
     private void rebuildActionMenu() {
         actionMenu.clear();
         Tab selected = tabBar.getSelectedTab();
@@ -177,6 +187,13 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle {
                 getTranslation("energy.button.batch-entry"),
                 VaadinIcon.PLUS,
                 () -> batchReadingDialog.openForCreate(this::refreshAll));
+
+        if (photoImportDialog != null && appSettingService.getVisionConfig().isConfigured()) {
+            actionMenu.addAction(
+                    getTranslation("energy.button.photo-import"),
+                    VaadinIcon.CAMERA,
+                    () -> photoImportDialog.openForImport(this::refreshAll));
+        }
 
         if (selected == amortizationTab) {
             actionMenu.addSeparator();
@@ -290,6 +307,14 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle {
         return kpiRow;
     }
 
+    Grid<EnergyDateRow> getReadingsGridForTest() {
+        return readingsGrid;
+    }
+
+    void refreshForTest() {
+        refreshAll();
+    }
+
     private void rebuildReadingsGridColumns(List<Meter> activeMeters) {
         if (groupHeaderRow != null) {
             readingsGrid.removeHeaderRow(groupHeaderRow);
@@ -298,14 +323,7 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle {
         readingsGrid.removeAllColumns();
 
         List<Meter> orderedMeters = new ArrayList<>(activeMeters);
-        orderedMeters.sort((a, b) -> {
-            int gCmp = Integer.compare(groupRank(a.getType()), groupRank(b.getType()));
-            if (gCmp != 0) {
-                return gCmp;
-            }
-            int oCmp = Integer.compare(a.getDisplayOrder(), b.getDisplayOrder());
-            return oCmp != 0 ? oCmp : a.getName().compareToIgnoreCase(b.getName());
-        });
+        orderedMeters.sort(EnergyView::compareMetersForDisplay);
 
         readingsGrid.addColumn(row -> DATE_FORMAT.format(row.readingDate()))
                 .setHeader(getTranslation("energy.readings.column.date"))
@@ -703,6 +721,23 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle {
         return new HorizontalLayout(editButton, deleteButton);
     }
 
+    private static int compareMetersForDisplay(Meter a, Meter b) {
+        int gCmp = Integer.compare(groupRank(a.getType()), groupRank(b.getType()));
+        if (gCmp != 0) {
+            return gCmp;
+        }
+        int oCmp = Integer.compare(a.getDisplayOrder(), b.getDisplayOrder());
+        return oCmp != 0 ? oCmp : a.getName().compareToIgnoreCase(b.getName());
+    }
+
+    private static List<String> meterColumnSignature(List<Meter> activeMeters) {
+        return activeMeters.stream()
+                .sorted(EnergyView::compareMetersForDisplay)
+                .map(m -> m.getId() + "|" + m.getName() + "|" + m.getType() + "|" + m.getUnit() + "|"
+                        + m.getDisplayOrder())
+                .toList();
+    }
+
     private void refreshAll() {
         List<EnergyAsset> assets = assetService.findAll();
         assetNamesById = assets.stream()
@@ -715,7 +750,21 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle {
         List<EnergyDateRow> dateRows = amortizationService.buildDateRows();
         averageDeltasByMeter = amortizationService.calculateAverageDeltasByMeter(dateRows);
 
-        rebuildReadingsGridColumns(activeMeters);
+        List<String> signature = meterColumnSignature(activeMeters);
+        if (!signature.equals(configuredMeterSignature)) {
+            boolean wasConfigured = configuredMeterSignature != null;
+            if (wasConfigured) {
+                // Replace the attached Grid instance rather than calling removeAllColumns/prependHeaderRow
+                // on a live Vaadin Grid, which corrupts column-group DOM ordering in the browser.
+                readingsGrid = new Grid<>(EnergyDateRow.class, false);
+                groupHeaderRow = null;
+            }
+            rebuildReadingsGridColumns(activeMeters);
+            configuredMeterSignature = signature;
+            if (wasConfigured && tabBar.getSelectedTab() == readingsTab) {
+                renderSelectedTab();
+            }
+        }
         readingsGrid.setItems(dateRows);
         amortizationGrid.setItems(amortizationService.calculateAssetAmortizations());
         metersGrid.setItems(allMeters);
@@ -742,8 +791,9 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle {
             return "0";
         }
         NumberFormat numberFormat = NumberFormat.getNumberInstance(locale != null ? locale : Locale.GERMAN);
+        numberFormat.setRoundingMode(RoundingMode.HALF_UP);
         numberFormat.setMinimumFractionDigits(0);
-        numberFormat.setMaximumFractionDigits(3);
+        numberFormat.setMaximumFractionDigits(0);
         return numberFormat.format(value);
     }
 }

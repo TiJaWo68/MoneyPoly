@@ -6,6 +6,7 @@ import java.util.Deque;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -19,7 +20,6 @@ import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.grid.GridVariant;
 import com.vaadin.flow.component.grid.HeaderRow;
 import com.vaadin.flow.component.html.Div;
-import com.vaadin.flow.component.html.H2;
 import com.vaadin.flow.component.html.Paragraph;
 import com.vaadin.flow.component.html.Span;
 import com.vaadin.flow.component.icon.VaadinIcon;
@@ -71,6 +71,9 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
     public static final String ACCOUNT_QUERY_PARAM = "account";
 
     private final AccountService accountService;
+    private static final String GRID_MIN_HEIGHT = "380px";
+    private static final String SIGNATURE_DELIMITER = "|";
+
     private final AccountSnapshotService snapshotService;
     private final AppSettingService appSettingService;
     private final AccountEditorDialog editorDialog;
@@ -88,14 +91,15 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
     private final VerticalLayout tabContent = new VerticalLayout();
 
     private final BalanceChartPanel chartPanel = new BalanceChartPanel();
-    private final Grid<BalanceDateRow> balanceGrid = new Grid<>();
+    private Grid<BalanceDateRow> balanceGrid = createBalanceGrid();
     private final TreeGrid<Account> treeGrid = new TreeGrid<>();
     private final ActionMenu actionMenu;
     private final HorizontalLayout kpiRow;
 
     private boolean showInactiveAccounts;
     private boolean kpisVisible = true;
-    private HeaderRow groupHeaderRow;
+    private List<String> configuredBalanceSignature;
+    private List<Account> displayedBalanceColumns = List.of();
     private Map<UUID, BigDecimal> institutionTotals = Map.of();
     private List<Account> currentAccounts = List.of();
 
@@ -131,14 +135,10 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
         tabContent.getStyle().set("min-height", "400px");
 
         configureTreeGrid();
-        balanceGrid.addThemeVariants(GridVariant.LUMO_ROW_STRIPES, GridVariant.LUMO_COLUMN_BORDERS,
-                GridVariant.LUMO_COMPACT);
-        balanceGrid.setSizeFull();
-        balanceGrid.getStyle().set("min-height", "380px");
         treeGrid.setSizeFull();
-        treeGrid.getStyle().set("min-height", "380px");
+        treeGrid.getStyle().set("min-height", GRID_MIN_HEIGHT);
 
-        add(createHeader(), kpiRow, tabBar, tabContent);
+        add(actionMenu.createTitleHeader(getTranslation("finance.view.title")), kpiRow, tabBar, tabContent);
         expand(tabContent);
         refresh();
         renderSelectedTab();
@@ -207,18 +207,6 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
         while (!ancestors.isEmpty()) {
             treeGrid.expand(ancestors.pop());
         }
-    }
-
-    private HorizontalLayout createHeader() {
-        H2 title = new H2(getTranslation("finance.view.title"));
-        title.addClassNames(LumoUtility.FontSize.XLARGE, LumoUtility.Margin.NONE);
-
-        HorizontalLayout header = new HorizontalLayout(title, actionMenu.getMenuBar());
-        header.setWidthFull();
-        header.setDefaultVerticalComponentAlignment(Alignment.CENTER);
-        header.expand(title);
-        header.addClassName(LumoUtility.Margin.Bottom.XSMALL);
-        return header;
     }
 
     private void rebuildActionMenu() {
@@ -328,22 +316,22 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
                 .toList();
     }
 
-    private void rebuildBalanceColumns(List<Account> accounts, List<BalanceDateRow> rows) {
-        if (groupHeaderRow != null) {
-            balanceGrid.removeHeaderRow(groupHeaderRow);
-            groupHeaderRow = null;
-        }
-        balanceGrid.removeAllColumns();
+    private static Grid<BalanceDateRow> createBalanceGrid() {
+        Grid<BalanceDateRow> grid = new Grid<>();
+        grid.addThemeVariants(GridVariant.LUMO_ROW_STRIPES, GridVariant.LUMO_COLUMN_BORDERS,
+                GridVariant.LUMO_COMPACT);
+        grid.setSizeFull();
+        grid.getStyle().set("min-height", GRID_MIN_HEIGHT);
+        return grid;
+    }
 
-        Map<UUID, Account> byId = AccountLabels.byId(accounts);
-        List<Account> columns = visibleBalanceAccounts(accounts, rows);
-
+    private void rebuildBalanceColumns(List<Account> columns, Map<UUID, Account> byId) {
         balanceGrid.addColumn(row -> DateFormatter.format(row.date(), locale()))
                 .setHeader(getTranslation("finance.balance.field.date"))
                 .setFrozen(true)
                 .setAutoWidth(true);
 
-        balanceGrid.addColumn(row -> formatMoney(sumOf(row, columns)))
+        balanceGrid.addColumn(row -> formatMoney(sumOf(row, displayedBalanceColumns)))
                 .setHeader(getTranslation("finance.balance.column.total"))
                 .setTextAlign(ColumnTextAlign.END)
                 .setAutoWidth(true);
@@ -366,8 +354,20 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
                 .setHeader(getTranslation("finance.grid.column.actions"))
                 .setAutoWidth(true);
 
-        groupHeaderRow = balanceGrid.prependHeaderRow();
+        HeaderRow groupHeaderRow = balanceGrid.prependHeaderRow();
         applyGroupedHeaders(groupHeaderRow, accountColumns);
+    }
+
+    private static List<String> balanceColumnSignature(List<Account> columns, Map<UUID, Account> byId) {
+        return columns.stream()
+                .map(account -> String.join(SIGNATURE_DELIMITER,
+                        Objects.toString(account.getId(), ""),
+                        Objects.toString(account.getAccountType(), ""),
+                        Objects.toString(account.getName(), ""),
+                        Objects.toString(account.getAccountHolder(), ""),
+                        Objects.toString(account.getAccountNumber(), ""),
+                        Objects.toString(AccountLabels.institutionName(account, byId), "")))
+                .toList();
     }
 
     Div createAccountColumnHeader(Account account) {
@@ -740,7 +740,22 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
         List<BalanceDateRow> rows = snapshotService.buildDateRows();
 
         chartPanel.setData(accounts, rows);
-        rebuildBalanceColumns(accounts, rows);
+        Map<UUID, Account> byId = AccountLabels.byId(accounts);
+        List<Account> columns = visibleBalanceAccounts(accounts, rows);
+        this.displayedBalanceColumns = columns;
+        List<String> signature = balanceColumnSignature(columns, byId);
+        if (!signature.equals(configuredBalanceSignature)) {
+            if (configuredBalanceSignature != null) {
+                // Replace the grid before attaching instead of calling removeAllColumns() + prependHeaderRow()
+                // on an attached Vaadin Grid, which corrupts client-side column ordering on refresh.
+                balanceGrid = createBalanceGrid();
+            }
+            rebuildBalanceColumns(columns, byId);
+            configuredBalanceSignature = signature;
+            if (tabBar.getSelectedTab() == balancesTab) {
+                renderSelectedTab();
+            }
+        }
         balanceGrid.setItems(rows);
 
         TreeData<Account> treeData = buildTreeData(accounts);
@@ -763,6 +778,18 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
 
     void setShowInactiveForTest(boolean value) {
         setShowInactiveAccounts(value);
+    }
+
+    Grid<BalanceDateRow> balanceGridForTest() {
+        return balanceGrid;
+    }
+
+    void selectBalancesTabForTest() {
+        tabBar.setSelectedTab(balancesTab);
+    }
+
+    void refreshForTest() {
+        refresh();
     }
 
     ActionMenu getActionMenuForTest() {

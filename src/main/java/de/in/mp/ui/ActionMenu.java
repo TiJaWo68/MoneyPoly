@@ -4,10 +4,14 @@ import java.util.function.Consumer;
 
 import com.vaadin.flow.component.contextmenu.MenuItem;
 import com.vaadin.flow.component.contextmenu.SubMenu;
+import com.vaadin.flow.component.html.H2;
 import com.vaadin.flow.component.icon.Icon;
 import com.vaadin.flow.component.icon.VaadinIcon;
 import com.vaadin.flow.component.menubar.MenuBar;
 import com.vaadin.flow.component.menubar.MenuBarVariant;
+import com.vaadin.flow.component.orderedlayout.FlexComponent.Alignment;
+import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
+import com.vaadin.flow.theme.lumo.LumoUtility;
 
 /**
  * Compact header action menu ({@code ⋮}) that consolidates view actions,
@@ -24,13 +28,27 @@ public class ActionMenu {
     public ActionMenu(String tooltip) {
         menuBar.addThemeVariants(
                 MenuBarVariant.LUMO_TERTIARY,
-                MenuBarVariant.LUMO_ICON,
-                MenuBarVariant.LUMO_END_ALIGNED);
+                MenuBarVariant.LUMO_ICON);
 
         MenuItem trigger = menuBar.addItem(VaadinIcon.ELLIPSIS_DOTS_V.create());
         trigger.setAriaLabel(tooltip);
         trigger.getElement().setAttribute("title", tooltip);
         this.subMenu = trigger.getSubMenu();
+    }
+
+    /**
+     * Builds a view header placing the action menu directly to the right of the title
+     * without stretching the gap across wide viewports.
+     */
+    public HorizontalLayout createTitleHeader(String titleText) {
+        H2 title = new H2(titleText);
+        title.addClassNames(LumoUtility.FontSize.XLARGE, LumoUtility.Margin.NONE);
+
+        HorizontalLayout header = new HorizontalLayout(title, menuBar);
+        header.setWidthFull();
+        header.setDefaultVerticalComponentAlignment(Alignment.CENTER);
+        header.addClassName(LumoUtility.Margin.Bottom.XSMALL);
+        return header;
     }
 
     public MenuBar getMenuBar() {

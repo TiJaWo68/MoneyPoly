@@ -13,6 +13,8 @@ import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
 
+import com.vaadin.flow.component.grid.Grid;
+import com.vaadin.flow.component.grid.HeaderRow;
 import com.vaadin.flow.data.provider.hierarchy.TreeData;
 
 import de.in.mp.admin.AppSettingService;
@@ -332,6 +334,100 @@ class FinanceViewTest {
         kpiToggle.setChecked(false);
         com.vaadin.flow.component.ComponentUtil.fireEvent(kpiToggle, new com.vaadin.flow.component.ClickEvent<>(kpiToggle));
         assertThat(view.getKpiRowForTest().isVisible()).isFalse();
+    }
+
+    @Test
+    void preservesBalanceGridColumnsAcrossRowRefreshAndReplacesGridWhenColumnsChange() {
+        AccountService accountService = mock(AccountService.class);
+        AccountSnapshotService snapshotService = mock(AccountSnapshotService.class);
+        BankLookupService bankLookupService = mock(BankLookupService.class);
+        StatementImportService statementImportService = mock(StatementImportService.class);
+
+        Account dkb = institution(UUID.randomUUID(), "DKB");
+        Account dkbChecking = childAccount(UUID.randomUUID(), "Giro", dkb.getId(), 1);
+        Account dkbSavings = childAccount(UUID.randomUUID(), "Tagesgeld", dkb.getId(), 2);
+
+        LocalDate oct = LocalDate.of(2026, 10, 31);
+        LocalDate sep = LocalDate.of(2026, 9, 30);
+        AccountSnapshot snapOct = new AccountSnapshot();
+        snapOct.setAccountId(dkbChecking.getId());
+        snapOct.setSnapshotDate(oct);
+        snapOct.setBalance(new BigDecimal("1500.00"));
+        AccountSnapshot snapSep = new AccountSnapshot();
+        snapSep.setAccountId(dkbChecking.getId());
+        snapSep.setSnapshotDate(sep);
+        snapSep.setBalance(new BigDecimal("1200.00"));
+
+        BalanceDateRow rowOct = new BalanceDateRow(oct, Map.of(dkbChecking.getId(), snapOct));
+        BalanceDateRow rowSep = new BalanceDateRow(sep, Map.of(dkbChecking.getId(), snapSep));
+
+        when(accountService.findAll()).thenReturn(List.of(dkb, dkbChecking, dkbSavings));
+        when(accountService.calculateInstitutionTotals()).thenReturn(Map.of());
+        when(accountService.calculateNetWorth()).thenReturn(new BigDecimal("1500.00"));
+        when(accountService.countActiveAccounts()).thenReturn(2L);
+        when(snapshotService.buildDateRows()).thenReturn(List.of(rowOct, rowSep));
+
+        FinanceView view = new FinanceView(accountService, snapshotService, bankLookupService,
+                statementImportService, mockAppSettingService());
+        view.selectBalancesTabForTest();
+
+        Grid<BalanceDateRow> initialGrid = view.balanceGridForTest();
+        List<Grid.Column<BalanceDateRow>> initialColumns = List.copyOf(initialGrid.getColumns());
+        List<HeaderRow> initialHeaderRows = List.copyOf(initialGrid.getHeaderRows());
+        assertThat(initialColumns).hasSize(5); // Date, Total, Giro, Tagesgeld, Actions
+        assertThat(initialHeaderRows).hasSize(2);
+        assertThat(initialGrid.getParent()).isPresent();
+
+        // Deleting a balance row leaves visible account columns unchanged: grid & columns must be preserved
+        when(snapshotService.buildDateRows()).thenReturn(List.of(rowOct));
+        view.refreshForTest();
+
+        assertThat(view.balanceGridForTest()).isSameAs(initialGrid);
+        assertThat(view.balanceGridForTest().getColumns()).containsExactlyElementsOf(initialColumns);
+        assertThat(view.balanceGridForTest().getHeaderRows()).containsExactlyElementsOf(initialHeaderRows);
+
+        // Adding another active account changes column signature: replace grid cleanly instead of removeAllColumns
+        Account dkbDepot = childAccount(UUID.randomUUID(), "Depot", dkb.getId(), 3);
+        when(accountService.findAll()).thenReturn(List.of(dkb, dkbChecking, dkbSavings, dkbDepot));
+        when(accountService.countActiveAccounts()).thenReturn(3L);
+        view.refreshForTest();
+
+        Grid<BalanceDateRow> replacedGrid = view.balanceGridForTest();
+        assertThat(replacedGrid).isNotSameAs(initialGrid);
+        assertThat(replacedGrid.getColumns()).hasSize(6);
+        assertThat(replacedGrid.getHeaderRows()).hasSize(2);
+        assertThat(replacedGrid.getParent()).isPresent();
+        assertThat(initialGrid.getParent()).isEmpty();
+    }
+
+    @Test
+    void placesActionMenuDirectlyRightOfTitleWithoutExpandingTitle() {
+        AccountService accountService = mock(AccountService.class);
+        AccountSnapshotService snapshotService = mock(AccountSnapshotService.class);
+        BankLookupService bankLookupService = mock(BankLookupService.class);
+        StatementImportService statementImportService = mock(StatementImportService.class);
+
+        when(accountService.findAll()).thenReturn(List.of());
+        when(accountService.calculateInstitutionTotals()).thenReturn(Map.of());
+        when(accountService.calculateNetWorth()).thenReturn(BigDecimal.ZERO);
+        when(accountService.countActiveAccounts()).thenReturn(0L);
+        when(snapshotService.buildDateRows()).thenReturn(List.of());
+
+        FinanceView view = new FinanceView(accountService, snapshotService, bankLookupService,
+                statementImportService, mockAppSettingService());
+
+        var header = view.getChildren()
+                .filter(com.vaadin.flow.component.orderedlayout.HorizontalLayout.class::isInstance)
+                .map(com.vaadin.flow.component.orderedlayout.HorizontalLayout.class::cast)
+                .findFirst()
+                .orElseThrow();
+        var headerChildren = header.getChildren().toList();
+        assertThat(headerChildren).hasSize(2);
+        assertThat(headerChildren.get(0)).isInstanceOf(com.vaadin.flow.component.html.H2.class);
+        assertThat(headerChildren.get(1)).isSameAs(view.getActionMenuForTest().getMenuBar());
+        assertThat(header.getFlexGrow(headerChildren.get(0))).isZero();
+        assertThat(view.getActionMenuForTest().getMenuBar().getThemeNames())
+                .doesNotContain("end-aligned");
     }
 
     private static AppSettingService mockAppSettingService() {

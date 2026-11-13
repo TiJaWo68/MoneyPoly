@@ -38,6 +38,10 @@ class EnergyViewTest {
 
         assertThat(EnergyView.formatMeterValueOnly(reading, Locale.GERMAN)).isEqualTo("1.593");
 
+        MeterReading fractional = new MeterReading();
+        fractional.setReadingValue(new BigDecimal("1583.708"));
+        assertThat(EnergyView.formatMeterValueOnly(fractional, Locale.GERMAN)).isEqualTo("1.584");
+
         String comparison = EnergyView.formatAverageComparison(
                 new BigDecimal("18"), new BigDecimal("15"), Locale.GERMAN);
         assertThat(comparison).isEqualTo("+20% vs. Ø");
@@ -91,6 +95,71 @@ class EnergyViewTest {
         kpiToggle.setChecked(false);
         com.vaadin.flow.component.ComponentUtil.fireEvent(kpiToggle, new com.vaadin.flow.component.ClickEvent<>(kpiToggle));
         assertThat(view.getKpiRowForTest().isVisible()).isFalse();
+    }
+
+    @Test
+    void preservesReadingsGridColumnsAcrossRowRefreshWhenMetersAreUnchanged() {
+        de.in.mp.energy.EnergyAssetService assetService = org.mockito.Mockito.mock(de.in.mp.energy.EnergyAssetService.class);
+        de.in.mp.energy.MeterService meterService = org.mockito.Mockito.mock(de.in.mp.energy.MeterService.class);
+        de.in.mp.energy.MeterReadingService readingService = org.mockito.Mockito.mock(de.in.mp.energy.MeterReadingService.class);
+        de.in.mp.energy.EnergyTariffService tariffService = org.mockito.Mockito.mock(de.in.mp.energy.EnergyTariffService.class);
+        de.in.mp.energy.EnergyAmortizationService amortizationService = org.mockito.Mockito.mock(de.in.mp.energy.EnergyAmortizationService.class);
+
+        Meter water = meter("Wasser Gesamt", MeterType.WATER);
+        water.setId(java.util.UUID.randomUUID());
+        water.setUnit("m3");
+        Meter pv = meter("PV Dach", MeterType.PV_GENERATION);
+        pv.setId(java.util.UUID.randomUUID());
+        pv.setUnit("kWh");
+
+        org.mockito.Mockito.when(assetService.findAll()).thenReturn(java.util.List.of());
+        org.mockito.Mockito.when(meterService.findActive()).thenReturn(java.util.List.of(water, pv));
+        org.mockito.Mockito.when(meterService.findAll()).thenReturn(java.util.List.of(water, pv));
+        org.mockito.Mockito.when(tariffService.findAll()).thenReturn(java.util.List.of());
+        org.mockito.Mockito.when(amortizationService.buildDateRows()).thenReturn(java.util.List.of());
+        org.mockito.Mockito.when(amortizationService.calculateTotalInvestmentCost()).thenReturn(BigDecimal.ZERO);
+        org.mockito.Mockito.when(amortizationService.calculateTotalAmortized()).thenReturn(BigDecimal.ZERO);
+        org.mockito.Mockito.when(amortizationService.calculateTotalRemainingCost()).thenReturn(BigDecimal.ZERO);
+
+        EnergyView view = new EnergyView(assetService, meterService, readingService, tariffService, amortizationService);
+        var initialColumns = java.util.List.copyOf(view.getReadingsGridForTest().getColumns());
+
+        view.refreshForTest();
+
+        assertThat(view.getReadingsGridForTest().getColumns()).containsExactlyElementsOf(initialColumns);
+    }
+
+    @Test
+    void placesActionMenuDirectlyRightOfTitleWithoutExpandingTitle() {
+        de.in.mp.energy.EnergyAssetService assetService = org.mockito.Mockito.mock(de.in.mp.energy.EnergyAssetService.class);
+        de.in.mp.energy.MeterService meterService = org.mockito.Mockito.mock(de.in.mp.energy.MeterService.class);
+        de.in.mp.energy.MeterReadingService readingService = org.mockito.Mockito.mock(de.in.mp.energy.MeterReadingService.class);
+        de.in.mp.energy.EnergyTariffService tariffService = org.mockito.Mockito.mock(de.in.mp.energy.EnergyTariffService.class);
+        de.in.mp.energy.EnergyAmortizationService amortizationService = org.mockito.Mockito.mock(de.in.mp.energy.EnergyAmortizationService.class);
+
+        org.mockito.Mockito.when(assetService.findAll()).thenReturn(java.util.List.of());
+        org.mockito.Mockito.when(meterService.findActive()).thenReturn(java.util.List.of());
+        org.mockito.Mockito.when(meterService.findAll()).thenReturn(java.util.List.of());
+        org.mockito.Mockito.when(tariffService.findAll()).thenReturn(java.util.List.of());
+        org.mockito.Mockito.when(amortizationService.buildDateRows()).thenReturn(java.util.List.of());
+        org.mockito.Mockito.when(amortizationService.calculateTotalInvestmentCost()).thenReturn(BigDecimal.ZERO);
+        org.mockito.Mockito.when(amortizationService.calculateTotalAmortized()).thenReturn(BigDecimal.ZERO);
+        org.mockito.Mockito.when(amortizationService.calculateTotalRemainingCost()).thenReturn(BigDecimal.ZERO);
+
+        EnergyView view = new EnergyView(assetService, meterService, readingService, tariffService, amortizationService);
+
+        var header = view.getChildren()
+                .filter(com.vaadin.flow.component.orderedlayout.HorizontalLayout.class::isInstance)
+                .map(com.vaadin.flow.component.orderedlayout.HorizontalLayout.class::cast)
+                .findFirst()
+                .orElseThrow();
+        var headerChildren = header.getChildren().toList();
+        assertThat(headerChildren).hasSize(2);
+        assertThat(headerChildren.get(0)).isInstanceOf(com.vaadin.flow.component.html.H2.class);
+        assertThat(headerChildren.get(1)).isSameAs(view.getActionMenuForTest().getMenuBar());
+        assertThat(header.getFlexGrow(headerChildren.get(0))).isZero();
+        assertThat(view.getActionMenuForTest().getMenuBar().getThemeNames())
+                .doesNotContain("end-aligned");
     }
 
     private static Meter meter(String name, MeterType type) {
