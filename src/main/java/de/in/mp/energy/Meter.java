@@ -65,6 +65,9 @@ public class Meter {
     @Column(name = "is_active", nullable = false)
     private boolean active = true;
 
+    @Column(name = "recognition_hint", length = 255)
+    private String recognitionHint;
+
     public UUID getId() {
         return id;
     }
@@ -159,6 +162,14 @@ public class Meter {
 
     public void setActive(boolean active) {
         this.active = active;
+    }
+
+    public String getRecognitionHint() {
+        return recognitionHint;
+    }
+
+    public void setRecognitionHint(String recognitionHint) {
+        this.recognitionHint = recognitionHint;
     }
 }
 

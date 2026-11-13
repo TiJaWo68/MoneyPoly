@@ -43,6 +43,7 @@ public class MeterEditorDialog extends Dialog {
     private final ComboBox<EnergyAsset> asset = new ComboBox<>();
     private final IntegerField displayOrder = new IntegerField();
     private final DatePicker installedAt = new DatePicker();
+    private final TextField recognitionHint = new TextField();
     private final Checkbox active = new Checkbox();
 
     private final Button saveButton = new Button();
@@ -64,7 +65,7 @@ public class MeterEditorDialog extends Dialog {
 
         FormLayout form = new FormLayout(
                 name, serialNumber, type, unit, conversionFactor,
-                overflowThreshold, asset, displayOrder, installedAt, active);
+                overflowThreshold, asset, displayOrder, installedAt, recognitionHint, active);
         form.setResponsiveSteps(new FormLayout.ResponsiveStep("0", 1));
 
         HorizontalLayout actions = new HorizontalLayout(cancelButton, saveButton);
@@ -115,6 +116,8 @@ public class MeterEditorDialog extends Dialog {
         asset.setLabel(getTranslation("energy.meter.editor.field.asset"));
         displayOrder.setLabel(getTranslation("energy.meter.editor.field.order"));
         installedAt.setLabel(getTranslation("energy.meter.editor.field.installed-at"));
+        recognitionHint.setLabel(getTranslation("energy.meter.editor.field.recognition-hint"));
+        recognitionHint.setHelperText(getTranslation("energy.meter.editor.hint.recognition-hint"));
         active.setLabel(getTranslation("energy.meter.editor.field.active"));
         saveButton.setText(getTranslation("energy.button.save"));
         cancelButton.setText(getTranslation("energy.button.cancel"));
@@ -150,6 +153,8 @@ public class MeterEditorDialog extends Dialog {
                 .bind(Meter::getDisplayOrder, (m, v) -> m.setDisplayOrder(v != null ? v : 100));
         binder.forField(installedAt)
                 .bind(Meter::getInstalledAt, Meter::setInstalledAt);
+        binder.forField(recognitionHint)
+                .bind(Meter::getRecognitionHint, Meter::setRecognitionHint);
         binder.forField(active)
                 .bind(Meter::isActive, Meter::setActive);
     }

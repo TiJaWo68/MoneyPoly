@@ -18,10 +18,12 @@ import de.in.mp.admin.PersonService;
 import de.in.mp.admin.SystemHealthService;
 import de.in.mp.admin.UserService;
 import de.in.mp.energy.EnergyOdsImportService;
+import de.in.mp.energy.vision.VisionMeterClient;
 import de.in.mp.importer.FinanceOdsImportService;
 import de.in.mp.loans.LoanContractRepository;
 import de.in.mp.ui.layout.MainLayout;
 import jakarta.annotation.security.RolesAllowed;
+import org.springframework.beans.factory.annotation.Autowired;
 
 /**
  * Administration area: master data, one-time data migrations and system
@@ -41,6 +43,18 @@ public class AdminView extends VerticalLayout implements HasDynamicTitle {
             LoanContractRepository loanContractRepository, FinanceOdsImportService financeOdsImportService,
             EnergyOdsImportService energyOdsImportService, DatabaseResetService databaseResetService,
             AppSettingService appSettingService) {
+        this(userService, personService, categoryService, classificationRuleService, systemHealthService,
+                authenticationContext, loanContractRepository, financeOdsImportService, energyOdsImportService,
+                databaseResetService, appSettingService, null);
+    }
+
+    @Autowired
+    public AdminView(UserService userService, PersonService personService,
+            CategoryService categoryService, ClassificationRuleService classificationRuleService,
+            SystemHealthService systemHealthService, AuthenticationContext authenticationContext,
+            LoanContractRepository loanContractRepository, FinanceOdsImportService financeOdsImportService,
+            EnergyOdsImportService energyOdsImportService, DatabaseResetService databaseResetService,
+            AppSettingService appSettingService, VisionMeterClient visionMeterClient) {
         setSizeFull();
         setPadding(true);
         setSpacing(false);
@@ -53,7 +67,7 @@ public class AdminView extends VerticalLayout implements HasDynamicTitle {
         registerTab(new PersonsTab(personService));
         registerTab(new CategoriesTab(categoryService));
         registerTab(new ClassificationRulesTab(classificationRuleService, categoryService, loanContractRepository));
-        registerTab(new SettingsTab(appSettingService));
+        registerTab(new SettingsTab(appSettingService, visionMeterClient));
         registerTab(new DataMigrationTab(financeOdsImportService, energyOdsImportService, databaseResetService));
         registerTab(new SystemHealthTab(systemHealthService));
 

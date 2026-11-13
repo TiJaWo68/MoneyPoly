@@ -13,7 +13,7 @@
 
     <groupId>de.in.mp</groupId>
     <artifactId>moneypoly</artifactId>
-    <version>0.12.1</version>
+    <version>0.14.0</version>
     <name>MoneyPoly</name>
     <description>MoneyPoly - Family Finance, Loans and Energy Hub</description>
 
@@ -100,6 +100,13 @@
             <groupId>org.apache.pdfbox</groupId>
             <artifactId>pdfbox</artifactId>
             <version>3.0.4</version>
+        </dependency>
+
+        <!-- EXIF metadata extraction from uploaded meter photos -->
+        <dependency>
+            <groupId>com.drewnoakes</groupId>
+            <artifactId>metadata-extractor</artifactId>
+            <version>2.19.0</version>
         </dependency>
 
         <!-- JSON mapping for the OpenIBAN bank directory lookup -->
