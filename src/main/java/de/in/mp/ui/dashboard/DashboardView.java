@@ -20,6 +20,8 @@ import com.vaadin.flow.component.grid.GridVariant;
 import com.vaadin.flow.component.html.H2;
 import com.vaadin.flow.component.html.H3;
 import com.vaadin.flow.component.html.Span;
+import com.vaadin.flow.component.icon.Icon;
+import com.vaadin.flow.component.icon.VaadinIcon;
 import com.vaadin.flow.component.orderedlayout.FlexComponent.Alignment;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
@@ -31,6 +33,7 @@ import com.vaadin.flow.router.QueryParameters;
 import com.vaadin.flow.router.Route;
 import com.vaadin.flow.theme.lumo.LumoUtility;
 
+import de.in.mp.admin.AppSettingService;
 import de.in.mp.admin.PersonService;
 import de.in.mp.finance.Account;
 import de.in.mp.finance.AccountService;
@@ -65,6 +68,7 @@ public class DashboardView extends VerticalLayout implements HasDynamicTitle {
     private final AccountService accountService;
     private final LoanContractService loanContractService;
     private final PersonService personService;
+    private final AppSettingService appSettingService;
 
     private final Span netWorthValue = new Span();
     private final Span liquidityValue = new Span();
@@ -86,15 +90,18 @@ public class DashboardView extends VerticalLayout implements HasDynamicTitle {
     private BigDecimal netWorthTotal = BigDecimal.ZERO;
     private BigDecimal liquidityTotal = BigDecimal.ZERO;
     private BigDecimal investedTotal = BigDecimal.ZERO;
+    private BigDecimal warningThreshold = new BigDecimal("2.00");
     private Map<UUID, String> personNames = Map.of();
     private Map<UUID, Account> accountsById = Map.of();
 
     public DashboardView(DashboardService dashboardService, AccountService accountService,
-            LoanContractService loanContractService, PersonService personService) {
+            LoanContractService loanContractService, PersonService personService,
+            AppSettingService appSettingService) {
         this.dashboardService = dashboardService;
         this.accountService = accountService;
         this.loanContractService = loanContractService;
         this.personService = personService;
+        this.appSettingService = appSettingService;
 
         // Width only: a fixed height would let the flex column shrink the
         // all-rows-visible grids to zero height on the initial render.
@@ -327,7 +334,53 @@ public class DashboardView extends VerticalLayout implements HasDynamicTitle {
     }
 
     Component renderAccountLabel(Account account) {
-        return renderLabel(accountLabel(account), maskIban(account.getAccountNumber()));
+        boolean warnInterest = account.getAccountType() == AccountType.SAVINGS
+                && account.isInterestRateBelow(warningThreshold);
+        return renderAccountLabelComponent(accountLabel(account), maskIban(account.getAccountNumber()), warnInterest,
+                account);
+    }
+
+    private Component renderAccountLabelComponent(String primary, String secondary, boolean warnInterest,
+            Account account) {
+        Span container = new Span();
+        container.setWidthFull();
+        container.getStyle().set("display", "block");
+        applyEllipsis(container.getStyle());
+
+        Span primarySpan = new Span(primary);
+        primarySpan.addClassName(LumoUtility.FontWeight.MEDIUM);
+        if (warnInterest) {
+            primarySpan.getStyle().set("color", "var(--lumo-warning-text-color, #e65100)");
+        }
+        container.add(primarySpan);
+
+        if (warnInterest && account != null) {
+            Span warningBadge = new Span();
+            Icon warnIcon = VaadinIcon.WARNING.create();
+            warnIcon.setSize("12px");
+            warnIcon.getStyle().set("margin-right", "2px");
+            BigDecimal rate = account.getCurrentInterestRate();
+            String rateStr = rate != null ? MoneyFormatter.formatPercent(rate, locale()) : "-";
+            Span rateText = new Span(rateStr);
+            warningBadge.add(warnIcon, rateText);
+            warningBadge.getElement().getThemeList().add("badge");
+            warningBadge.getElement().getThemeList().add("pill");
+            warningBadge.getStyle().set("background-color", "var(--lumo-warning-color-10, #fff3e0)");
+            warningBadge.getStyle().set("color", "var(--lumo-warning-text-color, #e65100)");
+            warningBadge.getStyle().set("margin-left", "var(--lumo-space-xs)");
+            warningBadge.getStyle().set("font-size", "var(--lumo-font-size-xxs)");
+            warningBadge.getStyle().set("font-weight", "600");
+            warningBadge.setTitle(getTranslation("dashboard.savings.warning.tooltip", rateStr,
+                    MoneyFormatter.formatPercent(warningThreshold, locale())));
+            container.add(warningBadge);
+        }
+
+        if (secondary != null && !secondary.isBlank()) {
+            Span secondarySpan = new Span(" · " + secondary);
+            secondarySpan.addClassNames(LumoUtility.TextColor.SECONDARY, LumoUtility.FontSize.SMALL);
+            container.add(secondarySpan);
+        }
+        return container;
     }
 
     private String accountLabel(Account account) {
@@ -354,21 +407,7 @@ public class DashboardView extends VerticalLayout implements HasDynamicTitle {
      * stacking onto a second line is deliberately avoided.
      */
     private Component renderLabel(String primary, String secondary) {
-        Span container = new Span();
-        container.setWidthFull();
-        container.getStyle().set("display", "block");
-        applyEllipsis(container.getStyle());
-
-        Span primarySpan = new Span(primary);
-        primarySpan.addClassName(LumoUtility.FontWeight.MEDIUM);
-        container.add(primarySpan);
-
-        if (secondary != null && !secondary.isBlank()) {
-            Span secondarySpan = new Span(" · " + secondary);
-            secondarySpan.addClassNames(LumoUtility.TextColor.SECONDARY, LumoUtility.FontSize.SMALL);
-            container.add(secondarySpan);
-        }
-        return container;
+        return renderAccountLabelComponent(primary, secondary, false, null);
     }
 
     private void applyEllipsis(Style style) {
@@ -390,6 +429,9 @@ public class DashboardView extends VerticalLayout implements HasDynamicTitle {
     }
 
     private void refresh() {
+        if (appSettingService != null) {
+            warningThreshold = appSettingService.getSavingsInterestWarningThreshold();
+        }
         DashboardKpis kpis = dashboardService.calculateKpis();
         netWorthTotal = kpis.netWorth();
         netWorthValue.setText(MoneyFormatter.format(kpis.netWorth(), locale()));

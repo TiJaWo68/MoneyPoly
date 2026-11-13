@@ -17,6 +17,7 @@ import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.tabs.Tab;
 import com.vaadin.flow.component.tabs.Tabs;
 
+import de.in.mp.admin.AppSettingService;
 import de.in.mp.energy.EnergyAmortizationService;
 import de.in.mp.energy.EnergyAssetService;
 import de.in.mp.energy.EnergyTariffService;
@@ -45,7 +46,10 @@ class MobileResponsivenessTest {
         when(accountService.countActiveAccounts()).thenReturn(0L);
         when(snapshotService.buildDateRows()).thenReturn(List.of());
 
-        FinanceView view = new FinanceView(accountService, snapshotService, bankLookupService, statementImportService);
+        AppSettingService appSettingService = mock(AppSettingService.class);
+        when(appSettingService.getSavingsInterestWarningThreshold()).thenReturn(new BigDecimal("2.00"));
+
+        FinanceView view = new FinanceView(accountService, snapshotService, bankLookupService, statementImportService, appSettingService);
 
         // 1. View must be scrollable on small-height viewports (e.g. landscape mode on smartphones)
         assertThat(view.getStyle().get("overflow-y"))
