@@ -13,9 +13,6 @@ import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
-import com.vaadin.flow.component.checkbox.Checkbox;
-import com.vaadin.flow.component.details.Details;
-import com.vaadin.flow.component.details.DetailsVariant;
 import com.vaadin.flow.component.dialog.Dialog;
 import com.vaadin.flow.component.grid.ColumnTextAlign;
 import com.vaadin.flow.component.grid.Grid;
@@ -53,6 +50,7 @@ import de.in.mp.i18n.DateFormatter;
 import de.in.mp.i18n.MoneyFormatter;
 import de.in.mp.i18n.MoneyPolyI18nProvider;
 import de.in.mp.importer.StatementImportService;
+import de.in.mp.ui.ActionMenu;
 import de.in.mp.ui.GridActionButton;
 import de.in.mp.ui.ResponsiveStyles;
 import de.in.mp.ui.layout.MainLayout;
@@ -91,9 +89,12 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
 
     private final BalanceChartPanel chartPanel = new BalanceChartPanel();
     private final Grid<BalanceDateRow> balanceGrid = new Grid<>();
-    private final Checkbox showInactive = new Checkbox();
     private final TreeGrid<Account> treeGrid = new TreeGrid<>();
+    private final ActionMenu actionMenu;
+    private final HorizontalLayout kpiRow;
 
+    private boolean showInactiveAccounts;
+    private boolean kpisVisible = true;
     private HeaderRow groupHeaderRow;
     private Map<UUID, BigDecimal> institutionTotals = Map.of();
     private List<Account> currentAccounts = List.of();
@@ -107,6 +108,10 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
         this.editorDialog = new AccountEditorDialog(accountService, bankLookupService);
         this.balanceDialog = new BalanceEntryDialog(accountService, snapshotService);
         this.statementDialog = new StatementImportDialog(statementImportService, accountService);
+        this.actionMenu = new ActionMenu(getTranslation("ui.action-menu.tooltip"));
+        this.kpiRow = createKpiRow();
+        this.kpiRow.addClassNames(LumoUtility.Margin.Bottom.XSMALL, ResponsiveStyles.HIDE_ON_SHORT_SCREEN);
+        this.kpiRow.setVisible(kpisVisible);
 
         setSizeFull();
         setPadding(false);
@@ -125,9 +130,6 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
         tabContent.setPadding(false);
         tabContent.getStyle().set("min-height", "400px");
 
-        showInactive.setLabel(getTranslation("finance.balance.show-inactive"));
-        showInactive.addValueChangeListener(event -> refresh());
-
         configureTreeGrid();
         balanceGrid.addThemeVariants(GridVariant.LUMO_ROW_STRIPES, GridVariant.LUMO_COLUMN_BORDERS,
                 GridVariant.LUMO_COMPACT);
@@ -136,7 +138,7 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
         treeGrid.setSizeFull();
         treeGrid.getStyle().set("min-height", "380px");
 
-        add(createHeader(), createKpiSection(), tabBar, tabContent);
+        add(createHeader(), kpiRow, tabBar, tabContent);
         expand(tabContent);
         refresh();
         renderSelectedTab();
@@ -170,8 +172,8 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
             return;
         }
 
-        if (!treeGrid.getTreeData().contains(target) && !Boolean.TRUE.equals(showInactive.getValue())) {
-            showInactive.setValue(true);
+        if (!treeGrid.getTreeData().contains(target) && !showInactiveAccounts) {
+            setShowInactiveAccounts(true);
             target = findCurrentAccount(accountId);
         }
 
@@ -211,19 +213,7 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
         H2 title = new H2(getTranslation("finance.view.title"));
         title.addClassNames(LumoUtility.FontSize.XLARGE, LumoUtility.Margin.NONE);
 
-        Button importButton = new Button(getTranslation("finance.view.button.import-statement"),
-                VaadinIcon.FILE_TEXT_O.create());
-        importButton.addThemeVariants(ButtonVariant.LUMO_SMALL);
-        importButton.setTooltipText(getTranslation("finance.view.button.import-statement"));
-        importButton.addClickListener(event -> statementDialog.openForImport(this::refresh));
-
-        Button balanceButton = new Button(getTranslation("finance.view.button.record-balances"),
-                VaadinIcon.PLUS.create());
-        balanceButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY, ButtonVariant.LUMO_SMALL);
-        balanceButton.setTooltipText(getTranslation("finance.view.button.record-balances"));
-        balanceButton.addClickListener(event -> balanceDialog.openForCreate(this::refresh));
-
-        HorizontalLayout header = new HorizontalLayout(title, importButton, balanceButton);
+        HorizontalLayout header = new HorizontalLayout(title, actionMenu.getMenuBar());
         header.setWidthFull();
         header.setDefaultVerticalComponentAlignment(Alignment.CENTER);
         header.expand(title);
@@ -231,17 +221,55 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
         return header;
     }
 
-    private Component createKpiSection() {
-        Span summaryLabel = new Span(getTranslation("finance.view.kpi.title"));
-        summaryLabel.addClassNames(LumoUtility.FontWeight.SEMIBOLD, LumoUtility.FontSize.SMALL);
+    private void rebuildActionMenu() {
+        actionMenu.clear();
+        Tab selected = tabBar.getSelectedTab();
 
-        Details details = new Details(summaryLabel, createKpiRow());
-        details.setWidthFull();
-        details.addThemeVariants(DetailsVariant.SMALL);
-        details.setOpened(true);
-        details.addClassName(LumoUtility.Margin.Bottom.XSMALL);
-        details.addClassNames(LumoUtility.Margin.Bottom.XSMALL, ResponsiveStyles.HIDE_ON_SHORT_SCREEN);
-        return details;
+        actionMenu.addAction(
+                getTranslation("finance.view.button.record-balances"),
+                VaadinIcon.PLUS,
+                () -> balanceDialog.openForCreate(this::refresh));
+        actionMenu.addAction(
+                getTranslation("finance.view.button.import-statement"),
+                VaadinIcon.FILE_TEXT_O,
+                () -> statementDialog.openForImport(this::refresh));
+
+        if (selected == accountsTab) {
+            actionMenu.addSeparator();
+            actionMenu.addAction(
+                    getTranslation("finance.view.button.new-account"),
+                    VaadinIcon.PLUS_CIRCLE_O,
+                    () -> editorDialog.openForCreate(this::refresh));
+            actionMenu.addAction(
+                    getTranslation("finance.view.button.threshold"),
+                    VaadinIcon.SLIDERS,
+                    this::openThresholdDialog);
+        }
+
+        actionMenu.addSeparator();
+        if (selected == balancesTab || selected == accountsTab) {
+            actionMenu.addToggle(
+                    getTranslation("finance.balance.show-inactive"),
+                    showInactiveAccounts,
+                    this::setShowInactiveAccounts);
+        }
+        actionMenu.addToggle(
+                getTranslation("ui.action-menu.show-kpis"),
+                kpisVisible,
+                this::setKpisVisible);
+    }
+
+    private void setShowInactiveAccounts(boolean value) {
+        if (this.showInactiveAccounts != value) {
+            this.showInactiveAccounts = value;
+            refresh();
+            rebuildActionMenu();
+        }
+    }
+
+    private void setKpisVisible(boolean visible) {
+        this.kpisVisible = visible;
+        kpiRow.setVisible(visible);
     }
 
     private HorizontalLayout createKpiRow() {
@@ -281,20 +309,13 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
             tabContent.add(chartPanel);
             tabContent.expand(chartPanel);
         } else if (tabBar.getSelectedTab() == accountsTab) {
-            Button newAccountButton = new Button(getTranslation("finance.view.button.new-account"),
-                    VaadinIcon.PLUS.create(), event -> editorDialog.openForCreate(this::refresh));
-            newAccountButton.setTooltipText(getTranslation("finance.view.button.new-account"));
-            Button thresholdButton = new Button(getTranslation("finance.view.button.threshold"),
-                    VaadinIcon.SLIDERS.create(), event -> openThresholdDialog());
-            thresholdButton.setTooltipText(getTranslation("finance.view.button.threshold"));
-            HorizontalLayout toolbar = new HorizontalLayout(newAccountButton, thresholdButton, showInactive);
-            toolbar.setDefaultVerticalComponentAlignment(Alignment.CENTER);
-            tabContent.add(toolbar, treeGrid);
+            tabContent.add(treeGrid);
             tabContent.expand(treeGrid);
         } else {
-            tabContent.add(showInactive, balanceGrid);
+            tabContent.add(balanceGrid);
             tabContent.expand(balanceGrid);
         }
+        rebuildActionMenu();
     }
 
     // ---------------------------------------------------------------- balances
@@ -302,7 +323,7 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
     private List<Account> visibleBalanceAccounts(List<Account> accounts, List<BalanceDateRow> rows) {
         Map<UUID, Account> byId = AccountLabels.byId(accounts);
         return AccountLabels.matrixOrder(accounts, byId).stream()
-                .filter(account -> showInactive.getValue() || account.isActive())
+                .filter(account -> showInactiveAccounts || account.isActive())
                 .filter(account -> account.isActive() || hasSnapshots(account, rows))
                 .toList();
     }
@@ -642,7 +663,7 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
 
     private TreeData<Account> buildTreeData(List<Account> accounts) {
         TreeData<Account> treeData = new TreeData<>();
-        boolean includeInactive = Boolean.TRUE.equals(showInactive.getValue());
+        boolean includeInactive = showInactiveAccounts;
 
         Map<UUID, List<Account>> allChildrenByParent = accounts.stream()
                 .filter(account -> account.getParentId() != null)
@@ -732,7 +753,15 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
     }
 
     void setShowInactiveForTest(boolean value) {
-        showInactive.setValue(value);
+        setShowInactiveAccounts(value);
+    }
+
+    ActionMenu getActionMenuForTest() {
+        return actionMenu;
+    }
+
+    HorizontalLayout getKpiRowForTest() {
+        return kpiRow;
     }
 
     boolean isChartTabSelected() {

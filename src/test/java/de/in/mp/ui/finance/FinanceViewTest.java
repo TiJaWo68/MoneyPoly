@@ -282,6 +282,58 @@ class FinanceViewTest {
         assertThat(tooltip).contains("1,25 %");
     }
 
+    @Test
+    void actionMenuAdaptsItemsToSelectedTabAndTogglesKpis() {
+        AccountService accountService = mock(AccountService.class);
+        AccountSnapshotService snapshotService = mock(AccountSnapshotService.class);
+        BankLookupService bankLookupService = mock(BankLookupService.class);
+        StatementImportService statementImportService = mock(StatementImportService.class);
+        AppSettingService appSettingService = mockAppSettingService();
+
+        when(accountService.findAll()).thenReturn(List.of());
+        when(accountService.calculateInstitutionTotals()).thenReturn(Map.of());
+        when(accountService.calculateNetWorth()).thenReturn(BigDecimal.ZERO);
+        when(accountService.countActiveAccounts()).thenReturn(0L);
+        when(snapshotService.buildDateRows()).thenReturn(List.of());
+
+        FinanceView view = new FinanceView(accountService, snapshotService, bankLookupService, statementImportService, appSettingService);
+        com.vaadin.flow.component.tabs.Tabs tabBar = view.getChildren()
+                .filter(com.vaadin.flow.component.tabs.Tabs.class::isInstance)
+                .map(com.vaadin.flow.component.tabs.Tabs.class::cast)
+                .findFirst()
+                .orElseThrow();
+
+        // Tab 0 (History): Record balances, Import statement, Show KPIs
+        List<String> historyLabels = view.getActionMenuForTest().getSubMenu().getItems().stream()
+                .map(com.vaadin.flow.component.contextmenu.MenuItem::getText)
+                .toList();
+        assertThat(historyLabels).hasSize(3);
+
+        // Tab 1 (Balances): adds Show inactive accounts
+        tabBar.setSelectedTab((com.vaadin.flow.component.tabs.Tab) tabBar.getChildren().toList().get(1));
+        List<String> balancesLabels = view.getActionMenuForTest().getSubMenu().getItems().stream()
+                .map(com.vaadin.flow.component.contextmenu.MenuItem::getText)
+                .toList();
+        assertThat(balancesLabels).hasSize(4);
+
+        // Tab 2 (Accounts): adds New account and Interest threshold
+        tabBar.setSelectedTab((com.vaadin.flow.component.tabs.Tab) tabBar.getChildren().toList().get(2));
+        List<String> accountsLabels = view.getActionMenuForTest().getSubMenu().getItems().stream()
+                .map(com.vaadin.flow.component.contextmenu.MenuItem::getText)
+                .toList();
+        assertThat(accountsLabels).hasSize(6);
+
+        // Toggle KPIs off via the last menu item
+        assertThat(view.getKpiRowForTest().isVisible()).isTrue();
+        com.vaadin.flow.component.contextmenu.MenuItem kpiToggle = view.getActionMenuForTest().getSubMenu().getItems()
+                .get(accountsLabels.size() - 1);
+        assertThat(kpiToggle.isCheckable()).isTrue();
+        assertThat(kpiToggle.isChecked()).isTrue();
+        kpiToggle.setChecked(false);
+        com.vaadin.flow.component.ComponentUtil.fireEvent(kpiToggle, new com.vaadin.flow.component.ClickEvent<>(kpiToggle));
+        assertThat(view.getKpiRowForTest().isVisible()).isFalse();
+    }
+
     private static AppSettingService mockAppSettingService() {
         AppSettingService service = mock(AppSettingService.class);
         when(service.getSavingsInterestWarningThreshold()).thenReturn(new BigDecimal("2.00"));

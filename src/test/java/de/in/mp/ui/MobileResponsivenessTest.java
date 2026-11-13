@@ -10,7 +10,6 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 import com.vaadin.flow.component.Component;
-import com.vaadin.flow.component.details.Details;
 import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
@@ -56,14 +55,11 @@ class MobileResponsivenessTest {
                 .as("FinanceView must have overflow-y: auto for landscape/small-height viewports")
                 .isEqualTo("auto");
 
-        // 2. KPI cards are inside a collapsible Details section with wrap on mobile viewports (< 450px)
-        Details kpiDetails = findChild(view, Details.class, 0);
-        assertThat(kpiDetails.isOpened()).isTrue();
-        assertThat(kpiDetails.getClassNames())
+        // 2. KPI row is hidden on short screens and wraps on mobile viewports (< 450px)
+        HorizontalLayout kpiRow = findChild(view, HorizontalLayout.class, 1);
+        assertThat(kpiRow.getClassNames())
                 .as("KPI section must be hidden on short (landscape) viewports")
                 .contains(ResponsiveStyles.HIDE_ON_SHORT_SCREEN);
-
-        HorizontalLayout kpiRow = findKpiRow(kpiDetails);
         assertThat(kpiRow.getStyle().get("flex-wrap"))
                 .as("Finance KPI row must have flex-wrap: wrap for smartphone displays")
                 .isEqualTo("wrap");
@@ -120,14 +116,11 @@ class MobileResponsivenessTest {
                 .as("EnergyView must have overflow-y: auto for landscape/small-height viewports")
                 .isEqualTo("auto");
 
-        // 2. KPI cards are inside a collapsible Details section with wrap on mobile viewports (< 450px)
-        Details kpiDetails = findChild(view, Details.class, 0);
-        assertThat(kpiDetails.isOpened()).isTrue();
-        assertThat(kpiDetails.getClassNames())
+        // 2. KPI row is hidden on short screens and wraps on mobile viewports (< 450px)
+        HorizontalLayout kpiRow = findChild(view, HorizontalLayout.class, 1);
+        assertThat(kpiRow.getClassNames())
                 .as("KPI section must be hidden on short (landscape) viewports")
                 .contains(ResponsiveStyles.HIDE_ON_SHORT_SCREEN);
-
-        HorizontalLayout kpiRow = findKpiRow(kpiDetails);
         assertThat(kpiRow.getStyle().get("flex-wrap"))
                 .as("Energy KPI row must have flex-wrap: wrap for smartphone displays")
                 .isEqualTo("wrap");
@@ -154,16 +147,6 @@ class MobileResponsivenessTest {
         assertThat(parsePixelDimension(readingsGrid.getStyle().get("min-height")))
                 .as("readingsGrid must have min-height >= 350px so it never collapses to a single row")
                 .isGreaterThanOrEqualTo(350);
-    }
-
-    private static HorizontalLayout findKpiRow(Details kpiDetails) {
-        List<Component> content = kpiDetails.getContent()
-                .filter(HorizontalLayout.class::isInstance)
-                .toList();
-        assertThat(content)
-                .as("KPI Details section must contain the KPI row as content")
-                .hasSize(1);
-        return (HorizontalLayout) content.get(0);
     }
 
     @SuppressWarnings("unchecked")

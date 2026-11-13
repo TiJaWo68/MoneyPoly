@@ -47,6 +47,52 @@ class EnergyViewTest {
         assertThat(belowComparison).isEqualTo("-20% vs. Ø");
     }
 
+    @Test
+    void actionMenuAdaptsItemsToSelectedTabAndTogglesKpis() {
+        de.in.mp.energy.EnergyAssetService assetService = org.mockito.Mockito.mock(de.in.mp.energy.EnergyAssetService.class);
+        de.in.mp.energy.MeterService meterService = org.mockito.Mockito.mock(de.in.mp.energy.MeterService.class);
+        de.in.mp.energy.MeterReadingService readingService = org.mockito.Mockito.mock(de.in.mp.energy.MeterReadingService.class);
+        de.in.mp.energy.EnergyTariffService tariffService = org.mockito.Mockito.mock(de.in.mp.energy.EnergyTariffService.class);
+        de.in.mp.energy.EnergyAmortizationService amortizationService = org.mockito.Mockito.mock(de.in.mp.energy.EnergyAmortizationService.class);
+
+        org.mockito.Mockito.when(assetService.findAll()).thenReturn(java.util.List.of());
+        org.mockito.Mockito.when(meterService.findActive()).thenReturn(java.util.List.of());
+        org.mockito.Mockito.when(meterService.findAll()).thenReturn(java.util.List.of());
+        org.mockito.Mockito.when(tariffService.findAll()).thenReturn(java.util.List.of());
+        org.mockito.Mockito.when(amortizationService.buildDateRows()).thenReturn(java.util.List.of());
+        org.mockito.Mockito.when(amortizationService.calculateTotalInvestmentCost()).thenReturn(BigDecimal.ZERO);
+        org.mockito.Mockito.when(amortizationService.calculateTotalAmortized()).thenReturn(BigDecimal.ZERO);
+        org.mockito.Mockito.when(amortizationService.calculateTotalRemainingCost()).thenReturn(BigDecimal.ZERO);
+
+        EnergyView view = new EnergyView(assetService, meterService, readingService, tariffService, amortizationService);
+        com.vaadin.flow.component.tabs.Tabs tabBar = view.getChildren()
+                .filter(com.vaadin.flow.component.tabs.Tabs.class::isInstance)
+                .map(com.vaadin.flow.component.tabs.Tabs.class::cast)
+                .findFirst()
+                .orElseThrow();
+
+        // Tab 0 (Readings): Add reading, Show KPIs
+        assertThat(view.getActionMenuForTest().getSubMenu().getItems()).hasSize(2);
+
+        // Tab 1 (Amortization): Add reading, New asset, Show KPIs
+        tabBar.setSelectedTab((com.vaadin.flow.component.tabs.Tab) tabBar.getChildren().toList().get(1));
+        assertThat(view.getActionMenuForTest().getSubMenu().getItems()).hasSize(3);
+
+        // Tab 2 (Master data): Add reading, New meter, New tariff, Show KPIs
+        tabBar.setSelectedTab((com.vaadin.flow.component.tabs.Tab) tabBar.getChildren().toList().get(2));
+        java.util.List<com.vaadin.flow.component.contextmenu.MenuItem> masterItems = view.getActionMenuForTest().getSubMenu().getItems();
+        assertThat(masterItems).hasSize(4);
+
+        // Toggle KPIs off
+        assertThat(view.getKpiRowForTest().isVisible()).isTrue();
+        com.vaadin.flow.component.contextmenu.MenuItem kpiToggle = masterItems.get(masterItems.size() - 1);
+        assertThat(kpiToggle.isCheckable()).isTrue();
+        assertThat(kpiToggle.isChecked()).isTrue();
+        kpiToggle.setChecked(false);
+        com.vaadin.flow.component.ComponentUtil.fireEvent(kpiToggle, new com.vaadin.flow.component.ClickEvent<>(kpiToggle));
+        assertThat(view.getKpiRowForTest().isVisible()).isFalse();
+    }
+
     private static Meter meter(String name, MeterType type) {
         Meter meter = new Meter();
         meter.setName(name);

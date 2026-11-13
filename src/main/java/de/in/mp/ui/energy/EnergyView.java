@@ -14,9 +14,6 @@ import java.util.stream.Collectors;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.button.Button;
-import com.vaadin.flow.component.button.ButtonVariant;
-import com.vaadin.flow.component.details.Details;
-import com.vaadin.flow.component.details.DetailsVariant;
 import com.vaadin.flow.component.grid.ColumnTextAlign;
 import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.grid.GridVariant;
@@ -50,6 +47,7 @@ import de.in.mp.energy.MeterReadingService;
 import de.in.mp.energy.MeterService;
 import de.in.mp.energy.MeterType;
 import de.in.mp.i18n.MoneyFormatter;
+import de.in.mp.ui.ActionMenu;
 import de.in.mp.ui.GridActionButton;
 import de.in.mp.ui.ResponsiveStyles;
 import de.in.mp.ui.layout.MainLayout;
@@ -97,7 +95,10 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle {
     private final Tab amortizationTab;
     private final Tab masterDataTab;
     private final VerticalLayout tabContent = new VerticalLayout();
+    private final ActionMenu actionMenu;
+    private final HorizontalLayout kpiRow;
 
+    private boolean kpisVisible = true;
     private Map<UUID, String> assetNamesById = Map.of();
     private Map<UUID, BigDecimal> averageDeltasByMeter = Map.of();
     private HeaderRow groupHeaderRow;
@@ -122,6 +123,10 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle {
         this.readingsTab = new Tab(getTranslation("energy.tab.readings"));
         this.amortizationTab = new Tab(getTranslation("energy.tab.amortization"));
         this.masterDataTab = new Tab(getTranslation("energy.tab.masterdata"));
+        this.actionMenu = new ActionMenu(getTranslation("ui.action-menu.tooltip"));
+        this.kpiRow = createKpiRow();
+        this.kpiRow.addClassNames(LumoUtility.Margin.Bottom.XSMALL, ResponsiveStyles.HIDE_ON_SHORT_SCREEN);
+        this.kpiRow.setVisible(kpisVisible);
 
         setSizeFull();
         setPadding(false);
@@ -141,7 +146,7 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle {
         tabContent.setPadding(false);
         tabContent.getStyle().set("min-height", "400px");
 
-        add(createHeader(), createKpiSection(), tabBar, tabContent);
+        add(createHeader(), kpiRow, tabBar, tabContent);
         expand(tabContent);
         refreshAll();
         renderSelectedTab();
@@ -156,14 +161,7 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle {
         H2 title = new H2(getTranslation("energy.view.title"));
         title.addClassNames(LumoUtility.FontSize.XLARGE, LumoUtility.Margin.NONE);
 
-        Button batchEntryButton = new Button(
-                getTranslation("energy.button.batch-entry"),
-                VaadinIcon.PLUS.create());
-        batchEntryButton.setTooltipText(getTranslation("energy.button.batch-entry"));
-        batchEntryButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY, ButtonVariant.LUMO_SMALL);
-        batchEntryButton.addClickListener(event -> batchReadingDialog.openForCreate(this::refreshAll));
-
-        HorizontalLayout header = new HorizontalLayout(title, batchEntryButton);
+        HorizontalLayout header = new HorizontalLayout(title, actionMenu.getMenuBar());
         header.setWidthFull();
         header.setDefaultVerticalComponentAlignment(Alignment.CENTER);
         header.expand(title);
@@ -171,17 +169,43 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle {
         return header;
     }
 
-    private Component createKpiSection() {
-        Span summaryLabel = new Span(getTranslation("energy.view.kpi.title"));
-        summaryLabel.addClassNames(LumoUtility.FontWeight.SEMIBOLD, LumoUtility.FontSize.SMALL);
+    private void rebuildActionMenu() {
+        actionMenu.clear();
+        Tab selected = tabBar.getSelectedTab();
 
-        Details details = new Details(summaryLabel, createKpiRow());
-        details.setWidthFull();
-        details.addThemeVariants(DetailsVariant.SMALL);
-        details.setOpened(true);
-        details.addClassName(LumoUtility.Margin.Bottom.XSMALL);
-        details.addClassNames(LumoUtility.Margin.Bottom.XSMALL, ResponsiveStyles.HIDE_ON_SHORT_SCREEN);
-        return details;
+        actionMenu.addAction(
+                getTranslation("energy.button.batch-entry"),
+                VaadinIcon.PLUS,
+                () -> batchReadingDialog.openForCreate(this::refreshAll));
+
+        if (selected == amortizationTab) {
+            actionMenu.addSeparator();
+            actionMenu.addAction(
+                    getTranslation("energy.button.new-asset"),
+                    VaadinIcon.PLUS_CIRCLE_O,
+                    () -> assetEditorDialog.openForCreate(this::refreshAll));
+        } else if (selected == masterDataTab) {
+            actionMenu.addSeparator();
+            actionMenu.addAction(
+                    getTranslation("energy.button.new-meter"),
+                    VaadinIcon.PLUS_CIRCLE_O,
+                    () -> meterEditorDialog.openForCreate(this::refreshAll));
+            actionMenu.addAction(
+                    getTranslation("energy.button.new-tariff"),
+                    VaadinIcon.PLUS_CIRCLE_O,
+                    () -> tariffEditorDialog.openForCreate(this::refreshAll));
+        }
+
+        actionMenu.addSeparator();
+        actionMenu.addToggle(
+                getTranslation("ui.action-menu.show-kpis"),
+                kpisVisible,
+                this::setKpisVisible);
+    }
+
+    private void setKpisVisible(boolean visible) {
+        this.kpisVisible = visible;
+        kpiRow.setVisible(visible);
     }
 
     private HorizontalLayout createKpiRow() {
@@ -230,60 +254,40 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle {
             tabContent.add(readingsGrid);
             tabContent.expand(readingsGrid);
         } else if (selected == amortizationTab) {
-            Button newAssetButton = new Button(
-                    getTranslation("energy.button.new-asset"),
-                    VaadinIcon.PLUS.create(),
-                    e -> assetEditorDialog.openForCreate(this::refreshAll));
-            newAssetButton.setTooltipText(getTranslation("energy.button.new-asset"));
-            newAssetButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
-
-            HorizontalLayout toolbar = new HorizontalLayout(newAssetButton);
-            toolbar.setWidthFull();
             amortizationGrid.setSizeFull();
             amortizationGrid.getStyle().set("min-height", "380px");
-            tabContent.add(toolbar, amortizationGrid);
+            tabContent.add(amortizationGrid);
             tabContent.expand(amortizationGrid);
         } else {
             Component masterDataLayout = createMasterDataLayout();
             tabContent.add(masterDataLayout);
             tabContent.expand(masterDataLayout);
         }
+        rebuildActionMenu();
     }
 
     private Component createMasterDataLayout() {
         H3 metersTitle = new H3(getTranslation("energy.meter.column.name"));
         metersTitle.addClassName(LumoUtility.Margin.NONE);
-        Button newMeterButton = new Button(
-                getTranslation("energy.button.new-meter"),
-                VaadinIcon.PLUS.create(),
-                e -> meterEditorDialog.openForCreate(this::refreshAll));
-        newMeterButton.setTooltipText(getTranslation("energy.button.new-meter"));
-        newMeterButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY, ButtonVariant.LUMO_SMALL);
-        HorizontalLayout metersHeader = new HorizontalLayout(metersTitle, newMeterButton);
-        metersHeader.setWidthFull();
-        metersHeader.setDefaultVerticalComponentAlignment(Alignment.CENTER);
-        metersHeader.expand(metersTitle);
 
         H3 tariffsTitle = new H3(getTranslation("energy.tariff.column.name"));
         tariffsTitle.addClassName(LumoUtility.Margin.NONE);
-        Button newTariffButton = new Button(
-                getTranslation("energy.button.new-tariff"),
-                VaadinIcon.PLUS.create(),
-                e -> tariffEditorDialog.openForCreate(this::refreshAll));
-        newTariffButton.setTooltipText(getTranslation("energy.button.new-tariff"));
-        newTariffButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY, ButtonVariant.LUMO_SMALL);
-        HorizontalLayout tariffsHeader = new HorizontalLayout(tariffsTitle, newTariffButton);
-        tariffsHeader.setWidthFull();
-        tariffsHeader.setDefaultVerticalComponentAlignment(Alignment.CENTER);
-        tariffsHeader.expand(tariffsTitle);
 
         metersGrid.setHeight("300px");
         tariffsGrid.setHeight("260px");
 
-        VerticalLayout layout = new VerticalLayout(metersHeader, metersGrid, tariffsHeader, tariffsGrid);
+        VerticalLayout layout = new VerticalLayout(metersTitle, metersGrid, tariffsTitle, tariffsGrid);
         layout.setSizeFull();
         layout.setPadding(false);
         return layout;
+    }
+
+    ActionMenu getActionMenuForTest() {
+        return actionMenu;
+    }
+
+    HorizontalLayout getKpiRowForTest() {
+        return kpiRow;
     }
 
     private void rebuildReadingsGridColumns(List<Meter> activeMeters) {
