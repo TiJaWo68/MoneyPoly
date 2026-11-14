@@ -23,6 +23,7 @@ import de.in.mp.finance.AccountSnapshot;
 import de.in.mp.finance.AccountSnapshotService;
 import de.in.mp.finance.AccountType;
 import de.in.mp.finance.BalanceDateRow;
+import de.in.mp.finance.PortfolioPositionService;
 
 class BalanceEntryDialogTest {
 
@@ -80,5 +81,46 @@ class BalanceEntryDialogTest {
                 refDate,
                 Map.of(checking.getId(), new BigDecimal("1500.00"), depot.getId(), new BigDecimal("52210.00")),
                 Map.of(depot.getId(), new BigDecimal("49000.00")));
+    }
+
+    @Test
+    void marksPositionManagedDepotsReadOnlyAndExcludesFromManualBatchSave() {
+        AccountService accountService = mock(AccountService.class);
+        AccountSnapshotService snapshotService = mock(AccountSnapshotService.class);
+        PortfolioPositionService positionService = mock(PortfolioPositionService.class);
+
+        Account checking = new Account();
+        checking.setId(UUID.randomUUID());
+        checking.setName("Giro");
+        checking.setAccountType(AccountType.CHECKING);
+        checking.setActive(true);
+
+        Account modeADepot = new Account();
+        modeADepot.setId(UUID.randomUUID());
+        modeADepot.setName("Depot A");
+        modeADepot.setAccountType(AccountType.INVESTMENT);
+        modeADepot.setCurrentBalance(new BigDecimal("14500.00"));
+        modeADepot.setActive(true);
+
+        when(accountService.findAll()).thenReturn(List.of(checking, modeADepot));
+        when(snapshotService.buildDateRows()).thenReturn(List.of());
+        when(positionService.hasPositions(modeADepot.getId())).thenReturn(true);
+
+        BalanceEntryDialog dialog = new BalanceEntryDialog(accountService, snapshotService, positionService);
+        dialog.openForCreate(() -> {
+        });
+
+        assertThat(dialog.getFieldsByAccountForTest().get(checking.getId()).isReadOnly()).isFalse();
+        assertThat(dialog.getFieldsByAccountForTest().get(modeADepot.getId()).isReadOnly()).isTrue();
+        assertThat(dialog.getInvestedFieldsByAccountForTest().get(modeADepot.getId()).isReadOnly()).isTrue();
+
+        LocalDate today = LocalDate.now();
+        dialog.getFieldsByAccountForTest().get(checking.getId()).setValue(new BigDecimal("2000.00"));
+        dialog.saveForTest();
+
+        verify(snapshotService).recordBatch(
+                today,
+                Map.of(checking.getId(), new BigDecimal("2000.00")),
+                Map.of());
     }
 }

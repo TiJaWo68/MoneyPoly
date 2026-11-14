@@ -36,20 +36,30 @@ public class AccountSnapshotService {
     private final AccountSnapshotRepository snapshotRepository;
     private final AccountRepository accountRepository;
     private final HouseholdService householdService;
+    private final PortfolioPositionRepository positionRepository;
 
     public AccountSnapshotService(AccountSnapshotRepository snapshotRepository,
             AccountRepository accountRepository) {
-        this(snapshotRepository, accountRepository, null);
+        this(snapshotRepository, accountRepository, null, null);
+    }
+
+    public AccountSnapshotService(
+            AccountSnapshotRepository snapshotRepository,
+            AccountRepository accountRepository,
+            HouseholdService householdService) {
+        this(snapshotRepository, accountRepository, householdService, null);
     }
 
     @Autowired
     public AccountSnapshotService(
             AccountSnapshotRepository snapshotRepository,
             AccountRepository accountRepository,
-            @Autowired(required = false) HouseholdService householdService) {
+            @Autowired(required = false) HouseholdService householdService,
+            @Autowired(required = false) PortfolioPositionRepository positionRepository) {
         this.snapshotRepository = snapshotRepository;
         this.accountRepository = accountRepository;
         this.householdService = householdService;
+        this.positionRepository = positionRepository;
     }
 
     /**
@@ -242,6 +252,12 @@ public class AccountSnapshotService {
     }
 
     private void synchronizeCurrentBalance(Account account) {
+        if (account.getAccountType() == AccountType.INVESTMENT
+                && positionRepository != null
+                && positionRepository.existsByAccountId(account.getId())) {
+            // Mode A: position-based valuation takes precedence over manual snapshots.
+            return;
+        }
         BigDecimal latest = snapshotRepository.findFirstByAccountIdOrderBySnapshotDateDesc(account.getId())
                 .map(AccountSnapshot::getBalance)
                 .orElse(account.getInitialBalance());

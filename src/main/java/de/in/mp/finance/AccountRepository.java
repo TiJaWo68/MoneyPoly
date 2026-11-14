@@ -36,4 +36,6 @@ public interface AccountRepository extends JpaRepository<Account, UUID> {
     long countByActiveTrue();
 
     long countByHouseholdIdAndActiveTrue(UUID householdId);
+
+    List<Account> findByAccountTypeAndActiveTrue(AccountType accountType);
 }

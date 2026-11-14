@@ -2,10 +2,12 @@ package de.in.mp.ui.finance;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import com.vaadin.flow.component.UI;
@@ -25,6 +27,7 @@ import de.in.mp.finance.AccountSnapshot;
 import de.in.mp.finance.AccountSnapshotService;
 import de.in.mp.finance.AccountType;
 import de.in.mp.finance.BalanceDateRow;
+import de.in.mp.finance.PortfolioPositionService;
 import de.in.mp.i18n.DateFormatter;
 import de.in.mp.i18n.MoneyFormatter;
 
@@ -37,18 +40,28 @@ public class BalanceEntryDialog extends Dialog {
 
     private final AccountService accountService;
     private final AccountSnapshotService snapshotService;
+    private final PortfolioPositionService positionService;
 
     private final DatePicker date = new DatePicker();
     private final FormLayout accountFields = new FormLayout();
     private final Map<UUID, BigDecimalField> fieldsByAccount = new LinkedHashMap<>();
     private final Map<UUID, BigDecimalField> investedFieldsByAccount = new LinkedHashMap<>();
+    private final Set<UUID> positionManagedAccounts = new HashSet<>();
 
     private List<BalanceDateRow> history = List.of();
     private Runnable onSaved;
 
     public BalanceEntryDialog(AccountService accountService, AccountSnapshotService snapshotService) {
+        this(accountService, snapshotService, null);
+    }
+
+    public BalanceEntryDialog(
+            AccountService accountService,
+            AccountSnapshotService snapshotService,
+            PortfolioPositionService positionService) {
         this.accountService = accountService;
         this.snapshotService = snapshotService;
+        this.positionService = positionService;
 
         date.setLabel(getTranslation("finance.balance.field.date"));
         date.addValueChangeListener(event -> updatePreviousHints());
@@ -93,6 +106,7 @@ public class BalanceEntryDialog extends Dialog {
         accountFields.removeAll();
         fieldsByAccount.clear();
         investedFieldsByAccount.clear();
+        positionManagedAccounts.clear();
 
         List<Account> all = accountService.findAll();
         Map<UUID, Account> byId = AccountLabels.byId(all);
@@ -101,13 +115,23 @@ public class BalanceEntryDialog extends Dialog {
             if (!account.isActive() && snapshot == null) {
                 continue;
             }
+            boolean isPositionManaged = account.getAccountType() == AccountType.INVESTMENT
+                    && positionService != null
+                    && positionService.hasPositions(account.getId());
+            if (isPositionManaged) {
+                positionManagedAccounts.add(account.getId());
+            }
+
             String label = AccountLabels.qualifiedName(
                     account, byId, type -> getTranslation("finance.account.type." + type.name()));
             BigDecimalField field = new BigDecimalField(label);
             field.setWidthFull();
             if (snapshot != null) {
                 field.setValue(snapshot.getBalance());
+            } else if (isPositionManaged) {
+                field.setValue(account.getCurrentBalance());
             }
+            field.setReadOnly(isPositionManaged);
             fieldsByAccount.put(account.getId(), field);
             accountFields.add(field);
 
@@ -118,6 +142,7 @@ public class BalanceEntryDialog extends Dialog {
                 if (snapshot != null) {
                     investedField.setValue(snapshot.getInvestedCapital());
                 }
+                investedField.setReadOnly(isPositionManaged);
                 investedFieldsByAccount.put(account.getId(), investedField);
                 accountFields.add(investedField);
             }
@@ -128,6 +153,10 @@ public class BalanceEntryDialog extends Dialog {
         LocalDate reference = date.getValue();
         Locale locale = locale();
         for (Map.Entry<UUID, BigDecimalField> entry : fieldsByAccount.entrySet()) {
+            if (positionManagedAccounts.contains(entry.getKey())) {
+                entry.getValue().setHelperText(getTranslation("finance.balance.hint.position-managed"));
+                continue;
+            }
             AccountSnapshot previous = reference == null ? null : previousSnapshot(entry.getKey(), reference);
             entry.getValue().setHelperText(previous == null
                     ? getTranslation("finance.balance.hint.none")
@@ -136,6 +165,10 @@ public class BalanceEntryDialog extends Dialog {
                             DateFormatter.format(previous.getSnapshotDate(), locale)));
         }
         for (Map.Entry<UUID, BigDecimalField> entry : investedFieldsByAccount.entrySet()) {
+            if (positionManagedAccounts.contains(entry.getKey())) {
+                entry.getValue().setHelperText(getTranslation("finance.balance.hint.position-managed"));
+                continue;
+            }
             AccountSnapshot previous = reference == null
                     ? null
                     : previousInvestedSnapshot(entry.getKey(), reference);
@@ -174,9 +207,17 @@ public class BalanceEntryDialog extends Dialog {
             return;
         }
         Map<UUID, BigDecimal> values = new LinkedHashMap<>();
-        fieldsByAccount.forEach((accountId, field) -> values.put(accountId, field.getValue()));
+        fieldsByAccount.forEach((accountId, field) -> {
+            if (!positionManagedAccounts.contains(accountId)) {
+                values.put(accountId, field.getValue());
+            }
+        });
         Map<UUID, BigDecimal> investedValues = new LinkedHashMap<>();
-        investedFieldsByAccount.forEach((accountId, field) -> investedValues.put(accountId, field.getValue()));
+        investedFieldsByAccount.forEach((accountId, field) -> {
+            if (!positionManagedAccounts.contains(accountId)) {
+                investedValues.put(accountId, field.getValue());
+            }
+        });
         try {
             int saved = snapshotService.recordBatch(date.getValue(), values, investedValues);
             Notification.show(getTranslation("finance.balance.notification.saved", saved), 3000,
