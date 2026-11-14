@@ -51,6 +51,8 @@ import de.in.mp.finance.BalanceDateRow;
 import de.in.mp.finance.BankLookupService;
 import de.in.mp.finance.Household;
 import de.in.mp.finance.HouseholdService;
+import de.in.mp.finance.PortfolioPositionImportService;
+import de.in.mp.finance.PortfolioPositionService;
 import de.in.mp.i18n.DateFormatter;
 import de.in.mp.i18n.MoneyFormatter;
 import de.in.mp.i18n.MoneyPolyI18nProvider;
@@ -82,9 +84,11 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
     private final AccountSnapshotService snapshotService;
     private final AppSettingService appSettingService;
     private final HouseholdService householdService;
+    private final PortfolioPositionService positionService;
     private final AccountEditorDialog editorDialog;
     private final BalanceEntryDialog balanceDialog;
     private final StatementImportDialog statementDialog;
+    private final PortfolioPositionsDialog positionsDialog;
     private final ComboBox<Household> householdSelector = new ComboBox<>();
     private UUID selectedHouseholdId;
 
@@ -114,21 +118,45 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
     public FinanceView(AccountService accountService, AccountSnapshotService snapshotService,
             BankLookupService bankLookupService, StatementImportService statementImportService,
             AppSettingService appSettingService) {
-        this(accountService, snapshotService, bankLookupService, statementImportService, appSettingService, null);
+        this(accountService, snapshotService, bankLookupService, statementImportService, appSettingService,
+                null, null, null);
+    }
+
+    public FinanceView(AccountService accountService, AccountSnapshotService snapshotService,
+            BankLookupService bankLookupService, StatementImportService statementImportService,
+            AppSettingService appSettingService,
+            HouseholdService householdService) {
+        this(accountService, snapshotService, bankLookupService, statementImportService, appSettingService,
+                householdService, null, null);
+    }
+
+    public FinanceView(AccountService accountService, AccountSnapshotService snapshotService,
+            BankLookupService bankLookupService, StatementImportService statementImportService,
+            AppSettingService appSettingService,
+            HouseholdService householdService,
+            PortfolioPositionService positionService) {
+        this(accountService, snapshotService, bankLookupService, statementImportService, appSettingService,
+                householdService, positionService, null);
     }
 
     @Autowired
     public FinanceView(AccountService accountService, AccountSnapshotService snapshotService,
             BankLookupService bankLookupService, StatementImportService statementImportService,
             AppSettingService appSettingService,
-            @Autowired(required = false) HouseholdService householdService) {
+            @Autowired(required = false) HouseholdService householdService,
+            @Autowired(required = false) PortfolioPositionService positionService,
+            @Autowired(required = false) PortfolioPositionImportService positionImportService) {
         this.accountService = accountService;
         this.snapshotService = snapshotService;
         this.appSettingService = appSettingService;
         this.householdService = householdService;
+        this.positionService = positionService;
         this.editorDialog = new AccountEditorDialog(accountService, bankLookupService);
-        this.balanceDialog = new BalanceEntryDialog(accountService, snapshotService);
+        this.balanceDialog = new BalanceEntryDialog(accountService, snapshotService, positionService);
         this.statementDialog = new StatementImportDialog(statementImportService, accountService);
+        this.positionsDialog = positionService != null
+                ? new PortfolioPositionsDialog(positionService, snapshotService, positionImportService, canModify())
+                : null;
         this.actionMenu = new ActionMenu(getTranslation("ui.action-menu.tooltip"));
         this.kpiRow = createKpiRow();
         this.kpiRow.addClassNames(LumoUtility.Margin.Bottom.XSMALL, ResponsiveStyles.HIDE_ON_SHORT_SCREEN);
@@ -694,8 +722,16 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
     }
 
     private HorizontalLayout renderAccountActions(Account account) {
+        HorizontalLayout actions = new HorizontalLayout();
+        if (positionsDialog != null && account.getAccountType() == AccountType.INVESTMENT) {
+            Button positionsButton = GridActionButton.create(
+                    VaadinIcon.TRENDING_UP,
+                    getTranslation("finance.positions.action.manage"),
+                    event -> positionsDialog.openForDepot(account, this::refresh));
+            actions.add(positionsButton);
+        }
         if (!canModify()) {
-            return new HorizontalLayout();
+            return actions;
         }
         Button editButton = GridActionButton.create(
                 VaadinIcon.EDIT,
@@ -709,7 +745,8 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
                 getTranslation(toggleKey),
                 event -> toggleActive(account));
 
-        return new HorizontalLayout(editButton, toggleButton);
+        actions.add(editButton, toggleButton);
+        return actions;
     }
 
     private void toggleActive(Account account) {
