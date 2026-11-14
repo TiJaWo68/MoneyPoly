@@ -187,6 +187,7 @@ public class DemoSeedService implements ApplicationRunner {
         savings.setAccountType(AccountType.SAVINGS);
         savings.setBankName("Musterbank AG");
         savings.setDisplayOrder(20);
+        savings.setSubsequentInterestRate(new BigDecimal("3.1000"));
         savings.setInitialBalance(new BigDecimal("18500.00"));
         savings.setCurrentBalance(new BigDecimal("18500.00"));
         savings = accountRepository.save(savings);

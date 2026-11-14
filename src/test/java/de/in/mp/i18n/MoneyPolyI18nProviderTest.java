@@ -69,7 +69,15 @@ class MoneyPolyI18nProviderTest {
 				"energy.view.page-title", "energy.view.title", "energy.kpi.total-investment",
 				"energy.kpi.total-amortized", "energy.kpi.remaining-cost", "energy.kpi.active-meters",
 				"energy.tab.readings", "energy.tab.amortization", "energy.tab.masterdata",
-				"energy.button.batch-entry", "energy.batch.title.new", "energy.batch.button.save")) {
+				"energy.button.batch-entry", "energy.batch.title.new", "energy.batch.button.save",
+				"ui.button.save", "ui.button.cancel", "ui.dialog.close",
+				"dashboard.grid.column.interest", "dashboard.grid.column.performance",
+				"finance.positions.dialog.title", "finance.positions.editor.title.new",
+				"finance.positions.editor.title.edit", "finance.positions.button.add",
+				"finance.positions.button.refresh", "finance.positions.button.import-pdf",
+				"finance.positions.button.close", "finance.positions.notification.imported",
+				"finance.positions.notification.import-error",
+				"finance.balance.hint.position-managed")) {
 			assertThat(provider.getTranslation(key, Locale.GERMAN))
 					.as("German translation for %s", key)
 					.isNotEqualTo(key);

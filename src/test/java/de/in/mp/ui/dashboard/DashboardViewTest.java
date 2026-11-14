@@ -32,7 +32,9 @@ import de.in.mp.finance.AccountSnapshotService;
 import de.in.mp.finance.AccountType;
 import de.in.mp.finance.DashboardKpis;
 import de.in.mp.finance.DashboardService;
+import de.in.mp.finance.DepotValuation;
 import de.in.mp.finance.Person;
+import de.in.mp.finance.PortfolioPositionService;
 import de.in.mp.i18n.MoneyPolyI18nProvider;
 import de.in.mp.loans.LoanContract;
 import de.in.mp.loans.LoanContractService;
@@ -265,7 +267,7 @@ class DashboardViewTest {
     }
 
     @Test
-    void rendersInvestmentPerformanceSublineOnlyWhenInvestedCapitalIsPresent() {
+    void rendersInvestmentPerformanceInDedicatedColumnAndSingleLineBalance() {
         Account withCostBasis = new Account();
         withCostBasis.setId(UUID.randomUUID());
         withCostBasis.setName("Depot A");
@@ -292,11 +294,117 @@ class DashboardViewTest {
         DashboardView refreshed = new DashboardView(mockDashboardService(), accountService, snapshotService,
                 loanContractService, personService, appSettingService);
 
-        String withPerfText = refreshed.renderAccountAmount(withCostBasis).getElement().getTextRecursively();
-        assertThat(withPerfText).contains("52.210,00").contains("+4.210,00").contains("+8,8 %");
+        String withPerfText = refreshed.renderInvestmentPerformance(withCostBasis).getElement().getTextRecursively();
+        assertThat(withPerfText).contains("+4.210,00").contains("+8,8 %");
 
-        String withoutPerfText = refreshed.renderAccountAmount(withoutCostBasis).getElement().getTextRecursively();
-        assertThat(withoutPerfText).contains("10.000,00").doesNotContain("%");
+        String balanceOnlyText = refreshed.renderAccountAmount(withCostBasis).getElement().getTextRecursively();
+        assertThat(balanceOnlyText).contains("52.210,00").doesNotContain("%");
+
+        String withoutPerfText = refreshed.renderInvestmentPerformance(withoutCostBasis).getElement()
+                .getTextRecursively();
+        assertThat(withoutPerfText).isEqualTo("-");
+    }
+
+    @Test
+    void rendersLiquidityInterestRateForSavingsAndBlankForChecking() {
+        Account savingsLow = new Account();
+        savingsLow.setName("Tagesgeld Alt");
+        savingsLow.setAccountType(AccountType.SAVINGS);
+        savingsLow.setSubsequentInterestRate(new BigDecimal("1.50"));
+
+        Account savingsOk = new Account();
+        savingsOk.setName("Tagesgeld Neu");
+        savingsOk.setAccountType(AccountType.SAVINGS);
+        savingsOk.setPromotionalInterestRate(new BigDecimal("3.25"));
+
+        Account checking = new Account();
+        checking.setName("Girokonto");
+        checking.setAccountType(AccountType.CHECKING);
+
+        Component lowComp = view.renderLiquidityInterestRate(savingsLow);
+        assertThat(lowComp.getElement().getTextRecursively()).contains("1,5").contains("%");
+        assertThat(lowComp.getElement().getStyle().get("color")).isEqualTo("var(--lumo-warning-text-color, #e65100)");
+
+        Component okComp = view.renderLiquidityInterestRate(savingsOk);
+        assertThat(okComp.getElement().getTextRecursively()).contains("3,25").contains("%");
+        assertThat(okComp.getElement().getStyle().get("color")).isNull();
+
+        Component checkingComp = view.renderLiquidityInterestRate(checking);
+        assertThat(checkingComp.getElement().getTextRecursively()).isEmpty();
+    }
+
+    @Test
+    void rendersLoanInterestRateWhenConfigured() {
+        LoanContract withRate = new LoanContract();
+        withRate.setAnnualInterestRate(new BigDecimal("1.50"));
+        LoanContract zeroRate = new LoanContract();
+        zeroRate.setAnnualInterestRate(BigDecimal.ZERO);
+
+        assertThat(view.renderLoanInterestRate(withRate).getElement().getTextRecursively()).contains("1,5")
+                .contains("%");
+        assertThat(view.renderLoanInterestRate(zeroRate).getElement().getTextRecursively()).isEqualTo("-");
+    }
+
+    @Test
+    void usesPositionBasedDepotValuationWhenPortfolioPositionServiceProvidesModeA() {
+        Account depot = new Account();
+        depot.setId(UUID.randomUUID());
+        depot.setName("Depot Positionen");
+        depot.setAccountType(AccountType.INVESTMENT);
+        depot.setCurrentBalance(new BigDecimal("1000.00"));
+        depot.setActive(true);
+
+        PortfolioPositionService positionService = mock(PortfolioPositionService.class);
+        DepotValuation modeA = new DepotValuation(
+                depot.getId(),
+                true,
+                new BigDecimal("14500.00"),
+                new BigDecimal("12000.00"),
+                new BigDecimal("14500.00"),
+                true,
+                2);
+        when(accountService.findAll()).thenReturn(List.of(depot));
+        when(positionService.resolveValuations(org.mockito.ArgumentMatchers.anyCollection(),
+                org.mockito.ArgumentMatchers.anyMap())).thenReturn(Map.of(depot.getId(), modeA));
+
+        DashboardView refreshed = new DashboardView(mockDashboardService(), accountService, snapshotService,
+                loanContractService, personService, appSettingService, null, positionService);
+
+        assertThat(refreshed.renderAccountAmount(depot).getElement().getTextRecursively()).contains("14.500,00");
+        assertThat(refreshed.renderInvestmentPerformance(depot).getElement().getTextRecursively())
+                .contains("+2.500,00").contains("+20,8 %");
+    }
+
+    @Test
+    void usesCompactColumnWidthsAndHidesShareColumnOnMobileViewport() {
+        view.applyResponsiveLayout(412);
+
+        Grid<?> liquidityGrid = view.allGrids().get(0);
+        Grid<?> investmentsGrid = view.allGrids().get(1);
+        Grid<?> loansGrid = view.allGrids().get(2);
+
+        for (Grid<?> grid : view.allGrids()) {
+            assertThat(grid.getColumnByKey(DashboardSortColumn.SHARE.key()).isVisible()).isFalse();
+            assertThat(grid.getColumnByKey(DashboardSortColumn.NAME.key()).getFlexGrow()).isEqualTo(1);
+            assertThat(grid.getColumnByKey(DashboardSortColumn.AMOUNT.key()).getWidth()).isEqualTo("104px");
+        }
+
+        assertThat(liquidityGrid.getColumnByKey(DashboardSortColumn.INFO.key()).getWidth()).isEqualTo("76px");
+        assertThat(loansGrid.getColumnByKey(DashboardSortColumn.INFO.key()).getWidth()).isEqualTo("76px");
+        assertThat(investmentsGrid.getColumnByKey(DashboardSortColumn.INFO.key()).getWidth()).isEqualTo("102px");
+    }
+
+    @Test
+    void restoresAlignedDesktopColumnsOnWideViewport() {
+        view.applyResponsiveLayout(412);
+        view.applyResponsiveLayout(1200);
+
+        for (Grid<?> grid : view.allGrids()) {
+            assertThat(grid.getColumnByKey(DashboardSortColumn.SHARE.key()).isVisible()).isTrue();
+            assertThat(grid.getColumnByKey(DashboardSortColumn.SHARE.key()).getWidth()).isEqualTo("180px");
+            assertThat(grid.getColumnByKey(DashboardSortColumn.INFO.key()).getWidth()).isEqualTo("175px");
+            assertThat(grid.getColumnByKey(DashboardSortColumn.AMOUNT.key()).getWidth()).isEqualTo("140px");
+        }
     }
 
     private static DashboardService mockDashboardService() {

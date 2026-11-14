@@ -13,7 +13,9 @@ import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Autowired;
 
+import com.vaadin.flow.component.AttachEvent;
 import com.vaadin.flow.component.Component;
+import com.vaadin.flow.component.DetachEvent;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.grid.ColumnTextAlign;
 import com.vaadin.flow.component.grid.Grid;
@@ -25,12 +27,14 @@ import com.vaadin.flow.component.html.Span;
 import com.vaadin.flow.component.orderedlayout.FlexComponent.Alignment;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
+import com.vaadin.flow.component.page.Page;
 import com.vaadin.flow.data.provider.SortDirection;
 import com.vaadin.flow.data.renderer.ComponentRenderer;
 import com.vaadin.flow.dom.Style;
 import com.vaadin.flow.router.HasDynamicTitle;
 import com.vaadin.flow.router.QueryParameters;
 import com.vaadin.flow.router.Route;
+import com.vaadin.flow.shared.Registration;
 import com.vaadin.flow.theme.lumo.LumoUtility;
 
 import de.in.mp.admin.AppSettingService;
@@ -42,12 +46,15 @@ import de.in.mp.finance.AccountSnapshotService;
 import de.in.mp.finance.AccountType;
 import de.in.mp.finance.DashboardKpis;
 import de.in.mp.finance.DashboardService;
+import de.in.mp.finance.DepotValuation;
 import de.in.mp.finance.HouseholdService;
 import de.in.mp.finance.InvestmentPerformance;
 import de.in.mp.finance.Person;
+import de.in.mp.finance.PortfolioPositionService;
 import de.in.mp.i18n.MoneyFormatter;
 import de.in.mp.loans.LoanContract;
 import de.in.mp.loans.LoanContractService;
+import de.in.mp.ui.ResponsiveStyles;
 import de.in.mp.ui.finance.FinanceView;
 import de.in.mp.ui.layout.MainLayout;
 import de.in.mp.ui.loans.PrivateLoanView;
@@ -62,10 +69,18 @@ import jakarta.annotation.security.PermitAll;
 public class DashboardView extends VerticalLayout implements HasDynamicTitle {
 
     private static final String AMOUNT_COLUMN_WIDTH = "140px";
+    private static final String INFO_COLUMN_WIDTH = "175px";
     private static final String PROGRESS_COLUMN_WIDTH = "180px";
+    private static final String MOBILE_INTEREST_COLUMN_WIDTH = "76px";
+    private static final String MOBILE_PERFORMANCE_COLUMN_WIDTH = "102px";
+    private static final String MOBILE_AMOUNT_COLUMN_WIDTH = "104px";
+    private static final String KPI_CARD_MIN_WIDTH = "150px";
+    private static final String KPI_CARD_FLEX = "1 1 150px";
     private static final String MAX_CONTENT_WIDTH = "1200px";
     private static final String FLEX_SHRINK = "flex-shrink";
     private static final String NO_SHRINK = "0";
+    private static final String EMPTY_PLACEHOLDER = "-";
+    private static final String WARNING_TEXT_COLOR = "var(--lumo-warning-text-color, #e65100)";
     private static final BigDecimal HUNDRED = new BigDecimal("100");
 
     private final DashboardService dashboardService;
@@ -75,6 +90,7 @@ public class DashboardView extends VerticalLayout implements HasDynamicTitle {
     private final PersonService personService;
     private final AppSettingService appSettingService;
     private final HouseholdService householdService;
+    private final PortfolioPositionService portfolioPositionService;
 
     private final Span netWorthValue = new Span();
     private final Span liquidityValue = new Span();
@@ -108,20 +124,31 @@ public class DashboardView extends VerticalLayout implements HasDynamicTitle {
     private BigDecimal warningThreshold = new BigDecimal("2.00");
     private Map<UUID, String> personNames = Map.of();
     private Map<UUID, Account> accountsById = Map.of();
-    private Map<UUID, BigDecimal> investedCapitalByAccount = Map.of();
+    private Map<UUID, DepotValuation> depotValuationsByAccount = Map.of();
+    private Registration resizeRegistration;
+    private Boolean mobileLayoutActive;
 
     public DashboardView(DashboardService dashboardService, AccountService accountService,
             AccountSnapshotService snapshotService, LoanContractService loanContractService,
             PersonService personService, AppSettingService appSettingService) {
         this(dashboardService, accountService, snapshotService, loanContractService, personService, appSettingService,
-                null);
+                null, null);
+    }
+
+    public DashboardView(DashboardService dashboardService, AccountService accountService,
+            AccountSnapshotService snapshotService, LoanContractService loanContractService,
+            PersonService personService, AppSettingService appSettingService,
+            HouseholdService householdService) {
+        this(dashboardService, accountService, snapshotService, loanContractService, personService, appSettingService,
+                householdService, null);
     }
 
     @Autowired
     public DashboardView(DashboardService dashboardService, AccountService accountService,
             AccountSnapshotService snapshotService, LoanContractService loanContractService,
             PersonService personService, AppSettingService appSettingService,
-            @Autowired(required = false) HouseholdService householdService) {
+            @Autowired(required = false) HouseholdService householdService,
+            @Autowired(required = false) PortfolioPositionService portfolioPositionService) {
         this.dashboardService = dashboardService;
         this.accountService = accountService;
         this.snapshotService = snapshotService;
@@ -129,6 +156,7 @@ public class DashboardView extends VerticalLayout implements HasDynamicTitle {
         this.personService = personService;
         this.appSettingService = appSettingService;
         this.householdService = householdService;
+        this.portfolioPositionService = portfolioPositionService;
 
         // Width only: a fixed height would let the flex column shrink the
         // all-rows-visible grids to zero height on the initial render.
@@ -136,6 +164,7 @@ public class DashboardView extends VerticalLayout implements HasDynamicTitle {
         setPadding(true);
         setSpacing(false);
         setMaxWidth(MAX_CONTENT_WIDTH);
+        addClassName(ResponsiveStyles.DASHBOARD_VIEW);
         getStyle().set("margin", "0 auto");
         getStyle().set("font-variant-numeric", "tabular-nums");
 
@@ -146,6 +175,59 @@ public class DashboardView extends VerticalLayout implements HasDynamicTitle {
         add(createHeader(), kpiRow, liquidityBlock, investmentsBlock, loansBlock);
         configureGrids();
         refresh();
+    }
+
+    @Override
+    protected void onAttach(AttachEvent attachEvent) {
+        super.onAttach(attachEvent);
+        Page page = attachEvent.getUI().getPage();
+        page.retrieveExtendedClientDetails(details -> applyResponsiveLayout(details.getWindowInnerWidth()));
+        resizeRegistration = page.addBrowserWindowResizeListener(event -> applyResponsiveLayout(event.getWidth()));
+    }
+
+    @Override
+    protected void onDetach(DetachEvent detachEvent) {
+        if (resizeRegistration != null) {
+            resizeRegistration.remove();
+            resizeRegistration = null;
+        }
+        super.onDetach(detachEvent);
+    }
+
+    /**
+     * Switches grid columns between aligned desktop widths and compact
+     * smartphone widths so account names keep maximum horizontal space.
+     */
+    void applyResponsiveLayout(int viewportWidth) {
+        if (viewportWidth <= 0) {
+            return;
+        }
+        boolean mobile = viewportWidth < ResponsiveStyles.MOBILE_BREAKPOINT_PX;
+        if (Boolean.valueOf(mobile).equals(mobileLayoutActive)) {
+            return;
+        }
+        mobileLayoutActive = mobile;
+        applyGridResponsiveMode(liquidityGrid, mobile ? MOBILE_INTEREST_COLUMN_WIDTH : INFO_COLUMN_WIDTH, mobile);
+        applyGridResponsiveMode(investmentsGrid, mobile ? MOBILE_PERFORMANCE_COLUMN_WIDTH : INFO_COLUMN_WIDTH, mobile);
+        applyGridResponsiveMode(loansGrid, mobile ? MOBILE_INTEREST_COLUMN_WIDTH : INFO_COLUMN_WIDTH, mobile);
+    }
+
+    private void applyGridResponsiveMode(Grid<?> grid, String infoWidth, boolean mobile) {
+        Grid.Column<?> infoColumn = grid.getColumnByKey(DashboardSortColumn.INFO.key());
+        Grid.Column<?> amountColumn = grid.getColumnByKey(DashboardSortColumn.AMOUNT.key());
+        Grid.Column<?> shareColumn = grid.getColumnByKey(DashboardSortColumn.SHARE.key());
+        if (infoColumn != null) {
+            infoColumn.setWidth(infoWidth);
+        }
+        if (amountColumn != null) {
+            amountColumn.setWidth(mobile ? MOBILE_AMOUNT_COLUMN_WIDTH : AMOUNT_COLUMN_WIDTH);
+        }
+        if (shareColumn != null) {
+            shareColumn.setVisible(!mobile);
+            if (!mobile) {
+                shareColumn.setWidth(PROGRESS_COLUMN_WIDTH);
+            }
+        }
     }
 
     @Override
@@ -169,6 +251,8 @@ public class DashboardView extends VerticalLayout implements HasDynamicTitle {
         HorizontalLayout row = new HorizontalLayout(netWorthCard, liquidityCard, investedCard, receivablesCard);
         row.setWidthFull();
         row.setSpacing(true);
+        row.getStyle().set("flex-wrap", "wrap");
+        row.addClassName(ResponsiveStyles.HIDE_ON_SHORT_SCREEN);
         return row;
     }
 
@@ -181,7 +265,8 @@ public class DashboardView extends VerticalLayout implements HasDynamicTitle {
         VerticalLayout card = new VerticalLayout(labelSpan, value);
         card.setPadding(true);
         card.setSpacing(false);
-        card.setMinWidth("170px");
+        card.setMinWidth(KPI_CARD_MIN_WIDTH);
+        card.getStyle().set("flex", KPI_CARD_FLEX);
         card.addClassNames(
                 LumoUtility.Background.CONTRAST_5,
                 LumoUtility.BorderRadius.LARGE,
@@ -216,6 +301,7 @@ public class DashboardView extends VerticalLayout implements HasDynamicTitle {
 
         headerProgress.setWidth(PROGRESS_COLUMN_WIDTH);
         headerProgress.setMinWidth(PROGRESS_COLUMN_WIDTH);
+        headerProgress.addClassName(ResponsiveStyles.DASHBOARD_HEADER_PROGRESS);
         headerProgress.getStyle().set(FLEX_SHRINK, NO_SHRINK);
         headerProgress.getStyle().set("padding-right", "var(--lumo-space-m)");
         headerProgress.getStyle().set("box-sizing", "border-box");
@@ -235,24 +321,43 @@ public class DashboardView extends VerticalLayout implements HasDynamicTitle {
     }
 
     private void configureGrids() {
-        configureAccountGrid(liquidityGrid);
-        configureAccountGrid(investmentsGrid);
+        configureAccountGrid(
+                liquidityGrid,
+                "dashboard.grid.column.interest",
+                this::renderLiquidityInterestRate,
+                Comparator.comparing(this::savingsInterestSortKey, Comparator.nullsLast(Comparator.naturalOrder())));
+        configureAccountGrid(
+                investmentsGrid,
+                "dashboard.grid.column.performance",
+                this::renderInvestmentPerformance,
+                Comparator.comparing(this::investmentPerformanceSortKey,
+                        Comparator.nullsLast(Comparator.naturalOrder())));
         configureLoansGrid();
         allGrids().forEach(this::synchronizeSorting);
     }
-
 
     /**
      * The share is proportional to the balance, hence both columns sort by
      * the balance.
      */
-    private void configureAccountGrid(Grid<Account> grid) {
+    private void configureAccountGrid(
+            Grid<Account> grid,
+            String infoHeaderKey,
+            com.vaadin.flow.function.SerializableFunction<Account, Component> infoRenderer,
+            Comparator<Account> infoComparator) {
         Comparator<Account> byBalance = Comparator.comparing(Account::getCurrentBalance);
         grid.addColumn(new ComponentRenderer<>(this::renderAccountLabel))
                 .setKey(DashboardSortColumn.NAME.key())
                 .setComparator(Comparator.comparing(this::accountLabel, String.CASE_INSENSITIVE_ORDER))
                 .setHeader(getTranslation("dashboard.grid.column.name"))
                 .setFlexGrow(1);
+        grid.addColumn(new ComponentRenderer<>(infoRenderer::apply))
+                .setKey(DashboardSortColumn.INFO.key())
+                .setComparator(infoComparator)
+                .setHeader(rightAlignedHeader(infoHeaderKey))
+                .setTextAlign(ColumnTextAlign.END)
+                .setWidth(INFO_COLUMN_WIDTH)
+                .setFlexGrow(0);
         grid.addColumn(new ComponentRenderer<>(this::renderAccountAmount))
                 .setKey(DashboardSortColumn.AMOUNT.key())
                 .setComparator(byBalance)
@@ -279,6 +384,14 @@ public class DashboardView extends VerticalLayout implements HasDynamicTitle {
                         String.CASE_INSENSITIVE_ORDER))
                 .setHeader(getTranslation("dashboard.grid.column.designation"))
                 .setFlexGrow(1);
+        loansGrid.addColumn(new ComponentRenderer<>(this::renderLoanInterestRate))
+                .setKey(DashboardSortColumn.INFO.key())
+                .setComparator(Comparator.comparing(
+                        this::loanInterestSortKey, Comparator.nullsLast(Comparator.naturalOrder())))
+                .setHeader(rightAlignedHeader("dashboard.grid.column.interest"))
+                .setTextAlign(ColumnTextAlign.END)
+                .setWidth(INFO_COLUMN_WIDTH)
+                .setFlexGrow(0);
         loansGrid.addColumn(contract -> MoneyFormatter.format(loanContractService.remainingBalance(contract), locale()))
                 .setKey(DashboardSortColumn.AMOUNT.key())
                 .setComparator(Comparator.comparing(loanContractService::remainingBalance))
@@ -298,6 +411,7 @@ public class DashboardView extends VerticalLayout implements HasDynamicTitle {
 
     private static void applyCompactLayout(Grid<?> grid) {
         grid.addThemeVariants(GridVariant.LUMO_COMPACT, GridVariant.LUMO_NO_ROW_BORDERS);
+        grid.addClassName(ResponsiveStyles.DASHBOARD_GRID);
         grid.setAllRowsVisible(true);
         grid.setWidthFull();
         grid.getStyle().set(FLEX_SHRINK, NO_SHRINK);
@@ -345,6 +459,7 @@ public class DashboardView extends VerticalLayout implements HasDynamicTitle {
     private Span createHeaderSum() {
         Span sum = new Span();
         sum.setMinWidth(AMOUNT_COLUMN_WIDTH);
+        sum.addClassName(ResponsiveStyles.DASHBOARD_HEADER_SUM);
         sum.getStyle().set("text-align", "right");
         sum.getStyle().set("white-space", "nowrap");
         sum.getStyle().set(FLEX_SHRINK, NO_SHRINK);
@@ -389,15 +504,16 @@ public class DashboardView extends VerticalLayout implements HasDynamicTitle {
 
         Span textWrapper = new Span();
         textWrapper.getStyle().set("display", "block");
+        textWrapper.getStyle().set("flex", "1 1 0");
         applyEllipsis(textWrapper.getStyle());
 
         Span primarySpan = new Span(primary);
         primarySpan.addClassName(LumoUtility.FontWeight.MEDIUM);
         if (warnInterest) {
-            primarySpan.getStyle().set("color", "var(--lumo-warning-text-color, #e65100)");
+            primarySpan.getStyle().set("color", WARNING_TEXT_COLOR);
             if (account != null) {
                 BigDecimal rate = account.getCurrentInterestRate();
-                String rateStr = rate != null ? MoneyFormatter.formatPercent(rate, locale()) : "-";
+                String rateStr = rate != null ? MoneyFormatter.formatPercent(rate, locale()) : EMPTY_PLACEHOLDER;
                 container.setTitle(getTranslation("dashboard.savings.warning.tooltip", rateStr,
                         MoneyFormatter.formatPercent(warningThreshold, locale())));
             }
@@ -540,9 +656,7 @@ public class DashboardView extends VerticalLayout implements HasDynamicTitle {
 
             Map<UUID, AccountSnapshot> latestInvestmentSnapshots = snapshotService.findLatestSnapshots(
                     investments.stream().map(Account::getId).toList());
-            investedCapitalByAccount = latestInvestmentSnapshots.entrySet().stream()
-                    .filter(entry -> entry.getValue().getInvestedCapital() != null)
-                    .collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().getInvestedCapital()));
+            depotValuationsByAccount = resolveDepotValuations(investments, latestInvestmentSnapshots);
 
             personNames = personService.findAll().stream()
                     .collect(Collectors.toMap(Person::getId, Person::getName));
@@ -570,45 +684,107 @@ public class DashboardView extends VerticalLayout implements HasDynamicTitle {
         }
     }
 
+    private Map<UUID, DepotValuation> resolveDepotValuations(
+            List<Account> investments,
+            Map<UUID, AccountSnapshot> latestSnapshots) {
+        if (portfolioPositionService != null) {
+            return portfolioPositionService.resolveValuations(investments, latestSnapshots);
+        }
+        return investments.stream()
+                .filter(account -> account.getId() != null)
+                .collect(Collectors.toMap(
+                        Account::getId,
+                        account -> fallbackSnapshotValuation(account, latestSnapshots.get(account.getId()))));
+    }
+
+    private static DepotValuation fallbackSnapshotValuation(Account account, AccountSnapshot snapshot) {
+        BigDecimal balance = account.getCurrentBalance() == null ? BigDecimal.ZERO : account.getCurrentBalance();
+        BigDecimal invested = snapshot != null ? snapshot.getInvestedCapital() : null;
+        return new DepotValuation(
+                account.getId(),
+                false,
+                balance,
+                invested,
+                invested != null ? balance : null,
+                invested != null,
+                0);
+    }
+
     private void updateInvestmentsPerformanceTooltip(List<Account> investments) {
         BigDecimal balanceWithCostBasis = BigDecimal.ZERO;
         BigDecimal totalInvestedCapital = BigDecimal.ZERO;
         boolean hasAny = false;
         for (Account investment : investments) {
-            BigDecimal costBasis = investedCapitalByAccount.get(investment.getId());
-            if (costBasis == null) {
+            DepotValuation valuation = depotValuationsByAccount.get(investment.getId());
+            if (valuation == null || valuation.investedCapital() == null || valuation.valueWithCostBasis() == null) {
                 continue;
             }
             hasAny = true;
-            balanceWithCostBasis = balanceWithCostBasis.add(
-                    investment.getCurrentBalance() == null ? BigDecimal.ZERO : investment.getCurrentBalance());
-            totalInvestedCapital = totalInvestedCapital.add(costBasis);
+            balanceWithCostBasis = balanceWithCostBasis.add(valuation.valueWithCostBasis());
+            totalInvestedCapital = totalInvestedCapital.add(valuation.investedCapital());
         }
         if (!hasAny) {
             investedSum.getElement().removeAttribute("title");
             return;
         }
         BigDecimal finalInvested = totalInvestedCapital;
-        InvestmentPerformance.of(balanceWithCostBasis, totalInvestedCapital).ifPresent(perf ->
-                investedSum.setTitle(getTranslation("finance.balance.tooltip.invested",
+        InvestmentPerformance.of(balanceWithCostBasis, totalInvestedCapital)
+                .ifPresent(perf -> investedSum.setTitle(getTranslation("finance.balance.tooltip.invested",
                         MoneyFormatter.format(finalInvested, locale()),
                         perf.format(locale()))));
     }
 
     Component renderAccountAmount(Account account) {
-        Span balanceSpan = new Span(MoneyFormatter.format(account.getCurrentBalance(), locale()));
+        Span balanceSpan = new Span(MoneyFormatter.format(effectiveAccountBalance(account), locale()));
         balanceSpan.getStyle().set("white-space", "nowrap");
-        if (account.getAccountType() != AccountType.INVESTMENT) {
-            return balanceSpan;
+        return balanceSpan;
+    }
+
+    private BigDecimal effectiveAccountBalance(Account account) {
+        if (account == null) {
+            return BigDecimal.ZERO;
         }
-        Optional<InvestmentPerformance> performance = InvestmentPerformance.of(
-                account.getCurrentBalance(), investedCapitalByAccount.get(account.getId()));
+        if (account.getAccountType() == AccountType.INVESTMENT && account.getId() != null) {
+            DepotValuation valuation = depotValuationsByAccount.get(account.getId());
+            if (valuation != null && valuation.positionBased() && valuation.currentValue() != null) {
+                return valuation.currentValue();
+            }
+        }
+        return account.getCurrentBalance() == null ? BigDecimal.ZERO : account.getCurrentBalance();
+    }
+
+    Component renderLiquidityInterestRate(Account account) {
+        if (account == null || account.getAccountType() != AccountType.SAVINGS) {
+            return new Span();
+        }
+        BigDecimal rate = account.getCurrentInterestRate();
+        Span span = new Span(rate != null ? MoneyFormatter.formatPercent(rate, locale()) : EMPTY_PLACEHOLDER);
+        span.getStyle().set("white-space", "nowrap");
+        if (account.isInterestRateBelow(warningThreshold)) {
+            span.getStyle().set("color", WARNING_TEXT_COLOR);
+            span.addClassName(LumoUtility.FontWeight.SEMIBOLD);
+            String rateStr = rate != null ? MoneyFormatter.formatPercent(rate, locale()) : EMPTY_PLACEHOLDER;
+            span.setTitle(getTranslation("dashboard.savings.warning.tooltip", rateStr,
+                    MoneyFormatter.formatPercent(warningThreshold, locale())));
+        } else if (rate == null) {
+            span.addClassName(LumoUtility.TextColor.SECONDARY);
+        }
+        return span;
+    }
+
+    Component renderInvestmentPerformance(Account account) {
+        DepotValuation valuation = account == null ? null : depotValuationsByAccount.get(account.getId());
+        Optional<InvestmentPerformance> performance = valuation == null
+                ? Optional.empty()
+                : valuation.performance();
         if (performance.isEmpty()) {
-            return balanceSpan;
+            Span empty = new Span(EMPTY_PLACEHOLDER);
+            empty.addClassName(LumoUtility.TextColor.SECONDARY);
+            return empty;
         }
         InvestmentPerformance perf = performance.get();
-        Span perfSpan = new Span(perf.format(locale()));
-        perfSpan.addClassName(LumoUtility.FontSize.XSMALL);
+        Span perfSpan = new Span();
+        perfSpan.addClassNames(LumoUtility.FontSize.SMALL, ResponsiveStyles.DASHBOARD_PERF_CELL);
         if (perf.isPositive()) {
             perfSpan.addClassName(LumoUtility.TextColor.SUCCESS);
         } else if (perf.isNegative()) {
@@ -616,13 +792,67 @@ public class DashboardView extends VerticalLayout implements HasDynamicTitle {
         } else {
             perfSpan.addClassName(LumoUtility.TextColor.SECONDARY);
         }
-        perfSpan.getStyle().set("white-space", "nowrap");
+        Span gainSpan = new Span(perf.formatGain(locale()));
+        gainSpan.getStyle().set("white-space", "nowrap");
+        perfSpan.add(gainSpan);
+        perf.formatReturnPercent(locale()).ifPresent(pct -> {
+            Span percentSpan = new Span(" (" + pct + ")");
+            percentSpan.getStyle().set("white-space", "nowrap");
+            perfSpan.add(percentSpan);
+        });
+        StringBuilder tooltip = new StringBuilder(getTranslation("finance.balance.tooltip.invested",
+                MoneyFormatter.format(valuation.investedCapital(), locale()),
+                perf.format(locale())));
+        if (valuation.positionBased()) {
+            tooltip.append(" · ").append(getTranslation("finance.positions.mode.positions", valuation.positionCount()));
+            if (!valuation.costBasisComplete()) {
+                tooltip.append(" (").append(getTranslation("finance.positions.mode.partial-cost-hint")).append(")");
+            }
+        }
+        perfSpan.setTitle(tooltip.toString());
+        return perfSpan;
+    }
 
-        VerticalLayout cell = new VerticalLayout(balanceSpan, perfSpan);
-        cell.setPadding(false);
-        cell.setSpacing(false);
-        cell.setDefaultHorizontalComponentAlignment(Alignment.END);
-        return cell;
+    Component renderLoanInterestRate(LoanContract contract) {
+        BigDecimal rate = contract == null ? null : contract.getAnnualInterestRate();
+        if (rate == null || rate.signum() <= 0) {
+            Span empty = new Span(EMPTY_PLACEHOLDER);
+            empty.addClassName(LumoUtility.TextColor.SECONDARY);
+            return empty;
+        }
+        Span span = new Span(MoneyFormatter.formatPercent(rate, locale()));
+        span.getStyle().set("white-space", "nowrap");
+        return span;
+    }
+
+    private BigDecimal savingsInterestSortKey(Account account) {
+        if (account == null || account.getAccountType() != AccountType.SAVINGS) {
+            return null;
+        }
+        return account.getCurrentInterestRate();
+    }
+
+    private BigDecimal investmentPerformanceSortKey(Account account) {
+        if (account == null) {
+            return null;
+        }
+        DepotValuation valuation = depotValuationsByAccount.get(account.getId());
+        Optional<InvestmentPerformance> performance = valuation == null
+                ? Optional.empty()
+                : valuation.performance();
+        if (performance.isEmpty()) {
+            return null;
+        }
+        InvestmentPerformance perf = performance.get();
+        return perf.returnPercent() != null ? perf.returnPercent() : perf.gain();
+    }
+
+    private BigDecimal loanInterestSortKey(LoanContract contract) {
+        if (contract == null || contract.getAnnualInterestRate() == null
+                || contract.getAnnualInterestRate().signum() <= 0) {
+            return null;
+        }
+        return contract.getAnnualInterestRate();
     }
 
     private void renderBlockHeader(Span sumValue, ProgressIndicator headerProgress, BigDecimal total) {

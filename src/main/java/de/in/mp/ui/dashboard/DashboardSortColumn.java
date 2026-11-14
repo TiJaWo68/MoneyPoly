@@ -8,6 +8,7 @@ package de.in.mp.ui.dashboard;
 enum DashboardSortColumn {
 
     NAME,
+    INFO,
     AMOUNT,
     SHARE;
 
