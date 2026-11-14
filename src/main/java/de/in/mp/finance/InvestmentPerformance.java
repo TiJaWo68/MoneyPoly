@@ -38,15 +38,26 @@ public record InvestmentPerformance(BigDecimal gain, BigDecimal returnPercent) {
     }
 
     public String format(Locale locale) {
+        String gainText = formatGain(locale);
+        return formatReturnPercent(locale)
+                .map(pct -> gainText + " (" + pct + ")")
+                .orElse(gainText);
+    }
+
+    public String formatGain(Locale locale) {
         Locale effectiveLocale = locale == null ? Locale.GERMANY : locale;
-        String gainText = (gain.signum() > 0 ? "+" : "") + MoneyFormatter.format(gain, effectiveLocale);
+        return (gain.signum() > 0 ? "+" : "") + MoneyFormatter.format(gain, effectiveLocale);
+    }
+
+    public Optional<String> formatReturnPercent(Locale locale) {
         if (returnPercent == null) {
-            return gainText;
+            return Optional.empty();
         }
+        Locale effectiveLocale = locale == null ? Locale.GERMANY : locale;
         NumberFormat percentFormat = NumberFormat.getNumberInstance(effectiveLocale);
         percentFormat.setMinimumFractionDigits(PERCENT_SCALE);
         percentFormat.setMaximumFractionDigits(PERCENT_SCALE);
         String percentPrefix = returnPercent.signum() > 0 ? "+" : "";
-        return gainText + " (" + percentPrefix + percentFormat.format(returnPercent) + " %)";
+        return Optional.of(percentPrefix + percentFormat.format(returnPercent) + " %");
     }
 }

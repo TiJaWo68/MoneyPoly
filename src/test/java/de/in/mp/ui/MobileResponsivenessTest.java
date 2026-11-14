@@ -17,6 +17,7 @@ import com.vaadin.flow.component.tabs.Tab;
 import com.vaadin.flow.component.tabs.Tabs;
 
 import de.in.mp.admin.AppSettingService;
+import de.in.mp.admin.PersonService;
 import de.in.mp.energy.EnergyAmortizationService;
 import de.in.mp.energy.EnergyAssetService;
 import de.in.mp.energy.EnergyTariffService;
@@ -25,7 +26,11 @@ import de.in.mp.energy.MeterService;
 import de.in.mp.finance.AccountService;
 import de.in.mp.finance.AccountSnapshotService;
 import de.in.mp.finance.BankLookupService;
+import de.in.mp.finance.DashboardKpis;
+import de.in.mp.finance.DashboardService;
 import de.in.mp.importer.StatementImportService;
+import de.in.mp.loans.LoanContractService;
+import de.in.mp.ui.dashboard.DashboardView;
 import de.in.mp.ui.energy.EnergyView;
 import de.in.mp.ui.finance.FinanceView;
 
@@ -147,6 +152,41 @@ class MobileResponsivenessTest {
         assertThat(parsePixelDimension(readingsGrid.getStyle().get("min-height")))
                 .as("readingsGrid must have min-height >= 350px so it never collapses to a single row")
                 .isGreaterThanOrEqualTo(350);
+    }
+
+    @Test
+    void dashboardViewWrapsKpiRowAndRegistersMobileResponsiveHooks() {
+        DashboardService dashboardService = mock(DashboardService.class);
+        AccountService accountService = mock(AccountService.class);
+        AccountSnapshotService snapshotService = mock(AccountSnapshotService.class);
+        LoanContractService loanContractService = mock(LoanContractService.class);
+        PersonService personService = mock(PersonService.class);
+        AppSettingService appSettingService = mock(AppSettingService.class);
+
+        when(dashboardService.calculateKpis()).thenReturn(
+                new DashboardKpis(BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO));
+        when(accountService.findAll()).thenReturn(List.of());
+        when(snapshotService.findLatestSnapshots(org.mockito.ArgumentMatchers.anyCollection()))
+                .thenReturn(java.util.Map.of());
+        when(loanContractService.findAll()).thenReturn(List.of());
+        when(loanContractService.calculateActiveOutstanding()).thenReturn(BigDecimal.ZERO);
+        when(personService.findAll()).thenReturn(List.of());
+        when(appSettingService.getSavingsInterestWarningThreshold()).thenReturn(new BigDecimal("2.00"));
+
+        DashboardView view = new DashboardView(dashboardService, accountService, snapshotService,
+                loanContractService, personService, appSettingService);
+
+        assertThat(view.getClassNames()).contains(ResponsiveStyles.DASHBOARD_VIEW);
+        HorizontalLayout kpiRow = findChild(view, HorizontalLayout.class, 1);
+        assertThat(kpiRow.getStyle().get("flex-wrap"))
+                .as("Dashboard KPI row must wrap on smartphone viewports")
+                .isEqualTo("wrap");
+        for (Component child : kpiRow.getChildren().toList()) {
+            assertThat(child).isInstanceOf(VerticalLayout.class);
+            VerticalLayout card = (VerticalLayout) child;
+            assertThat(parsePixelDimension(card.getStyle().get("min-width")))
+                    .isLessThanOrEqualTo(160);
+        }
     }
 
     @SuppressWarnings("unchecked")
