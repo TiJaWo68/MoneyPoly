@@ -27,6 +27,9 @@ public class ClassificationRule {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
+    @Column(name = "household_id", nullable = false)
+    private UUID householdId;
+
     @Column(name = "priority", nullable = false)
     private int priority = DEFAULT_PRIORITY;
 
@@ -58,6 +61,14 @@ public class ClassificationRule {
 
     public void setId(UUID id) {
         this.id = id;
+    }
+
+    public UUID getHouseholdId() {
+        return householdId;
+    }
+
+    public void setHouseholdId(UUID householdId) {
+        this.householdId = householdId;
     }
 
     public int getPriority() {

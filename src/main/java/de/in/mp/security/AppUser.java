@@ -68,6 +68,9 @@ public class AppUser {
     @Column(name = "person_id", unique = true)
     private UUID personId;
 
+    @Column(name = "household_id")
+    private UUID householdId;
+
     @Column(name = "created_at", nullable = false, insertable = false, updatable = false)
     private OffsetDateTime createdAt;
 
@@ -156,6 +159,14 @@ public class AppUser {
 
     public void setPersonId(UUID personId) {
         this.personId = personId;
+    }
+
+    public UUID getHouseholdId() {
+        return householdId;
+    }
+
+    public void setHouseholdId(UUID householdId) {
+        this.householdId = householdId;
     }
 
     public OffsetDateTime getCreatedAt() {

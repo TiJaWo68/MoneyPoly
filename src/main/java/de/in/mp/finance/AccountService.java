@@ -10,6 +10,7 @@ import java.util.UUID;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,24 +32,59 @@ public class AccountService {
 
     private final AccountRepository accountRepository;
     private final AccountSnapshotRepository snapshotRepository;
+    private final HouseholdService householdService;
 
     public AccountService(AccountRepository accountRepository, AccountSnapshotRepository snapshotRepository) {
+        this(accountRepository, snapshotRepository, null);
+    }
+
+    @Autowired
+    public AccountService(
+            AccountRepository accountRepository,
+            AccountSnapshotRepository snapshotRepository,
+            @Autowired(required = false) HouseholdService householdService) {
         this.accountRepository = accountRepository;
         this.snapshotRepository = snapshotRepository;
+        this.householdService = householdService;
     }
 
     @Transactional(readOnly = true)
     public List<Account> findAll() {
-        return accountRepository.findAllByOrderByAccountTypeAscNameAsc();
+        UUID householdId = resolveCurrentHouseholdId();
+        return householdId == null
+                ? accountRepository.findAllByOrderByAccountTypeAscNameAsc()
+                : accountRepository.findByHouseholdIdOrderByAccountTypeAscNameAsc(householdId);
+    }
+
+    @Transactional(readOnly = true)
+    public List<Account> findAllByHousehold(UUID householdId) {
+        UUID effectiveId = resolveEffectiveHouseholdId(householdId);
+        return effectiveId == null
+                ? accountRepository.findAllByOrderByAccountTypeAscNameAsc()
+                : accountRepository.findByHouseholdIdOrderByAccountTypeAscNameAsc(effectiveId);
     }
 
     @Transactional(readOnly = true)
     public List<Account> findActiveAccounts() {
-        return accountRepository.findByActiveTrueOrderByAccountTypeAscNameAsc();
+        UUID householdId = resolveCurrentHouseholdId();
+        return householdId == null
+                ? accountRepository.findByActiveTrueOrderByAccountTypeAscNameAsc()
+                : accountRepository.findByHouseholdIdAndActiveTrueOrderByAccountTypeAscNameAsc(householdId);
+    }
+
+    @Transactional(readOnly = true)
+    public List<Account> findActiveAccountsByHousehold(UUID householdId) {
+        UUID effectiveId = resolveEffectiveHouseholdId(householdId);
+        return effectiveId == null
+                ? accountRepository.findByActiveTrueOrderByAccountTypeAscNameAsc()
+                : accountRepository.findByHouseholdIdAndActiveTrueOrderByAccountTypeAscNameAsc(effectiveId);
     }
 
     @Transactional
     public Account save(Account account) {
+        if (account != null && account.getHouseholdId() == null) {
+            account.setHouseholdId(resolveCurrentHouseholdId());
+        }
         validate(account);
 
         if (account.getAccountType() == AccountType.INSTITUTION) {
@@ -94,7 +130,10 @@ public class AccountService {
 
     @Transactional(readOnly = true)
     public long countActiveAccounts() {
-        return accountRepository.countByActiveTrue();
+        UUID householdId = resolveCurrentHouseholdId();
+        return householdId == null
+                ? accountRepository.countByActiveTrue()
+                : accountRepository.countByHouseholdIdAndActiveTrue(householdId);
     }
 
     /**
@@ -109,19 +148,22 @@ public class AccountService {
 
     @Transactional(readOnly = true)
     public BigDecimal calculateTotalAssets() {
-        return findActiveAccounts().stream()
-                .filter(account -> account.getAccountType() != AccountType.LOAN
-                        && account.getAccountType() != AccountType.INSTITUTION)
-                .map(Account::getCurrentBalance)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        return sumAccounts(findActiveAccounts(), false);
+    }
+
+    @Transactional(readOnly = true)
+    public BigDecimal calculateTotalAssets(UUID householdId) {
+        return sumAccounts(findActiveAccountsByHousehold(householdId), false);
     }
 
     @Transactional(readOnly = true)
     public BigDecimal calculateTotalLiabilities() {
-        return findActiveAccounts().stream()
-                .filter(account -> account.getAccountType() == AccountType.LOAN)
-                .map(Account::getCurrentBalance)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        return sumAccounts(findActiveAccounts(), true);
+    }
+
+    @Transactional(readOnly = true)
+    public BigDecimal calculateTotalLiabilities(UUID householdId) {
+        return sumAccounts(findActiveAccountsByHousehold(householdId), true);
     }
 
     /**
@@ -129,11 +171,12 @@ public class AccountService {
      */
     @Transactional(readOnly = true)
     public BigDecimal calculateLiquidity() {
-        return findActiveAccounts().stream()
-                .filter(account -> account.getAccountType() == AccountType.CHECKING
-                        || account.getAccountType() == AccountType.SAVINGS)
-                .map(Account::getCurrentBalance)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        return sumLiquidity(findActiveAccounts());
+    }
+
+    @Transactional(readOnly = true)
+    public BigDecimal calculateLiquidity(UUID householdId) {
+        return sumLiquidity(findActiveAccountsByHousehold(householdId));
     }
 
     /**
@@ -141,10 +184,12 @@ public class AccountService {
      */
     @Transactional(readOnly = true)
     public BigDecimal calculateInvestedAssets() {
-        return findActiveAccounts().stream()
-                .filter(account -> account.getAccountType() == AccountType.INVESTMENT)
-                .map(Account::getCurrentBalance)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        return sumInvested(findActiveAccounts());
+    }
+
+    @Transactional(readOnly = true)
+    public BigDecimal calculateInvestedAssets(UUID householdId) {
+        return sumInvested(findActiveAccountsByHousehold(householdId));
     }
 
     /**
@@ -153,7 +198,15 @@ public class AccountService {
      */
     @Transactional(readOnly = true)
     public Map<UUID, BigDecimal> calculateInstitutionTotals() {
-        List<Account> all = accountRepository.findAllByOrderByAccountTypeAscNameAsc();
+        return calculateInstitutionTotals(findAll());
+    }
+
+    @Transactional(readOnly = true)
+    public Map<UUID, BigDecimal> calculateInstitutionTotals(UUID householdId) {
+        return calculateInstitutionTotals(findAllByHousehold(householdId));
+    }
+
+    private Map<UUID, BigDecimal> calculateInstitutionTotals(List<Account> all) {
         Map<UUID, List<Account>> childrenByParent = all.stream()
                 .filter(account -> account.getParentId() != null)
                 .collect(Collectors.groupingBy(Account::getParentId));
@@ -165,6 +218,39 @@ public class AccountService {
             }
         }
         return totals;
+    }
+
+    private BigDecimal sumAccounts(List<Account> accounts, boolean loansOnly) {
+        return accounts.stream()
+                .filter(account -> loansOnly
+                        ? account.getAccountType() == AccountType.LOAN
+                        : account.getAccountType() != AccountType.LOAN
+                                && account.getAccountType() != AccountType.INSTITUTION)
+                .map(Account::getCurrentBalance)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private BigDecimal sumLiquidity(List<Account> accounts) {
+        return accounts.stream()
+                .filter(account -> account.getAccountType() == AccountType.CHECKING
+                        || account.getAccountType() == AccountType.SAVINGS)
+                .map(Account::getCurrentBalance)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private BigDecimal sumInvested(List<Account> accounts) {
+        return accounts.stream()
+                .filter(account -> account.getAccountType() == AccountType.INVESTMENT)
+                .map(Account::getCurrentBalance)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private UUID resolveCurrentHouseholdId() {
+        return householdService == null ? null : householdService.resolveEffectiveHouseholdId(null);
+    }
+
+    private UUID resolveEffectiveHouseholdId(UUID requestedHouseholdId) {
+        return householdService == null ? requestedHouseholdId : householdService.resolveEffectiveHouseholdId(requestedHouseholdId);
     }
 
     private BigDecimal sumSubtree(UUID parentId, Map<UUID, List<Account>> childrenByParent) {

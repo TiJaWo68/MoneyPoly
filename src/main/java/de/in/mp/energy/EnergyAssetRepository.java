@@ -11,5 +11,9 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface EnergyAssetRepository extends JpaRepository<EnergyAsset, UUID> {
 
     List<EnergyAsset> findAllByOrderByInstallationDateAscNameAsc();
+
+    List<EnergyAsset> findByHouseIdOrderByInstallationDateAscNameAsc(UUID houseId);
+
+    boolean existsByHouseId(UUID houseId);
 }
 

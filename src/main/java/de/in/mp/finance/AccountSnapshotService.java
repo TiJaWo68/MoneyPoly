@@ -11,9 +11,12 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -32,11 +35,21 @@ public class AccountSnapshotService {
 
     private final AccountSnapshotRepository snapshotRepository;
     private final AccountRepository accountRepository;
+    private final HouseholdService householdService;
 
     public AccountSnapshotService(AccountSnapshotRepository snapshotRepository,
             AccountRepository accountRepository) {
+        this(snapshotRepository, accountRepository, null);
+    }
+
+    @Autowired
+    public AccountSnapshotService(
+            AccountSnapshotRepository snapshotRepository,
+            AccountRepository accountRepository,
+            @Autowired(required = false) HouseholdService householdService) {
         this.snapshotRepository = snapshotRepository;
         this.accountRepository = accountRepository;
+        this.householdService = householdService;
     }
 
     /**
@@ -112,7 +125,23 @@ public class AccountSnapshotService {
      */
     @Transactional
     public void deleteSnapshotsForDate(LocalDate date) {
+        UUID householdId = householdService == null ? null : householdService.resolveEffectiveHouseholdId(null);
+        deleteSnapshotsForDate(householdId, date);
+    }
+
+    @Transactional
+    public void deleteSnapshotsForDate(UUID householdId, LocalDate date) {
+        UUID effectiveId = householdService == null ? householdId : householdService.resolveEffectiveHouseholdId(householdId);
         List<AccountSnapshot> snapshots = snapshotRepository.findBySnapshotDate(date);
+        if (effectiveId != null) {
+            Set<UUID> householdAccountIds = accountRepository.findByHouseholdIdOrderByAccountTypeAscNameAsc(effectiveId)
+                    .stream()
+                    .map(Account::getId)
+                    .collect(Collectors.toSet());
+            snapshots = snapshots.stream()
+                    .filter(s -> householdAccountIds.contains(s.getAccountId()))
+                    .toList();
+        }
         snapshotRepository.deleteAll(snapshots);
         snapshots.stream()
                 .map(AccountSnapshot::getAccountId)
@@ -150,8 +179,23 @@ public class AccountSnapshotService {
      */
     @Transactional(readOnly = true)
     public List<BalanceDateRow> buildDateRows() {
+        UUID householdId = householdService == null ? null : householdService.resolveEffectiveHouseholdId(null);
+        return buildDateRows(householdId);
+    }
+
+    @Transactional(readOnly = true)
+    public List<BalanceDateRow> buildDateRows(UUID householdId) {
+        UUID effectiveId = householdService == null ? householdId : householdService.resolveEffectiveHouseholdId(householdId);
+        Set<UUID> allowedAccountIds = effectiveId == null
+                ? null
+                : accountRepository.findByHouseholdIdOrderByAccountTypeAscNameAsc(effectiveId).stream()
+                        .map(Account::getId)
+                        .collect(Collectors.toSet());
         Map<LocalDate, Map<UUID, AccountSnapshot>> byDate = new TreeMap<>(Comparator.reverseOrder());
         for (AccountSnapshot snapshot : snapshotRepository.findAllByOrderBySnapshotDateDesc()) {
+            if (allowedAccountIds != null && !allowedAccountIds.contains(snapshot.getAccountId())) {
+                continue;
+            }
             byDate.computeIfAbsent(snapshot.getSnapshotDate(), key -> new LinkedHashMap<>())
                     .put(snapshot.getAccountId(), snapshot);
         }

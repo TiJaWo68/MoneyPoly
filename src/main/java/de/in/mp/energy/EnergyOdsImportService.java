@@ -94,14 +94,24 @@ public class EnergyOdsImportService {
      */
     @Transactional
     public OdsImportResult importOds(InputStream odsStream, OdsAssetCostDefaults costDefaults) {
+        return importOds(odsStream, costDefaults, null);
+    }
+
+    /**
+     * Imports assets, meters, tariffs, and reading rows from the provided
+     * {@code .ods} stream into {@code houseId} (resetting all energy tables only
+     * when {@code houseId} is {@code null}).
+     */
+    @Transactional
+    public OdsImportResult importOds(InputStream odsStream, OdsAssetCostDefaults costDefaults, UUID houseId) {
         ParsedOdsData parsed = parseOds(odsStream);
-        if (databaseResetService != null) {
+        if (databaseResetService != null && houseId == null) {
             databaseResetService.resetEnergyData();
         }
 
-        Map<String, EnergyAsset> assetsByName = ensureAssets(costDefaults);
-        Map<String, Meter> metersByName = ensureMeters(assetsByName);
-        int tariffsCreated = ensureTariffs(parsed);
+        Map<String, EnergyAsset> assetsByName = ensureAssets(costDefaults, houseId);
+        Map<String, Meter> metersByName = ensureMeters(assetsByName, houseId);
+        int tariffsCreated = ensureTariffs(parsed, houseId);
 
         Map<String, BigDecimal> runningCumulativeForDeltas = new LinkedHashMap<>();
         BigDecimal previousGartenhausValue = null;
@@ -230,27 +240,28 @@ public class EnergyOdsImportService {
         return new ParsedOdsData(priceQ1, feedInR1, gridImportS1, parsedRows);
     }
 
-    private Map<String, EnergyAsset> ensureAssets(OdsAssetCostDefaults defaults) {
+    private Map<String, EnergyAsset> ensureAssets(OdsAssetCostDefaults defaults, UUID houseId) {
         Map<String, EnergyAsset> existing = new LinkedHashMap<>();
-        for (EnergyAsset asset : assetService.findAll()) {
+        for (EnergyAsset asset : assetService.findByHouse(houseId)) {
             existing.put(asset.getName(), asset);
         }
 
-        ensureSingleAsset(existing, ASSET_PV_DACH, LocalDate.of(2024, 7, 11),
+        ensureSingleAsset(existing, houseId, ASSET_PV_DACH, LocalDate.of(2024, 7, 11),
                 defaults != null && defaults.pvDachCost() != null ? defaults.pvDachCost() : new BigDecimal("12000.00"));
-        ensureSingleAsset(existing, ASSET_PV_GARTENHAUS, LocalDate.of(2024, 1, 1),
+        ensureSingleAsset(existing, houseId, ASSET_PV_GARTENHAUS, LocalDate.of(2024, 1, 1),
                 defaults != null && defaults.pvGartenhausCost() != null ? defaults.pvGartenhausCost() : new BigDecimal("1500.00"));
-        ensureSingleAsset(existing, ASSET_WALLBOX, LocalDate.of(2024, 1, 1),
+        ensureSingleAsset(existing, houseId, ASSET_WALLBOX, LocalDate.of(2024, 1, 1),
                 defaults != null && defaults.wallboxCost() != null ? defaults.wallboxCost() : new BigDecimal("1200.00"));
 
         return existing;
     }
 
     private void ensureSingleAsset(
-            Map<String, EnergyAsset> map, String name, LocalDate installationDate, BigDecimal defaultCost) {
+            Map<String, EnergyAsset> map, UUID houseId, String name, LocalDate installationDate, BigDecimal defaultCost) {
         EnergyAsset asset = map.get(name);
         if (asset == null) {
             asset = new EnergyAsset();
+            asset.setHouseId(houseId);
             asset.setName(name);
             asset.setInstallationDate(installationDate);
             asset.setInvestmentCost(defaultCost);
@@ -264,15 +275,16 @@ public class EnergyOdsImportService {
         }
     }
 
-    private Map<String, Meter> ensureMeters(Map<String, EnergyAsset> assetsByName) {
+    private Map<String, Meter> ensureMeters(Map<String, EnergyAsset> assetsByName, UUID houseId) {
         Map<String, Meter> existing = new LinkedHashMap<>();
-        for (Meter meter : meterService.findAll()) {
+        for (Meter meter : meterService.findByHouse(houseId)) {
             existing.put(meter.getName(), meter);
         }
 
         for (ColumnSpec spec : ODS_METER_COLUMNS.values()) {
             if (!existing.containsKey(spec.meterName())) {
                 Meter meter = new Meter();
+                meter.setHouseId(houseId);
                 meter.setName(spec.meterName());
                 meter.setType(spec.type());
                 meter.setUnit(spec.unit());
@@ -289,44 +301,29 @@ public class EnergyOdsImportService {
         return existing;
     }
 
-    private int ensureTariffs(ParsedOdsData parsed) {
+    private int ensureTariffs(ParsedOdsData parsed, UUID houseId) {
         int created = 0;
         LocalDate validFrom = LocalDate.of(2024, 1, 1);
-
-        if (tariffService.findByMeterType(MeterType.GRID_IMPORT).isEmpty()) {
-            EnergyTariff importTariff = new EnergyTariff();
-            importTariff.setName("Strombezug (ODS)");
-            importTariff.setForMeterType(MeterType.GRID_IMPORT);
-            importTariff.setValidFrom(validFrom);
-            importTariff.setUnitPriceEur(parsed.gridImportTariffS1());
-            importTariff.setMonthlyBaseFeeEur(BigDecimal.ZERO);
-            tariffService.save(importTariff);
-            created++;
-        }
-
-        if (tariffService.findByMeterType(MeterType.GRID_EXPORT).isEmpty()) {
-            EnergyTariff exportTariff = new EnergyTariff();
-            exportTariff.setName("EEG Einspeisevergütung (ODS)");
-            exportTariff.setForMeterType(MeterType.GRID_EXPORT);
-            exportTariff.setValidFrom(validFrom);
-            exportTariff.setUnitPriceEur(parsed.feedInTariffR1());
-            exportTariff.setMonthlyBaseFeeEur(BigDecimal.ZERO);
-            tariffService.save(exportTariff);
-            created++;
-        }
-
-        if (tariffService.findByMeterType(MeterType.WALLBOX_COMPANY).isEmpty()) {
-            EnergyTariff wbTariff = new EnergyTariff();
-            wbTariff.setName("AG-Erstattung Dienstwagen (ODS)");
-            wbTariff.setForMeterType(MeterType.WALLBOX_COMPANY);
-            wbTariff.setValidFrom(validFrom);
-            wbTariff.setUnitPriceEur(parsed.gridImportTariffS1());
-            wbTariff.setMonthlyBaseFeeEur(BigDecimal.ZERO);
-            tariffService.save(wbTariff);
-            created++;
-        }
-
+        created += createTariffIfMissing(houseId, MeterType.GRID_IMPORT, "Strombezug (ODS)", validFrom, parsed.gridImportTariffS1());
+        created += createTariffIfMissing(houseId, MeterType.GRID_EXPORT, "EEG Einspeisevergütung (ODS)", validFrom, parsed.feedInTariffR1());
+        created += createTariffIfMissing(houseId, MeterType.WALLBOX_COMPANY, "AG-Erstattung Dienstwagen (ODS)", validFrom, parsed.gridImportTariffS1());
         return created;
+    }
+
+    private int createTariffIfMissing(
+            UUID houseId, MeterType meterType, String name, LocalDate validFrom, BigDecimal unitPriceEur) {
+        if (!tariffService.findByHouseAndMeterType(houseId, meterType).isEmpty()) {
+            return 0;
+        }
+        EnergyTariff tariff = new EnergyTariff();
+        tariff.setHouseId(houseId);
+        tariff.setName(name);
+        tariff.setForMeterType(meterType);
+        tariff.setValidFrom(validFrom);
+        tariff.setUnitPriceEur(unitPriceEur);
+        tariff.setMonthlyBaseFeeEur(BigDecimal.ZERO);
+        tariffService.save(tariff);
+        return 1;
     }
 
     private static Document readContentXml(InputStream odsStream) {

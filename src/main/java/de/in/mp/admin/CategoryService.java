@@ -3,12 +3,14 @@ package de.in.mp.admin;
 import java.util.List;
 import java.util.UUID;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import de.in.mp.finance.Category;
 import de.in.mp.finance.CategoryRepository;
 import de.in.mp.finance.ClassificationRuleRepository;
+import de.in.mp.finance.HouseholdService;
 
 /**
  * Administration service for booking categories.
@@ -23,20 +25,35 @@ public class CategoryService {
 
     private final CategoryRepository categoryRepository;
     private final ClassificationRuleRepository classificationRuleRepository;
+    private final HouseholdService householdService;
 
     public CategoryService(CategoryRepository categoryRepository,
             ClassificationRuleRepository classificationRuleRepository) {
+        this(categoryRepository, classificationRuleRepository, null);
+    }
+
+    @Autowired
+    public CategoryService(CategoryRepository categoryRepository,
+            ClassificationRuleRepository classificationRuleRepository,
+            @Autowired(required = false) HouseholdService householdService) {
         this.categoryRepository = categoryRepository;
         this.classificationRuleRepository = classificationRuleRepository;
+        this.householdService = householdService;
     }
 
     @Transactional(readOnly = true)
     public List<Category> findAll() {
-        return categoryRepository.findAllByOrderByNameAsc();
+        UUID householdId = householdService == null ? null : householdService.resolveEffectiveHouseholdId(null);
+        return householdId == null
+                ? categoryRepository.findAllByOrderByNameAsc()
+                : categoryRepository.findByHouseholdIdOrderByNameAsc(householdId);
     }
 
     @Transactional
     public Category save(Category category) {
+        if (category != null && category.getHouseholdId() == null && householdService != null) {
+            category.setHouseholdId(householdService.resolveEffectiveHouseholdId(null));
+        }
         validate(category);
         return categoryRepository.save(category);
     }
@@ -69,7 +86,10 @@ public class CategoryService {
         }
         category.setName(name);
 
-        categoryRepository.findByName(name).ifPresent(existing -> {
+        var existingByName = category.getHouseholdId() == null
+                ? categoryRepository.findByName(name)
+                : categoryRepository.findByHouseholdIdAndName(category.getHouseholdId(), name);
+        existingByName.ifPresent(existing -> {
             if (!existing.getId().equals(category.getId())) {
                 throw new IllegalArgumentException("Name already exists");
             }

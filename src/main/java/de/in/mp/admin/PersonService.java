@@ -3,9 +3,11 @@ package de.in.mp.admin;
 import java.util.List;
 import java.util.UUID;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import de.in.mp.finance.HouseholdService;
 import de.in.mp.finance.Person;
 import de.in.mp.finance.PersonRepository;
 import de.in.mp.loans.LoanContractRepository;
@@ -24,19 +26,36 @@ public class PersonService {
 
     private final PersonRepository personRepository;
     private final LoanContractRepository loanContractRepository;
+    private final HouseholdService householdService;
 
     public PersonService(PersonRepository personRepository, LoanContractRepository loanContractRepository) {
+        this(personRepository, loanContractRepository, null);
+    }
+
+    @Autowired
+    public PersonService(PersonRepository personRepository, LoanContractRepository loanContractRepository,
+            @Autowired(required = false) HouseholdService householdService) {
         this.personRepository = personRepository;
         this.loanContractRepository = loanContractRepository;
+        this.householdService = householdService;
     }
 
     @Transactional(readOnly = true)
     public List<Person> findAll() {
-        return personRepository.findAllByOrderByNameAsc();
+        if (householdService == null || householdService.isAdmin()) {
+            return personRepository.findAllByOrderByNameAsc();
+        }
+        UUID householdId = householdService.resolveEffectiveHouseholdId(null);
+        return householdId == null
+                ? List.of()
+                : personRepository.findByHouseholdIdOrderByNameAsc(householdId);
     }
 
     @Transactional
     public Person save(Person person) {
+        if (person != null && person.getHouseholdId() == null && householdService != null) {
+            person.setHouseholdId(householdService.resolveEffectiveHouseholdId(null));
+        }
         validate(person);
         return personRepository.save(person);
     }
@@ -73,7 +92,10 @@ public class PersonService {
         }
         validateLoginEmail(person);
 
-        personRepository.findByName(name).ifPresent(existing -> {
+        var existingByName = person.getHouseholdId() == null
+                ? personRepository.findByName(name)
+                : personRepository.findByHouseholdIdAndName(person.getHouseholdId(), name);
+        existingByName.ifPresent(existing -> {
             if (!existing.getId().equals(person.getId())) {
                 throw new IllegalArgumentException("Name already exists");
             }

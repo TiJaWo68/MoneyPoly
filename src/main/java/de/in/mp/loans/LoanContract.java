@@ -32,6 +32,9 @@ public class LoanContract {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
+    @Column(name = "household_id", nullable = false)
+    private UUID householdId;
+
     @Column(name = "designation", nullable = false, length = 80)
     private String designation;
 
@@ -64,6 +67,14 @@ public class LoanContract {
 
     public void setId(UUID id) {
         this.id = id;
+    }
+
+    public UUID getHouseholdId() {
+        return householdId;
+    }
+
+    public void setHouseholdId(UUID householdId) {
+        this.householdId = householdId;
     }
 
     public String getDesignation() {

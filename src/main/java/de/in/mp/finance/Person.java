@@ -26,7 +26,10 @@ public class Person {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @Column(name = "name", nullable = false, unique = true, length = 50)
+    @Column(name = "household_id", nullable = false)
+    private UUID householdId;
+
+    @Column(name = "name", nullable = false, length = 50)
     private String name;
 
     @Enumerated(EnumType.STRING)
@@ -42,6 +45,14 @@ public class Person {
 
     public void setId(UUID id) {
         this.id = id;
+    }
+
+    public UUID getHouseholdId() {
+        return householdId;
+    }
+
+    public void setHouseholdId(UUID householdId) {
+        this.householdId = householdId;
     }
 
     public String getName() {

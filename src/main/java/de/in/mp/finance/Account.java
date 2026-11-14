@@ -49,6 +49,9 @@ public class Account {
     @Column(name = "parent_id")
     private UUID parentId;
 
+    @Column(name = "household_id", nullable = false)
+    private UUID householdId;
+
     @Column(name = "name", nullable = false, length = 100)
     private String name;
 
@@ -147,6 +150,14 @@ public class Account {
 
     public void setParentId(UUID parentId) {
         this.parentId = parentId;
+    }
+
+    public UUID getHouseholdId() {
+        return householdId;
+    }
+
+    public void setHouseholdId(UUID householdId) {
+        this.householdId = householdId;
     }
 
     public String getName() {

@@ -7,5 +7,6 @@ public enum AppRole {
 
     ROLE_ADMIN,
     ROLE_USER,
-    ROLE_BORROWER
+    ROLE_BORROWER,
+    ROLE_DEMO
 }

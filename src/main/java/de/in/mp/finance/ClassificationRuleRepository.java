@@ -12,6 +12,8 @@ public interface ClassificationRuleRepository extends JpaRepository<Classificati
 
     List<ClassificationRule> findAllByOrderByPriorityAsc();
 
+    List<ClassificationRule> findByHouseholdIdOrderByPriorityAsc(UUID householdId);
+
     long countByTargetCategoryId(UUID categoryId);
 
     long countByTargetLoanId(UUID loanId);

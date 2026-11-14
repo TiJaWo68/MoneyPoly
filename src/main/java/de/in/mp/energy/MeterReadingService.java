@@ -105,11 +105,23 @@ public class MeterReadingService {
      */
     @Transactional
     public void deleteReadingsForDate(LocalDate readingDate) {
+        deleteReadingsForDate(null, readingDate);
+    }
+
+    /**
+     * Deletes readings on {@code readingDate} scoped to {@code houseId} (or all
+     * houses when {@code houseId} is {@code null}) and recalculates deltas.
+     */
+    @Transactional
+    public void deleteReadingsForDate(UUID houseId, LocalDate readingDate) {
         List<MeterReading> readingsOnDate = readingRepository.findByReadingDate(readingDate);
         for (MeterReading reading : readingsOnDate) {
             UUID meterId = reading.getMeterId();
-            readingRepository.delete(reading);
             Meter meter = requireMeter(meterId);
+            if (houseId != null && !houseId.equals(meter.getHouseId())) {
+                continue;
+            }
+            readingRepository.delete(reading);
             List<MeterReading> remaining = new ArrayList<>(
                     readingRepository.findByMeterIdOrderByReadingDateAsc(meterId));
             remaining.removeIf(r -> r.getReadingDate().equals(readingDate));

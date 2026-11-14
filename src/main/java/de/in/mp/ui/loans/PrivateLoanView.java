@@ -9,10 +9,13 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import org.springframework.beans.factory.annotation.Autowired;
+
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
+import com.vaadin.flow.component.dialog.Dialog;
 import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.grid.GridVariant;
 import com.vaadin.flow.component.html.H2;
@@ -28,10 +31,12 @@ import com.vaadin.flow.router.Route;
 import com.vaadin.flow.theme.lumo.LumoUtility;
 
 import de.in.mp.admin.PersonService;
+import de.in.mp.finance.HouseholdService;
 import de.in.mp.finance.Person;
 import de.in.mp.i18n.MoneyFormatter;
 import de.in.mp.loans.LoanContract;
 import de.in.mp.loans.LoanContractService;
+import de.in.mp.loans.LoanRepayment;
 import de.in.mp.loans.LoanRepaymentService;
 import de.in.mp.ui.GridActionButton;
 import de.in.mp.ui.layout.MainLayout;
@@ -46,7 +51,9 @@ import jakarta.annotation.security.PermitAll;
 public class PrivateLoanView extends VerticalLayout implements HasDynamicTitle {
 
     private final LoanContractService loanContractService;
+    private final LoanRepaymentService loanRepaymentService;
     private final PersonService personService;
+    private final HouseholdService householdService;
     private final LoanContractEditorDialog contractEditorDialog;
     private final LoanRepaymentEditorDialog repaymentEditorDialog;
 
@@ -60,8 +67,18 @@ public class PrivateLoanView extends VerticalLayout implements HasDynamicTitle {
 
     public PrivateLoanView(LoanContractService loanContractService,
             LoanRepaymentService loanRepaymentService, PersonService personService) {
+        this(loanContractService, loanRepaymentService, personService, null);
+    }
+
+    @Autowired
+    public PrivateLoanView(LoanContractService loanContractService,
+            LoanRepaymentService loanRepaymentService,
+            PersonService personService,
+            @Autowired(required = false) HouseholdService householdService) {
         this.loanContractService = loanContractService;
+        this.loanRepaymentService = loanRepaymentService;
         this.personService = personService;
+        this.householdService = householdService;
         this.contractEditorDialog = new LoanContractEditorDialog(loanContractService, personService);
         this.repaymentEditorDialog = new LoanRepaymentEditorDialog(loanRepaymentService, personService);
 
@@ -88,6 +105,7 @@ public class PrivateLoanView extends VerticalLayout implements HasDynamicTitle {
         newContractButton.setTooltipText(getTranslation("loans.button.new-contract"));
         newContractButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
         newContractButton.addClickListener(event -> contractEditorDialog.openForCreate(this::refresh));
+        newContractButton.setVisible(canModify());
 
         HorizontalLayout header = new HorizontalLayout(title, newContractButton);
         header.setWidthFull();
@@ -199,30 +217,104 @@ public class PrivateLoanView extends VerticalLayout implements HasDynamicTitle {
     }
 
     private HorizontalLayout renderActions(LoanContract contract) {
-        Button repaymentButton = GridActionButton.create(
-                VaadinIcon.COIN_PILES,
-                getTranslation("loans.action.record-repayment"),
-                event -> repaymentEditorDialog.openForCreate(contract, this::refresh));
+        HorizontalLayout actions = new HorizontalLayout();
+        actions.setPadding(false);
+        actions.setSpacing(true);
 
-        Button editButton = GridActionButton.create(
-                VaadinIcon.EDIT,
-                getTranslation("loans.action.edit"),
-                event -> contractEditorDialog.openForEdit(contract, this::refresh));
+        Button historyButton = GridActionButton.create(
+                VaadinIcon.LIST,
+                getTranslation("loans.action.history"),
+                event -> openRepaymentHistoryDialog(contract));
+        actions.add(historyButton);
 
-        return new HorizontalLayout(repaymentButton, editButton);
+        if (canModify()) {
+            Button repaymentButton = GridActionButton.create(
+                    VaadinIcon.COIN_PILES,
+                    getTranslation("loans.action.record-repayment"),
+                    event -> repaymentEditorDialog.openForCreate(contract, this::refresh));
+
+            Button editButton = GridActionButton.create(
+                    VaadinIcon.EDIT,
+                    getTranslation("loans.action.edit"),
+                    event -> contractEditorDialog.openForEdit(contract, this::refresh));
+
+            actions.add(repaymentButton, editButton);
+        }
+        return actions;
+    }
+
+    private void openRepaymentHistoryDialog(LoanContract contract) {
+        Dialog dialog = new Dialog();
+        dialog.setHeaderTitle(getTranslation("loans.history.dialog.title", contract.getDesignation()));
+        dialog.setWidth("680px");
+
+        Grid<LoanRepayment> historyGrid = new Grid<>(LoanRepayment.class, false);
+        historyGrid.addColumn(r -> r.getRepaymentDate() == null ? "" : r.getRepaymentDate().toString())
+                .setHeader(getTranslation("loans.history.column.date"))
+                .setAutoWidth(true);
+        historyGrid.addColumn(r -> formatCurrency(r.getPrincipalAmount()))
+                .setHeader(getTranslation("loans.history.column.principal"))
+                .setAutoWidth(true);
+        historyGrid.addColumn(r -> formatCurrency(r.getInterestAmount()))
+                .setHeader(getTranslation("loans.history.column.interest"))
+                .setAutoWidth(true);
+        historyGrid.addColumn(r -> r.getPaymentMethod() == null ? "" : r.getPaymentMethod().name())
+                .setHeader(getTranslation("loans.history.column.method"))
+                .setAutoWidth(true);
+        historyGrid.addColumn(r -> r.getNotes() == null ? "" : r.getNotes())
+                .setHeader(getTranslation("loans.history.column.notes"))
+                .setAutoWidth(true);
+        historyGrid.setItems(loanRepaymentService.findByContract(contract.getId()));
+        historyGrid.addThemeVariants(GridVariant.LUMO_ROW_STRIPES, GridVariant.LUMO_COMPACT);
+
+        Button closeButton = new Button(getTranslation("ui.dialog.close"), event -> dialog.close());
+        dialog.getFooter().add(closeButton);
+        dialog.add(historyGrid);
+        dialog.open();
     }
 
     private void refresh() {
-        List<LoanContract> contracts = loanContractService.findAll();
-        personNames = personService.findAll().stream()
-                .collect(Collectors.toMap(Person::getId, Person::getName));
+        List<LoanContract> contracts;
+        if (isBorrowerOnlyMode()) {
+            UUID personId = householdService.getCurrentPersonId().orElse(null);
+            contracts = loanContractService.findByBorrower(personId);
+            personNames = Map.of();
+        } else {
+            contracts = loanContractService.findAll();
+            personNames = personService.findAll().stream()
+                    .collect(Collectors.toMap(Person::getId, Person::getName));
+        }
 
         grid.setItems(contracts);
 
-        totalLentValue.setText(formatCurrency(loanContractService.calculateTotalLentCapital()));
-        totalRepaidValue.setText(formatCurrency(loanContractService.calculateTotalRepaid()));
-        outstandingValue.setText(formatCurrency(loanContractService.calculateTotalOutstanding()));
-        activeContractsValue.setText(String.valueOf(loanContractService.countActiveContracts()));
+        if (isBorrowerOnlyMode()) {
+            totalLentValue.setText(formatCurrency(loanContractService.calculateTotalLentCapital(contracts)));
+            totalRepaidValue.setText(formatCurrency(loanContractService.calculateTotalRepaid(contracts)));
+            outstandingValue.setText(formatCurrency(loanContractService.calculateTotalOutstanding(contracts)));
+            long activeCount = contracts.stream()
+                    .filter(c -> c.isActive() && !loanContractService.isPaidOff(c))
+                    .count();
+            activeContractsValue.setText(String.valueOf(activeCount));
+        } else {
+            totalLentValue.setText(formatCurrency(loanContractService.calculateTotalLentCapital()));
+            totalRepaidValue.setText(formatCurrency(loanContractService.calculateTotalRepaid()));
+            outstandingValue.setText(formatCurrency(loanContractService.calculateTotalOutstanding()));
+            activeContractsValue.setText(String.valueOf(loanContractService.countActiveContracts()));
+        }
+    }
+
+    private boolean isBorrowerOnlyMode() {
+        return householdService != null
+                && !householdService.hasLenderLoanAccessForCurrentUser()
+                && householdService.hasBorrowerLoanAccessForCurrentUser();
+    }
+
+    private boolean canModify() {
+        if (householdService == null) {
+            return true;
+        }
+        return householdService.hasLenderLoanAccessForCurrentUser()
+                && householdService.canModifyCurrentHousehold();
     }
 
     private String formatCurrency(BigDecimal amount) {

@@ -1,11 +1,21 @@
 package de.in.mp.ui;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 
+import com.vaadin.flow.component.UI;
+import com.vaadin.flow.component.button.Button;
+import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.html.Anchor;
 import com.vaadin.flow.component.html.H1;
 import com.vaadin.flow.component.html.Image;
 import com.vaadin.flow.component.html.Span;
+import com.vaadin.flow.component.icon.VaadinIcon;
 import com.vaadin.flow.component.login.LoginForm;
 import com.vaadin.flow.component.login.LoginI18n;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
@@ -13,11 +23,15 @@ import com.vaadin.flow.router.BeforeEnterEvent;
 import com.vaadin.flow.router.BeforeEnterObserver;
 import com.vaadin.flow.router.HasDynamicTitle;
 import com.vaadin.flow.router.Route;
+import com.vaadin.flow.server.VaadinServletRequest;
 import com.vaadin.flow.server.auth.AnonymousAllowed;
 import com.vaadin.flow.theme.lumo.LumoUtility;
 
+import de.in.mp.admin.DemoSeedService;
+import de.in.mp.security.AppUser;
 import de.in.mp.security.AppUserRepository;
 import de.in.mp.security.GoogleOAuth2Config;
+import de.in.mp.security.UserDetailsServiceImpl;
 import de.in.mp.ui.setup.SetupView;
 
 /**
@@ -35,13 +49,23 @@ public class LoginView extends VerticalLayout implements BeforeEnterObserver, Ha
     private static final String GOOGLE_AUTHORIZATION_URL = "/oauth2/authorization/google";
     private static final String LOGO_PATH = "/icons/moneypoly-logo.svg";
     private static final String LOGO_SIZE = "64px";
+    private static final String ROOT_LOCATION = "/";
 
     private final AppUserRepository appUserRepository;
+    private final UserDetailsServiceImpl userDetailsService;
     private final LoginForm loginForm = new LoginForm();
 
     public LoginView(AppUserRepository appUserRepository,
             @Value("${GOOGLE_CLIENT_ID:}") String googleClientId) {
+        this(appUserRepository, null, googleClientId);
+    }
+
+    @Autowired
+    public LoginView(AppUserRepository appUserRepository,
+            @Autowired(required = false) UserDetailsServiceImpl userDetailsService,
+            @Value("${GOOGLE_CLIENT_ID:}") String googleClientId) {
         this.appUserRepository = appUserRepository;
+        this.userDetailsService = userDetailsService;
         setSizeFull();
         setJustifyContentMode(JustifyContentMode.CENTER);
         setAlignItems(Alignment.CENTER);
@@ -54,6 +78,11 @@ public class LoginView extends VerticalLayout implements BeforeEnterObserver, Ha
 
         if (GoogleOAuth2Config.isConfigured(googleClientId)) {
             add(createGoogleLoginAnchor());
+        }
+        if (userDetailsService != null && appUserRepository.findByUsername(DemoSeedService.DEMO_USERNAME)
+                .filter(AppUser::isEnabled)
+                .isPresent()) {
+            add(createDemoButton());
         }
     }
 
@@ -105,6 +134,34 @@ public class LoginView extends VerticalLayout implements BeforeEnterObserver, Ha
                 LumoUtility.FontWeight.SEMIBOLD,
                 LumoUtility.Margin.Top.MEDIUM);
         return googleLogin;
+    }
+
+    private Button createDemoButton() {
+        Button demoButton = new Button(getTranslation("ui.login.demo.button"), VaadinIcon.PLAY_CIRCLE_O.create());
+        demoButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY);
+        demoButton.addClassName(LumoUtility.Margin.Top.SMALL);
+        demoButton.addClickListener(event -> loginAsDemoUser());
+        return demoButton;
+    }
+
+    private void loginAsDemoUser() {
+        UserDetails userDetails = userDetailsService.loadUserByUsername(DemoSeedService.DEMO_USERNAME);
+        UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(
+                userDetails, null, userDetails.getAuthorities());
+        SecurityContext context = SecurityContextHolder.createEmptyContext();
+        context.setAuthentication(auth);
+        SecurityContextHolder.setContext(context);
+        String targetLocation = ROOT_LOCATION;
+        VaadinServletRequest servletRequest = VaadinServletRequest.getCurrent();
+        if (servletRequest != null) {
+            servletRequest.getHttpServletRequest().getSession(true)
+                    .setAttribute(HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY, context);
+            String contextPath = servletRequest.getHttpServletRequest().getContextPath();
+            if (contextPath != null && !contextPath.isEmpty()) {
+                targetLocation = contextPath + ROOT_LOCATION;
+            }
+        }
+        UI.getCurrent().getPage().setLocation(targetLocation);
     }
 
     LoginI18n createLoginI18n() {

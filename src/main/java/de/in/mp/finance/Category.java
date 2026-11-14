@@ -21,7 +21,10 @@ public class Category {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @Column(name = "name", nullable = false, unique = true, length = 60)
+    @Column(name = "household_id", nullable = false)
+    private UUID householdId;
+
+    @Column(name = "name", nullable = false, length = 60)
     private String name;
 
     public UUID getId() {
@@ -30,6 +33,14 @@ public class Category {
 
     public void setId(UUID id) {
         this.id = id;
+    }
+
+    public UUID getHouseholdId() {
+        return householdId;
+    }
+
+    public void setHouseholdId(UUID householdId) {
+        this.householdId = householdId;
     }
 
     public String getName() {

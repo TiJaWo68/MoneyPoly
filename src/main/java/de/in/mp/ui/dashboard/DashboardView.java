@@ -11,6 +11,8 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import org.springframework.beans.factory.annotation.Autowired;
+
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.grid.ColumnTextAlign;
@@ -40,6 +42,7 @@ import de.in.mp.finance.AccountSnapshotService;
 import de.in.mp.finance.AccountType;
 import de.in.mp.finance.DashboardKpis;
 import de.in.mp.finance.DashboardService;
+import de.in.mp.finance.HouseholdService;
 import de.in.mp.finance.InvestmentPerformance;
 import de.in.mp.finance.Person;
 import de.in.mp.i18n.MoneyFormatter;
@@ -71,11 +74,21 @@ public class DashboardView extends VerticalLayout implements HasDynamicTitle {
     private final LoanContractService loanContractService;
     private final PersonService personService;
     private final AppSettingService appSettingService;
+    private final HouseholdService householdService;
 
     private final Span netWorthValue = new Span();
     private final Span liquidityValue = new Span();
     private final Span investedValue = new Span();
     private final Span loanReceivablesValue = new Span();
+
+    private VerticalLayout netWorthCard;
+    private VerticalLayout liquidityCard;
+    private VerticalLayout investedCard;
+    private VerticalLayout receivablesCard;
+    private HorizontalLayout kpiRow;
+    private VerticalLayout liquidityBlock;
+    private VerticalLayout investmentsBlock;
+    private VerticalLayout loansBlock;
 
     private final Span liquiditySum = createHeaderSum();
     private final Span investedSum = createHeaderSum();
@@ -100,12 +113,22 @@ public class DashboardView extends VerticalLayout implements HasDynamicTitle {
     public DashboardView(DashboardService dashboardService, AccountService accountService,
             AccountSnapshotService snapshotService, LoanContractService loanContractService,
             PersonService personService, AppSettingService appSettingService) {
+        this(dashboardService, accountService, snapshotService, loanContractService, personService, appSettingService,
+                null);
+    }
+
+    @Autowired
+    public DashboardView(DashboardService dashboardService, AccountService accountService,
+            AccountSnapshotService snapshotService, LoanContractService loanContractService,
+            PersonService personService, AppSettingService appSettingService,
+            @Autowired(required = false) HouseholdService householdService) {
         this.dashboardService = dashboardService;
         this.accountService = accountService;
         this.snapshotService = snapshotService;
         this.loanContractService = loanContractService;
         this.personService = personService;
         this.appSettingService = appSettingService;
+        this.householdService = householdService;
 
         // Width only: a fixed height would let the flex column shrink the
         // all-rows-visible grids to zero height on the initial render.
@@ -116,7 +139,11 @@ public class DashboardView extends VerticalLayout implements HasDynamicTitle {
         getStyle().set("margin", "0 auto");
         getStyle().set("font-variant-numeric", "tabular-nums");
 
-        add(createHeader(), createKpiRow(), createLiquidityBlock(), createInvestmentsBlock(), createLoansBlock());
+        this.kpiRow = createKpiRow();
+        this.liquidityBlock = createLiquidityBlock();
+        this.investmentsBlock = createInvestmentsBlock();
+        this.loansBlock = createLoansBlock();
+        add(createHeader(), kpiRow, liquidityBlock, investmentsBlock, loansBlock);
         configureGrids();
         refresh();
     }
@@ -133,10 +160,10 @@ public class DashboardView extends VerticalLayout implements HasDynamicTitle {
     }
 
     private HorizontalLayout createKpiRow() {
-        VerticalLayout netWorthCard = createKpiCard(getTranslation("dashboard.kpi.net-worth"), netWorthValue);
-        VerticalLayout liquidityCard = createKpiCard(getTranslation("dashboard.kpi.liquidity"), liquidityValue);
-        VerticalLayout investedCard = createKpiCard(getTranslation("dashboard.kpi.invested"), investedValue);
-        VerticalLayout receivablesCard = createKpiCard(getTranslation("dashboard.kpi.loan-receivables"),
+        netWorthCard = createKpiCard(getTranslation("dashboard.kpi.net-worth"), netWorthValue);
+        liquidityCard = createKpiCard(getTranslation("dashboard.kpi.liquidity"), liquidityValue);
+        investedCard = createKpiCard(getTranslation("dashboard.kpi.invested"), investedValue);
+        receivablesCard = createKpiCard(getTranslation("dashboard.kpi.loan-receivables"),
                 loanReceivablesValue);
 
         HorizontalLayout row = new HorizontalLayout(netWorthCard, liquidityCard, investedCard, receivablesCard);
@@ -463,54 +490,84 @@ public class DashboardView extends VerticalLayout implements HasDynamicTitle {
     }
 
     private void refresh() {
+        boolean hasFinanceAccess = householdService == null || householdService.hasFinanceAccessForCurrentUser();
+        boolean hasLenderLoans = householdService == null || householdService.hasLenderLoanAccessForCurrentUser();
+        boolean hasBorrowerLoans = householdService != null
+                && !hasLenderLoans
+                && householdService.hasBorrowerLoanAccessForCurrentUser();
+
+        netWorthCard.setVisible(hasFinanceAccess);
+        liquidityCard.setVisible(hasFinanceAccess);
+        investedCard.setVisible(hasFinanceAccess);
+        liquidityBlock.setVisible(hasFinanceAccess);
+        investmentsBlock.setVisible(hasFinanceAccess);
+
+        boolean showLoans = hasLenderLoans || hasBorrowerLoans;
+        receivablesCard.setVisible(showLoans);
+        loansBlock.setVisible(showLoans);
+        kpiRow.setVisible(hasFinanceAccess || showLoans);
+
         if (appSettingService != null) {
             warningThreshold = appSettingService.getSavingsInterestWarningThreshold();
         }
-        DashboardKpis kpis = dashboardService.calculateKpis();
-        netWorthTotal = kpis.netWorth();
-        netWorthValue.setText(MoneyFormatter.format(kpis.netWorth(), locale()));
-        liquidityValue.setText(MoneyFormatter.format(kpis.liquidity(), locale()));
-        investedValue.setText(MoneyFormatter.format(kpis.investedAssets(), locale()));
-        loanReceivablesValue.setText(MoneyFormatter.format(kpis.loanReceivables(), locale()));
 
-        List<Account> allAccounts = accountService.findAll();
-        accountsById = allAccounts.stream().collect(Collectors.toMap(Account::getId, account -> account));
+        if (hasFinanceAccess) {
+            DashboardKpis kpis = dashboardService.calculateKpis();
+            netWorthTotal = kpis.netWorth();
+            netWorthValue.setText(MoneyFormatter.format(kpis.netWorth(), locale()));
+            liquidityValue.setText(MoneyFormatter.format(kpis.liquidity(), locale()));
+            investedValue.setText(MoneyFormatter.format(kpis.investedAssets(), locale()));
+            loanReceivablesValue.setText(MoneyFormatter.format(kpis.loanReceivables(), locale()));
 
-        List<Account> activeAccounts = allAccounts.stream().filter(Account::isActive).toList();
-        List<Account> liquidity = activeAccounts.stream()
-                .filter(account -> account.getAccountType() == AccountType.CHECKING
-                        || account.getAccountType() == AccountType.SAVINGS)
-                .toList();
-        List<Account> investments = activeAccounts.stream()
-                .filter(account -> account.getAccountType() == AccountType.INVESTMENT)
-                .toList();
+            List<Account> allAccounts = accountService.findAll();
+            accountsById = allAccounts.stream().collect(Collectors.toMap(Account::getId, account -> account));
 
-        liquidityTotal = liquidity.stream()
-                .map(Account::getCurrentBalance)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-        investedTotal = investments.stream()
-                .map(Account::getCurrentBalance)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+            List<Account> activeAccounts = allAccounts.stream().filter(Account::isActive).toList();
+            List<Account> liquidity = activeAccounts.stream()
+                    .filter(account -> account.getAccountType() == AccountType.CHECKING
+                            || account.getAccountType() == AccountType.SAVINGS)
+                    .toList();
+            List<Account> investments = activeAccounts.stream()
+                    .filter(account -> account.getAccountType() == AccountType.INVESTMENT)
+                    .toList();
 
-        Map<UUID, AccountSnapshot> latestInvestmentSnapshots = snapshotService.findLatestSnapshots(
-                investments.stream().map(Account::getId).toList());
-        investedCapitalByAccount = latestInvestmentSnapshots.entrySet().stream()
-                .filter(entry -> entry.getValue().getInvestedCapital() != null)
-                .collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().getInvestedCapital()));
+            liquidityTotal = liquidity.stream()
+                    .map(Account::getCurrentBalance)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            investedTotal = investments.stream()
+                    .map(Account::getCurrentBalance)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        personNames = personService.findAll().stream()
-                .collect(Collectors.toMap(Person::getId, Person::getName));
+            Map<UUID, AccountSnapshot> latestInvestmentSnapshots = snapshotService.findLatestSnapshots(
+                    investments.stream().map(Account::getId).toList());
+            investedCapitalByAccount = latestInvestmentSnapshots.entrySet().stream()
+                    .filter(entry -> entry.getValue().getInvestedCapital() != null)
+                    .collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().getInvestedCapital()));
 
-        liquidityGrid.setItems(liquidity);
-        investmentsGrid.setItems(investments);
-        loansGrid.setItems(loanContractService.findAll().stream()
-                .filter(LoanContract::isActive)
-                .toList());
+            personNames = personService.findAll().stream()
+                    .collect(Collectors.toMap(Person::getId, Person::getName));
 
-        renderBlockHeader(liquiditySum, liquidityHeaderProgress, liquidityTotal);
-        renderBlockHeader(investedSum, investedHeaderProgress, investedTotal);
-        updateInvestmentsPerformanceTooltip(investments);
-        renderBlockHeader(loanSum, loanHeaderProgress, loanContractService.calculateActiveOutstanding());
+            liquidityGrid.setItems(liquidity);
+            investmentsGrid.setItems(investments);
+            loansGrid.setItems(loanContractService.findAll().stream()
+                    .filter(LoanContract::isActive)
+                    .toList());
+
+            renderBlockHeader(liquiditySum, liquidityHeaderProgress, liquidityTotal);
+            renderBlockHeader(investedSum, investedHeaderProgress, investedTotal);
+            updateInvestmentsPerformanceTooltip(investments);
+            renderBlockHeader(loanSum, loanHeaderProgress, loanContractService.calculateActiveOutstanding());
+        } else if (hasBorrowerLoans) {
+            UUID personId = householdService.getCurrentPersonId().orElse(null);
+            List<LoanContract> borrowerContracts = loanContractService.findByBorrower(personId).stream()
+                    .filter(LoanContract::isActive)
+                    .toList();
+            BigDecimal outstanding = loanContractService.calculateActiveOutstanding(borrowerContracts);
+            loanReceivablesValue.setText(MoneyFormatter.format(outstanding, locale()));
+            personNames = Map.of();
+            loansGrid.setItems(borrowerContracts);
+            renderBlockHeader(loanSum, loanHeaderProgress, outstanding);
+        }
     }
 
     private void updateInvestmentsPerformanceTooltip(List<Account> investments) {

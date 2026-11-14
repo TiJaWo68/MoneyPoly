@@ -13,7 +13,11 @@ public interface PersonRepository extends JpaRepository<Person, UUID> {
 
     List<Person> findAllByOrderByNameAsc();
 
+    List<Person> findByHouseholdIdOrderByNameAsc(UUID householdId);
+
     Optional<Person> findByName(String name);
+
+    Optional<Person> findByHouseholdIdAndName(UUID householdId, String name);
 
     Optional<Person> findByLoginEmail(String loginEmail);
 }

@@ -3,12 +3,14 @@ package de.in.mp.admin;
 import java.util.List;
 import java.util.UUID;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import de.in.mp.finance.CategoryRepository;
 import de.in.mp.finance.ClassificationRule;
 import de.in.mp.finance.ClassificationRuleRepository;
+import de.in.mp.finance.HouseholdService;
 import de.in.mp.loans.LoanContractRepository;
 
 /**
@@ -20,21 +22,36 @@ public class ClassificationRuleService {
     private final ClassificationRuleRepository classificationRuleRepository;
     private final CategoryRepository categoryRepository;
     private final LoanContractRepository loanContractRepository;
+    private final HouseholdService householdService;
 
     public ClassificationRuleService(ClassificationRuleRepository classificationRuleRepository,
             CategoryRepository categoryRepository, LoanContractRepository loanContractRepository) {
+        this(classificationRuleRepository, categoryRepository, loanContractRepository, null);
+    }
+
+    @Autowired
+    public ClassificationRuleService(ClassificationRuleRepository classificationRuleRepository,
+            CategoryRepository categoryRepository, LoanContractRepository loanContractRepository,
+            @Autowired(required = false) HouseholdService householdService) {
         this.classificationRuleRepository = classificationRuleRepository;
         this.categoryRepository = categoryRepository;
         this.loanContractRepository = loanContractRepository;
+        this.householdService = householdService;
     }
 
     @Transactional(readOnly = true)
     public List<ClassificationRule> findAll() {
-        return classificationRuleRepository.findAllByOrderByPriorityAsc();
+        UUID householdId = householdService == null ? null : householdService.resolveEffectiveHouseholdId(null);
+        return householdId == null
+                ? classificationRuleRepository.findAllByOrderByPriorityAsc()
+                : classificationRuleRepository.findByHouseholdIdOrderByPriorityAsc(householdId);
     }
 
     @Transactional
     public ClassificationRule save(ClassificationRule rule) {
+        if (rule != null && rule.getHouseholdId() == null && householdService != null) {
+            rule.setHouseholdId(householdService.resolveEffectiveHouseholdId(null));
+        }
         validate(rule);
         return classificationRuleRepository.save(rule);
     }

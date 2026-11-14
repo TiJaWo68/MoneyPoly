@@ -35,8 +35,22 @@ public class EnergyTariffService {
     }
 
     @Transactional(readOnly = true)
+    public List<EnergyTariff> findByHouse(UUID houseId) {
+        return houseId == null
+                ? findAll()
+                : repository.findByHouseIdOrderByForMeterTypeAscValidFromDesc(houseId);
+    }
+
+    @Transactional(readOnly = true)
     public List<EnergyTariff> findByMeterType(MeterType meterType) {
         return repository.findByForMeterTypeOrderByValidFromAsc(meterType);
+    }
+
+    @Transactional(readOnly = true)
+    public List<EnergyTariff> findByHouseAndMeterType(UUID houseId, MeterType meterType) {
+        return houseId == null
+                ? findByMeterType(meterType)
+                : repository.findByHouseIdAndForMeterTypeOrderByValidFromAsc(houseId, meterType);
     }
 
     @Transactional
@@ -55,7 +69,12 @@ public class EnergyTariffService {
 
     @Transactional(readOnly = true)
     public Optional<BigDecimal> resolveUnitPrice(MeterType meterType, LocalDate date) {
-        List<EnergyTariff> tariffs = repository.findByForMeterTypeOrderByValidFromAsc(meterType);
+        return resolveUnitPrice(null, meterType, date);
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<BigDecimal> resolveUnitPrice(UUID houseId, MeterType meterType, LocalDate date) {
+        List<EnergyTariff> tariffs = findByHouseAndMeterType(houseId, meterType);
         return resolveUnitPriceFromList(tariffs, date);
     }
 
@@ -67,7 +86,13 @@ public class EnergyTariffService {
     @Transactional(readOnly = true)
     public BigDecimal resolveEffectiveUnitPrice(
             MeterType meterType, LocalDate startExclusive, LocalDate endInclusive) {
-        List<EnergyTariff> tariffs = repository.findByForMeterTypeOrderByValidFromAsc(meterType);
+        return resolveEffectiveUnitPrice(null, meterType, startExclusive, endInclusive);
+    }
+
+    @Transactional(readOnly = true)
+    public BigDecimal resolveEffectiveUnitPrice(
+            UUID houseId, MeterType meterType, LocalDate startExclusive, LocalDate endInclusive) {
+        List<EnergyTariff> tariffs = findByHouseAndMeterType(houseId, meterType);
         if (tariffs.isEmpty()) {
             return BigDecimal.ZERO;
         }
@@ -112,7 +137,7 @@ public class EnergyTariffService {
     }
 
     private void closePredecessorTariffs(EnergyTariff newTariff) {
-        List<EnergyTariff> existing = repository.findByForMeterTypeOrderByValidFromAsc(newTariff.getForMeterType());
+        List<EnergyTariff> existing = findByHouseAndMeterType(newTariff.getHouseId(), newTariff.getForMeterType());
         LocalDate dayBeforeNew = newTariff.getValidFrom().minusDays(1);
 
         for (EnergyTariff candidate : existing) {

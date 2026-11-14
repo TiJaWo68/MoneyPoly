@@ -12,6 +12,12 @@ public interface EnergyTariffRepository extends JpaRepository<EnergyTariff, UUID
 
     List<EnergyTariff> findAllByOrderByForMeterTypeAscValidFromDesc();
 
+    List<EnergyTariff> findByHouseIdOrderByForMeterTypeAscValidFromDesc(UUID houseId);
+
     List<EnergyTariff> findByForMeterTypeOrderByValidFromAsc(MeterType forMeterType);
+
+    List<EnergyTariff> findByHouseIdAndForMeterTypeOrderByValidFromAsc(UUID houseId, MeterType forMeterType);
+
+    boolean existsByHouseId(UUID houseId);
 }
 

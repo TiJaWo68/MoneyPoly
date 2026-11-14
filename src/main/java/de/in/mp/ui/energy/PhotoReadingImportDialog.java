@@ -228,8 +228,15 @@ public class PhotoReadingImportDialog extends Dialog {
         addDetachListener(event -> getElement().executeJs(PASTE_LISTENER_REMOVE_JS, getElement()));
     }
 
+    private UUID currentHouseId;
+
     public void openForImport(Runnable onSaved) {
+        openForImport(onSaved, null);
+    }
+
+    public void openForImport(Runnable onSaved, UUID houseId) {
         this.onSaved = onSaved;
+        this.currentHouseId = houseId;
         this.rows.clear();
         this.buffers.clear();
         this.upload.clearFileList();
@@ -239,7 +246,9 @@ public class PhotoReadingImportDialog extends Dialog {
     }
 
     private void reloadCatalog() {
-        this.activeMeters = meterService.findActive();
+        this.activeMeters = currentHouseId == null
+                ? meterService.findActive()
+                : meterService.findActiveByHouse(currentHouseId);
         this.metersById = new HashMap<>();
         this.latestValuesByMeter = new HashMap<>();
         this.timelinesByMeter = new HashMap<>();

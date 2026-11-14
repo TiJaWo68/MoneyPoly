@@ -86,8 +86,15 @@ public class EnergyOdsImportDialog extends Dialog {
         setCloseOnOutsideClick(false);
     }
 
+    private java.util.UUID houseId;
+
     public void openForImport(Runnable onImported) {
+        openForImport(onImported, null);
+    }
+
+    public void openForImport(Runnable onImported, java.util.UUID houseId) {
         this.onImported = onImported;
+        this.houseId = houseId;
         this.uploadedBuffer = null;
         this.pvDachCost.setValue(DEFAULT_PV_DACH_COST);
         this.pvGartenhausCost.setValue(DEFAULT_PV_GARTENHAUS_COST);
@@ -117,7 +124,8 @@ public class EnergyOdsImportDialog extends Dialog {
 
             OdsImportResult result = importService.importOds(
                     new ByteArrayInputStream(uploadedBuffer.toByteArray()),
-                    costDefaults);
+                    costDefaults,
+                    houseId);
 
             Notification notification = Notification.show(
                     getTranslation("energy.import.success",

@@ -2,6 +2,7 @@ package de.in.mp.ui.energy;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.UUID;
 
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
@@ -64,8 +65,13 @@ public class EnergyTariffEditorDialog extends Dialog {
     }
 
     public void openForCreate(Runnable onSaved) {
+        openForCreate(onSaved, null);
+    }
+
+    public void openForCreate(Runnable onSaved, UUID houseId) {
         this.onSaved = onSaved;
         this.currentTariff = new EnergyTariff();
+        this.currentTariff.setHouseId(houseId);
         this.currentTariff.setForMeterType(MeterType.GRID_IMPORT);
         this.currentTariff.setValidFrom(LocalDate.now());
         this.currentTariff.setMonthlyBaseFeeEur(BigDecimal.ZERO);

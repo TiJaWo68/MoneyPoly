@@ -79,6 +79,32 @@ class MainLayoutTest {
                 .isTrue();
     }
 
+    @Test
+    void hidesEnergyEntryWhenUserHasNoAccessibleHouse() {
+        MainLayout.NavigationItem energy = MainLayout.navigationItems().stream()
+                .filter(item -> "energy".equals(item.path()))
+                .findFirst()
+                .orElseThrow();
+
+        assertThat(MainLayout.isItemVisible(energy, Set.of("ROLE_USER"), false)).isFalse();
+        assertThat(MainLayout.isItemVisible(energy, Set.of("ROLE_USER"), true)).isTrue();
+    }
+
+    @Test
+    void hidesFinanceTabForBorrowerOnlyUserWhileKeepingLoansTabVisible() {
+        MainLayout.NavigationItem finance = MainLayout.navigationItems().stream()
+                .filter(item -> "finance".equals(item.path()))
+                .findFirst()
+                .orElseThrow();
+        MainLayout.NavigationItem loans = MainLayout.navigationItems().stream()
+                .filter(item -> "loans".equals(item.path()))
+                .findFirst()
+                .orElseThrow();
+
+        assertThat(MainLayout.isItemVisible(finance, Set.of("ROLE_BORROWER"), false, true, false)).isFalse();
+        assertThat(MainLayout.isItemVisible(loans, Set.of("ROLE_BORROWER"), false, true, false)).isTrue();
+    }
+
     private MainLayout.NavigationItem adminItem() {
         return MainLayout.navigationItems().stream()
                 .filter(item -> item.labelKey().equals("ui.nav.admin"))

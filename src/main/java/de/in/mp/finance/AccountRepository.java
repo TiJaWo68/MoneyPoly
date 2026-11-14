@@ -25,5 +25,15 @@ public interface AccountRepository extends JpaRepository<Account, UUID> {
      */
     List<Account> findAllByOrderByDisplayOrderAscNameAsc();
 
+    List<Account> findByHouseholdIdOrderByAccountTypeAscNameAsc(UUID householdId);
+
+    List<Account> findByHouseholdIdAndActiveTrueOrderByAccountTypeAscNameAsc(UUID householdId);
+
+    List<Account> findByHouseholdIdAndActiveTrueOrderByDisplayOrderAscNameAsc(UUID householdId);
+
+    List<Account> findByHouseholdIdOrderByDisplayOrderAscNameAsc(UUID householdId);
+
     long countByActiveTrue();
+
+    long countByHouseholdIdAndActiveTrue(UUID householdId);
 }

@@ -52,13 +52,23 @@ public class EnergyAmortizationService {
      */
     @Transactional(readOnly = true)
     public List<EnergyDateRow> buildDateRows() {
-        List<Meter> meters = meterRepository.findAllByOrderByDisplayOrderAscNameAsc();
+        return buildDateRows(null);
+    }
+
+    @Transactional(readOnly = true)
+    public List<EnergyDateRow> buildDateRows(UUID houseId) {
+        List<Meter> meters = houseId == null
+                ? meterRepository.findAllByOrderByDisplayOrderAscNameAsc()
+                : meterRepository.findByHouseIdOrderByDisplayOrderAscNameAsc(houseId);
         Map<UUID, Meter> metersById = meters.stream()
                 .collect(Collectors.toMap(Meter::getId, m -> m));
 
         List<MeterReading> allReadings = readingRepository.findAllByOrderByReadingDateAsc();
         Map<LocalDate, Map<UUID, MeterReading>> groupedByDate = new TreeMap<>();
         for (MeterReading reading : allReadings) {
+            if (!metersById.containsKey(reading.getMeterId())) {
+                continue;
+            }
             groupedByDate
                     .computeIfAbsent(reading.getReadingDate(), d -> new LinkedHashMap<>())
                     .put(reading.getMeterId(), reading);
@@ -83,12 +93,12 @@ public class EnergyAmortizationService {
             BigDecimal selfConsumptionRatio = percentage(selfConsumption, pvGenDelta);
             BigDecimal autarkyRatio = percentage(selfConsumption, totalHouseholdConsumption);
 
-            BigDecimal importPrice = zeroIfNull(tariffService.resolveEffectiveUnitPrice(
-                    MeterType.GRID_IMPORT, previousDate, currentDate));
-            BigDecimal exportPrice = zeroIfNull(tariffService.resolveEffectiveUnitPrice(
-                    MeterType.GRID_EXPORT, previousDate, currentDate));
-            BigDecimal wallboxReimbursementRate = zeroIfNull(tariffService.resolveEffectiveUnitPrice(
-                    MeterType.WALLBOX_COMPANY, previousDate, currentDate));
+            BigDecimal importPrice = zeroIfNull(resolveEffectiveUnitPrice(
+                    houseId, MeterType.GRID_IMPORT, previousDate, currentDate));
+            BigDecimal exportPrice = zeroIfNull(resolveEffectiveUnitPrice(
+                    houseId, MeterType.GRID_EXPORT, previousDate, currentDate));
+            BigDecimal wallboxReimbursementRate = zeroIfNull(resolveEffectiveUnitPrice(
+                    houseId, MeterType.WALLBOX_COMPANY, previousDate, currentDate));
 
             BigDecimal feedInRevenue = gridExportDelta.multiply(exportPrice)
                     .setScale(CURRENCY_SCALE, RoundingMode.HALF_UP);
@@ -169,15 +179,24 @@ public class EnergyAmortizationService {
      */
     @Transactional(readOnly = true)
     public List<AssetAmortizationSummary> calculateAssetAmortizations() {
-        List<EnergyAsset> assets = assetRepository.findAllByOrderByInstallationDateAscNameAsc();
+        return calculateAssetAmortizations(null);
+    }
+
+    @Transactional(readOnly = true)
+    public List<AssetAmortizationSummary> calculateAssetAmortizations(UUID houseId) {
+        List<EnergyAsset> assets = houseId == null
+                ? assetRepository.findAllByOrderByInstallationDateAscNameAsc()
+                : assetRepository.findByHouseIdOrderByInstallationDateAscNameAsc(houseId);
         if (assets.isEmpty()) {
             return List.of();
         }
 
-        List<Meter> meters = meterRepository.findAllByOrderByDisplayOrderAscNameAsc();
+        List<Meter> meters = houseId == null
+                ? meterRepository.findAllByOrderByDisplayOrderAscNameAsc()
+                : meterRepository.findByHouseIdOrderByDisplayOrderAscNameAsc(houseId);
         Map<UUID, Meter> metersById = meters.stream()
                 .collect(Collectors.toMap(Meter::getId, m -> m));
-        List<EnergyDateRow> dateRows = buildDateRows();
+        List<EnergyDateRow> dateRows = buildDateRows(houseId);
 
         List<AssetAmortizationSummary> summaries = new ArrayList<>();
         for (EnergyAsset asset : assets) {
@@ -188,7 +207,15 @@ public class EnergyAmortizationService {
 
     @Transactional(readOnly = true)
     public BigDecimal calculateTotalInvestmentCost() {
-        return assetRepository.findAllByOrderByInstallationDateAscNameAsc().stream()
+        return calculateTotalInvestmentCost(null);
+    }
+
+    @Transactional(readOnly = true)
+    public BigDecimal calculateTotalInvestmentCost(UUID houseId) {
+        List<EnergyAsset> assets = houseId == null
+                ? assetRepository.findAllByOrderByInstallationDateAscNameAsc()
+                : assetRepository.findByHouseIdOrderByInstallationDateAscNameAsc(houseId);
+        return assets.stream()
                 .map(EnergyAsset::getInvestmentCost)
                 .filter(Objects::nonNull)
                 .reduce(BigDecimal.ZERO, BigDecimal::add)
@@ -197,7 +224,12 @@ public class EnergyAmortizationService {
 
     @Transactional(readOnly = true)
     public BigDecimal calculateTotalAmortized() {
-        return calculateAssetAmortizations().stream()
+        return calculateTotalAmortized(null);
+    }
+
+    @Transactional(readOnly = true)
+    public BigDecimal calculateTotalAmortized(UUID houseId) {
+        return calculateAssetAmortizations(houseId).stream()
                 .map(AssetAmortizationSummary::totalAmortizedEur)
                 .reduce(BigDecimal.ZERO, BigDecimal::add)
                 .setScale(CURRENCY_SCALE, RoundingMode.HALF_UP);
@@ -205,7 +237,12 @@ public class EnergyAmortizationService {
 
     @Transactional(readOnly = true)
     public BigDecimal calculateTotalRemainingCost() {
-        return calculateAssetAmortizations().stream()
+        return calculateTotalRemainingCost(null);
+    }
+
+    @Transactional(readOnly = true)
+    public BigDecimal calculateTotalRemainingCost(UUID houseId) {
+        return calculateAssetAmortizations(houseId).stream()
                 .map(AssetAmortizationSummary::remainingCostEur)
                 .reduce(BigDecimal.ZERO, BigDecimal::add)
                 .setScale(CURRENCY_SCALE, RoundingMode.HALF_UP);
@@ -248,7 +285,8 @@ public class EnergyAmortizationService {
                 BigDecimal assetPvDelta = sumDeltaForAssetAndType(
                         row.readingsByMeter(), metersById, asset.getId(), MeterType.PV_GENERATION);
                 BigDecimal assetExportDelta = hasExportMeters
-                        ? sumDeltaForAssetAndType(row.readingsByMeter(), metersById, asset.getId(), MeterType.GRID_EXPORT)
+                        ? sumDeltaForAssetAndType(row.readingsByMeter(), metersById, asset.getId(),
+                                MeterType.GRID_EXPORT)
                         : BigDecimal.ZERO;
 
                 BigDecimal assetSelfConsumption = assetPvDelta.subtract(assetExportDelta).max(BigDecimal.ZERO);
@@ -299,7 +337,8 @@ public class EnergyAmortizationService {
 
     private BigDecimal calculateWallboxAdvantage(
             BigDecimal chargedKwh, BigDecimal reimbursementRate, BigDecimal exportPrice) {
-        if (chargedKwh == null || chargedKwh.signum() <= 0 || reimbursementRate == null || reimbursementRate.signum() <= 0) {
+        if (chargedKwh == null || chargedKwh.signum() <= 0 || reimbursementRate == null
+                || reimbursementRate.signum() <= 0) {
             return BigDecimal.ZERO.setScale(CURRENCY_SCALE, RoundingMode.HALF_UP);
         }
         BigDecimal opportunityCost = exportPrice != null ? exportPrice : BigDecimal.ZERO;
@@ -313,7 +352,8 @@ public class EnergyAmortizationService {
         for (MeterReading reading : readingsAtDate.values()) {
             Meter meter = metersById.get(reading.getMeterId());
             if (meter != null && meter.getType() == type && reading.getConsumptionDelta() != null) {
-                // Only include main import meter or asset-linked meters for household balance if multiple exist
+                // Only include main import meter or asset-linked meters for household balance
+                // if multiple exist
                 if (type == MeterType.GRID_IMPORT && isSubMeter(meter)) {
                     continue;
                 }
@@ -350,6 +390,14 @@ public class EnergyAmortizationService {
             return BigDecimal.ZERO.setScale(PERCENT_SCALE, RoundingMode.HALF_UP);
         }
         return part.multiply(ONE_HUNDRED).divide(total, PERCENT_SCALE, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal resolveEffectiveUnitPrice(
+            UUID houseId, MeterType type, LocalDate periodStart, LocalDate periodEnd) {
+        if (houseId == null) {
+            return tariffService.resolveEffectiveUnitPrice(type, periodStart, periodEnd);
+        }
+        return tariffService.resolveEffectiveUnitPrice(houseId, type, periodStart, periodEnd);
     }
 
     private static BigDecimal zeroIfNull(BigDecimal value) {

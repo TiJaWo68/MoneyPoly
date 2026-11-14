@@ -29,8 +29,22 @@ public class MeterService {
     }
 
     @Transactional(readOnly = true)
+    public List<Meter> findByHouse(UUID houseId) {
+        return houseId == null
+                ? findAll()
+                : repository.findByHouseIdOrderByDisplayOrderAscNameAsc(houseId);
+    }
+
+    @Transactional(readOnly = true)
     public List<Meter> findActive() {
         return repository.findByActiveTrueOrderByDisplayOrderAscNameAsc();
+    }
+
+    @Transactional(readOnly = true)
+    public List<Meter> findActiveByHouse(UUID houseId) {
+        return houseId == null
+                ? findActive()
+                : repository.findByHouseIdAndActiveTrueOrderByDisplayOrderAscNameAsc(houseId);
     }
 
     @Transactional(readOnly = true)

@@ -28,6 +28,13 @@ public class EnergyAssetService {
     }
 
     @Transactional(readOnly = true)
+    public List<EnergyAsset> findByHouse(UUID houseId) {
+        return houseId == null
+                ? findAll()
+                : repository.findByHouseIdOrderByInstallationDateAscNameAsc(houseId);
+    }
+
+    @Transactional(readOnly = true)
     public EnergyAsset requireAsset(UUID id) {
         return repository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Energy asset not found: " + id));

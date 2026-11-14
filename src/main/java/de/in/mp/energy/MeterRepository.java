@@ -12,8 +12,14 @@ public interface MeterRepository extends JpaRepository<Meter, UUID> {
 
     List<Meter> findAllByOrderByDisplayOrderAscNameAsc();
 
+    List<Meter> findByHouseIdOrderByDisplayOrderAscNameAsc(UUID houseId);
+
     List<Meter> findByActiveTrueOrderByDisplayOrderAscNameAsc();
 
+    List<Meter> findByHouseIdAndActiveTrueOrderByDisplayOrderAscNameAsc(UUID houseId);
+
     List<Meter> findByAssetIdOrderByDisplayOrderAscNameAsc(UUID assetId);
+
+    boolean existsByHouseId(UUID houseId);
 }
 

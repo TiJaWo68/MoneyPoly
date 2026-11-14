@@ -23,6 +23,9 @@ public class EnergyAsset {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
+    @Column(name = "house_id", nullable = false)
+    private UUID houseId;
+
     @Column(name = "name", nullable = false, length = 80)
     private String name;
 
@@ -44,6 +47,14 @@ public class EnergyAsset {
 
     public void setId(UUID id) {
         this.id = id;
+    }
+
+    public UUID getHouseId() {
+        return houseId;
+    }
+
+    public void setHouseId(UUID houseId) {
+        this.houseId = houseId;
     }
 
     public String getName() {

@@ -150,6 +150,40 @@ class MeterReadingServiceTest {
                 .hasMessageContaining("negative");
     }
 
+    @Test
+    void deleteReadingsForDateDeletesOnlyReadingsInTargetHouse() {
+        UUID house1 = UUID.randomUUID();
+        UUID house2 = UUID.randomUUID();
+        UUID meter1Id = UUID.randomUUID();
+        UUID meter2Id = UUID.randomUUID();
+        LocalDate date = LocalDate.of(2026, 10, 31);
+
+        Meter meter1 = meter(meter1Id, "Haus 1 Strom", MeterType.GRID_IMPORT, null);
+        meter1.setHouseId(house1);
+        Meter meter2 = meter(meter2Id, "Haus 2 Strom", MeterType.GRID_IMPORT, null);
+        meter2.setHouseId(house2);
+
+        MeterReading reading1 = new MeterReading();
+        reading1.setMeterId(meter1Id);
+        reading1.setReadingDate(date);
+        reading1.setReadingValue(new BigDecimal("1000"));
+
+        MeterReading reading2 = new MeterReading();
+        reading2.setMeterId(meter2Id);
+        reading2.setReadingDate(date);
+        reading2.setReadingValue(new BigDecimal("2000"));
+
+        when(readingRepository.findByReadingDate(date)).thenReturn(List.of(reading1, reading2));
+        when(meterRepository.findById(meter1Id)).thenReturn(Optional.of(meter1));
+        when(meterRepository.findById(meter2Id)).thenReturn(Optional.of(meter2));
+        when(readingRepository.findByMeterIdOrderByReadingDateAsc(meter1Id)).thenReturn(List.of());
+
+        service.deleteReadingsForDate(house1, date);
+
+        org.mockito.Mockito.verify(readingRepository).delete(reading1);
+        org.mockito.Mockito.verify(readingRepository, org.mockito.Mockito.never()).delete(reading2);
+    }
+
     private Meter meter(UUID id, String name, MeterType type, BigDecimal overflowThreshold) {
         Meter meter = new Meter();
         meter.setId(id);

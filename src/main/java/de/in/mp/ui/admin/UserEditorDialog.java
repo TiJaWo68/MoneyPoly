@@ -1,7 +1,11 @@
 package de.in.mp.ui.admin;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
@@ -19,6 +23,11 @@ import com.vaadin.flow.data.binder.Binder;
 
 import de.in.mp.admin.PersonService;
 import de.in.mp.admin.UserService;
+import de.in.mp.energy.EnergyHouse;
+import de.in.mp.energy.EnergyHouseService;
+import de.in.mp.energy.HouseAccessRole;
+import de.in.mp.finance.Household;
+import de.in.mp.finance.HouseholdService;
 import de.in.mp.finance.Person;
 import de.in.mp.security.AppRole;
 import de.in.mp.security.AppUser;
@@ -31,6 +40,8 @@ public class UserEditorDialog extends Dialog {
 
     private final UserService userService;
     private final PersonService personService;
+    private final EnergyHouseService houseService;
+    private final HouseholdService householdService;
 
     private final Binder<AppUser> binder = new Binder<>(AppUser.class);
 
@@ -38,7 +49,10 @@ public class UserEditorDialog extends Dialog {
     private final TextField email = new TextField();
     private final ComboBox<AuthProvider> authProvider = new ComboBox<>();
     private final MultiSelectComboBox<AppRole> roles = new MultiSelectComboBox<>();
+    private final ComboBox<Household> household = new ComboBox<>();
     private final ComboBox<Person> person = new ComboBox<>();
+    private final MultiSelectComboBox<EnergyHouse> assignedHouses = new MultiSelectComboBox<>();
+    private final ComboBox<HouseAccessRole> houseAccessRole = new ComboBox<>();
     private final Checkbox enabled = new Checkbox();
     private final PasswordField password = new PasswordField();
 
@@ -48,10 +62,23 @@ public class UserEditorDialog extends Dialog {
     private AppUser currentUser;
     private Runnable onSaved;
     private List<Person> persons = List.of();
+    private List<Household> households = List.of();
+    private List<EnergyHouse> houses = List.of();
 
     public UserEditorDialog(UserService userService, PersonService personService) {
+        this(userService, personService, null, null);
+    }
+
+    public UserEditorDialog(UserService userService, PersonService personService, EnergyHouseService houseService) {
+        this(userService, personService, houseService, null);
+    }
+
+    public UserEditorDialog(UserService userService, PersonService personService,
+            EnergyHouseService houseService, HouseholdService householdService) {
         this.userService = userService;
         this.personService = personService;
+        this.houseService = houseService;
+        this.householdService = householdService;
 
         configureFields();
         configureBinder();
@@ -62,7 +89,15 @@ public class UserEditorDialog extends Dialog {
         saveButton.addClickListener(event -> save());
         cancelButton.addClickListener(event -> close());
 
-        FormLayout form = new FormLayout(username, email, authProvider, roles, person, enabled, password);
+        FormLayout form = new FormLayout(username, email, authProvider, roles);
+        if (householdService != null) {
+            form.add(household);
+        }
+        form.add(person);
+        if (houseService != null) {
+            form.add(assignedHouses, houseAccessRole);
+        }
+        form.add(enabled, password);
         form.setResponsiveSteps(new FormLayout.ResponsiveStep("0", 1));
 
         HorizontalLayout actions = new HorizontalLayout(cancelButton, saveButton);
@@ -81,6 +116,9 @@ public class UserEditorDialog extends Dialog {
         binder.readBean(currentUser);
         password.clear();
         refreshPersons();
+        refreshHouseholds();
+        household.clear();
+        refreshHouses(Map.of());
         updateFieldVisibility();
         open();
     }
@@ -93,6 +131,12 @@ public class UserEditorDialog extends Dialog {
         password.clear();
         refreshPersons();
         person.setValue(resolvePerson(user.getPersonId()));
+        refreshHouseholds();
+        household.setValue(resolveHousehold(user.getHouseholdId()));
+        Map<UUID, HouseAccessRole> assignments = houseService != null && user.getId() != null
+                ? houseService.findAssignmentsMapForUser(user.getId())
+                : Map.of();
+        refreshHouses(assignments);
         updateFieldVisibility();
         open();
     }
@@ -102,6 +146,9 @@ public class UserEditorDialog extends Dialog {
         email.setLabel(getTranslation("admin.user.editor.field.email"));
         authProvider.setLabel(getTranslation("admin.user.editor.field.auth-provider"));
         roles.setLabel(getTranslation("admin.user.editor.field.roles"));
+        household.setLabel(getTranslation("admin.user.editor.field.household"));
+        household.setItemLabelGenerator(Household::getName);
+        household.setClearButtonVisible(true);
         person.setLabel(getTranslation("admin.user.editor.field.person"));
         enabled.setLabel(getTranslation("admin.user.editor.field.enabled"));
         password.setLabel(getTranslation("admin.user.editor.field.password"));
@@ -116,6 +163,14 @@ public class UserEditorDialog extends Dialog {
 
         person.setItemLabelGenerator(Person::getName);
         person.setClearButtonVisible(true);
+
+        assignedHouses.setLabel(getTranslation("admin.user.editor.field.houses"));
+        assignedHouses.setItemLabelGenerator(EnergyHouse::getName);
+
+        houseAccessRole.setLabel(getTranslation("admin.user.editor.field.house-role"));
+        houseAccessRole.setItems(HouseAccessRole.values());
+        houseAccessRole.setItemLabelGenerator(role -> getTranslation("energy.house.role." + role.name()));
+        houseAccessRole.setValue(HouseAccessRole.EDITOR);
     }
 
     private void configureBinder() {
@@ -143,6 +198,37 @@ public class UserEditorDialog extends Dialog {
         person.setItems(persons);
     }
 
+    private void refreshHouses(Map<UUID, HouseAccessRole> existingAssignments) {
+        if (houseService == null) {
+            return;
+        }
+        houses = houseService.findAll();
+        assignedHouses.setItems(houses);
+        Set<EnergyHouse> selected = houses.stream()
+                .filter(h -> existingAssignments.containsKey(h.getId()))
+                .collect(Collectors.toSet());
+        assignedHouses.setValue(selected);
+        HouseAccessRole role = existingAssignments.values().stream()
+                .findFirst()
+                .orElse(HouseAccessRole.EDITOR);
+        houseAccessRole.setValue(role);
+    }
+
+    private void refreshHouseholds() {
+        households = householdService == null ? List.of() : householdService.findAll();
+        household.setItems(households);
+    }
+
+    private Household resolveHousehold(UUID householdId) {
+        if (householdId == null) {
+            return null;
+        }
+        return households.stream()
+                .filter(candidate -> householdId.equals(candidate.getId()))
+                .findFirst()
+                .orElse(null);
+    }
+
     private Person resolvePerson(UUID personId) {
         if (personId == null) {
             return null;
@@ -166,6 +252,9 @@ public class UserEditorDialog extends Dialog {
             return;
         }
         currentUser.setPersonId(person.getValue() == null ? null : person.getValue().getId());
+        if (householdService != null) {
+            currentUser.setHouseholdId(household.getValue() == null ? null : household.getValue().getId());
+        }
 
         String passwordValue = password.getValue();
         if (currentUser.getId() == null
@@ -177,10 +266,20 @@ public class UserEditorDialog extends Dialog {
         }
 
         try {
-            if (currentUser.getId() == null) {
-                userService.create(currentUser, passwordValue);
-            } else {
-                userService.update(currentUser, passwordValue);
+            AppUser saved = currentUser.getId() == null
+                    ? userService.create(currentUser, passwordValue)
+                    : userService.update(currentUser, passwordValue);
+            if (houseService != null && saved.getId() != null) {
+                HouseAccessRole selectedRole = houseAccessRole.getValue() != null
+                        ? houseAccessRole.getValue()
+                        : HouseAccessRole.EDITOR;
+                Map<UUID, HouseAccessRole> assignments = new LinkedHashMap<>();
+                for (EnergyHouse house : assignedHouses.getValue()) {
+                    if (house.getId() != null) {
+                        assignments.put(house.getId(), selectedRole);
+                    }
+                }
+                houseService.replaceAssignmentsForUser(saved.getId(), assignments);
             }
             close();
             if (onSaved != null) {

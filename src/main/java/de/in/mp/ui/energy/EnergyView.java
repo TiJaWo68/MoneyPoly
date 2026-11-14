@@ -8,19 +8,24 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.button.Button;
+import com.vaadin.flow.component.combobox.ComboBox;
 import com.vaadin.flow.component.grid.ColumnTextAlign;
 import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.grid.GridVariant;
 import com.vaadin.flow.component.grid.HeaderRow;
 import com.vaadin.flow.component.html.H3;
+import com.vaadin.flow.component.html.Paragraph;
 import com.vaadin.flow.component.html.Span;
 import com.vaadin.flow.component.icon.VaadinIcon;
 import com.vaadin.flow.component.notification.Notification;
@@ -31,6 +36,8 @@ import com.vaadin.flow.component.progressbar.ProgressBar;
 import com.vaadin.flow.component.tabs.Tab;
 import com.vaadin.flow.component.tabs.Tabs;
 import com.vaadin.flow.data.renderer.ComponentRenderer;
+import com.vaadin.flow.router.BeforeEnterEvent;
+import com.vaadin.flow.router.BeforeEnterObserver;
 import com.vaadin.flow.router.HasDynamicTitle;
 import com.vaadin.flow.router.Route;
 import com.vaadin.flow.theme.lumo.LumoUtility;
@@ -41,6 +48,8 @@ import de.in.mp.energy.EnergyAmortizationService;
 import de.in.mp.energy.EnergyAsset;
 import de.in.mp.energy.EnergyAssetService;
 import de.in.mp.energy.EnergyDateRow;
+import de.in.mp.energy.EnergyHouse;
+import de.in.mp.energy.EnergyHouseService;
 import de.in.mp.energy.EnergyTariff;
 import de.in.mp.energy.EnergyTariffService;
 import de.in.mp.energy.Meter;
@@ -68,7 +77,7 @@ import jakarta.annotation.security.PermitAll;
  */
 @Route(value = "energy", layout = MainLayout.class)
 @PermitAll
-public class EnergyView extends VerticalLayout implements HasDynamicTitle {
+public class EnergyView extends VerticalLayout implements HasDynamicTitle, BeforeEnterObserver {
 
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("dd.MM.yyyy");
 
@@ -101,9 +110,15 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle {
     private final Tab masterDataTab;
     private final VerticalLayout tabContent = new VerticalLayout();
     private final ActionMenu actionMenu;
+    private final HorizontalLayout headerLayout;
+    private final ComboBox<EnergyHouse> houseSelector = new ComboBox<>();
+    private final EnergyHouseService houseService;
+    private final EnergyHouseDialog houseDialog;
     private final HorizontalLayout kpiRow;
 
     private boolean kpisVisible = true;
+    private List<EnergyHouse> accessibleHouses = List.of();
+    private UUID selectedHouseId;
     private Map<UUID, String> assetNamesById = Map.of();
     private Map<UUID, BigDecimal> averageDeltasByMeter = Map.of();
     private List<String> configuredMeterSignature;
@@ -115,7 +130,19 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle {
             MeterReadingService readingService,
             EnergyTariffService tariffService,
             EnergyAmortizationService amortizationService) {
-        this(assetService, meterService, readingService, tariffService, amortizationService, null, null);
+        this(assetService, meterService, readingService, tariffService, amortizationService, null, null, null);
+    }
+
+    public EnergyView(
+            EnergyAssetService assetService,
+            MeterService meterService,
+            MeterReadingService readingService,
+            EnergyTariffService tariffService,
+            EnergyAmortizationService amortizationService,
+            AppSettingService appSettingService,
+            VisionMeterClient visionMeterClient) {
+        this(assetService, meterService, readingService, tariffService, amortizationService,
+                appSettingService, visionMeterClient, null);
     }
 
     @Autowired
@@ -126,13 +153,16 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle {
             EnergyTariffService tariffService,
             EnergyAmortizationService amortizationService,
             AppSettingService appSettingService,
-            VisionMeterClient visionMeterClient) {
+            VisionMeterClient visionMeterClient,
+            @Autowired(required = false) EnergyHouseService houseService) {
         this.assetService = assetService;
         this.meterService = meterService;
         this.readingService = readingService;
         this.tariffService = tariffService;
         this.amortizationService = amortizationService;
         this.appSettingService = appSettingService;
+        this.houseService = houseService;
+        this.houseDialog = houseService != null ? new EnergyHouseDialog(houseService) : null;
 
         this.batchReadingDialog = new BatchMeterReadingDialog(meterService, readingService);
         this.photoImportDialog = (appSettingService != null && visionMeterClient != null)
@@ -146,6 +176,8 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle {
         this.amortizationTab = new Tab(getTranslation("energy.tab.amortization"));
         this.masterDataTab = new Tab(getTranslation("energy.tab.masterdata"));
         this.actionMenu = new ActionMenu(getTranslation("ui.action-menu.tooltip"));
+        this.headerLayout = actionMenu.createTitleHeader(getTranslation("energy.view.title"));
+        configureHouseSelector();
         this.kpiRow = createKpiRow();
         this.kpiRow.addClassNames(LumoUtility.Margin.Bottom.XSMALL, ResponsiveStyles.HIDE_ON_SHORT_SCREEN);
         this.kpiRow.setVisible(kpisVisible);
@@ -162,14 +194,16 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle {
 
         tabBar.add(readingsTab, amortizationTab, masterDataTab);
         tabBar.setWidthFull();
+        tabBar.setVisible(false);
         tabBar.addSelectedChangeListener(event -> renderSelectedTab());
 
         tabContent.setSizeFull();
         tabContent.setPadding(false);
         tabContent.getStyle().set("min-height", "400px");
 
-        add(actionMenu.createTitleHeader(getTranslation("energy.view.title")), kpiRow, tabBar, tabContent);
+        add(headerLayout, kpiRow, tabBar, tabContent);
         expand(tabContent);
+        reloadAccessibleHouses();
         refreshAll();
         renderSelectedTab();
     }
@@ -179,45 +213,152 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle {
         return getTranslation("energy.view.page-title");
     }
 
+    @Override
+    public void beforeEnter(BeforeEnterEvent event) {
+        Map<String, List<String>> params = event.getLocation().getQueryParameters().getParameters();
+        List<String> houseParam = params.get("house");
+        if (houseParam != null && !houseParam.isEmpty() && houseService != null) {
+            try {
+                UUID requestedId = UUID.fromString(houseParam.get(0));
+                if (accessibleHouses.stream().anyMatch(h -> Objects.equals(h.getId(), requestedId))
+                        && !Objects.equals(selectedHouseId, requestedId)) {
+                    selectedHouseId = requestedId;
+                    accessibleHouses.stream()
+                            .filter(h -> Objects.equals(h.getId(), selectedHouseId))
+                            .findFirst()
+                            .ifPresent(houseSelector::setValue);
+                    refreshAll();
+                }
+            } catch (IllegalArgumentException ignored) {
+                // Ignore malformed query parameter.
+            }
+        }
+
+        List<String> tabParam = params.get("tab");
+        if (tabParam != null && !tabParam.isEmpty()) {
+            switch (tabParam.get(0)) {
+                case "readings" -> tabBar.setSelectedTab(readingsTab);
+                case "amortization" -> tabBar.setSelectedTab(amortizationTab);
+                case "masterdata" -> tabBar.setSelectedTab(masterDataTab);
+                default -> { }
+            }
+            renderSelectedTab();
+        }
+    }
+
     private void rebuildActionMenu() {
         actionMenu.clear();
         Tab selected = tabBar.getSelectedTab();
 
-        actionMenu.addAction(
-                getTranslation("energy.button.batch-entry"),
-                VaadinIcon.PLUS,
-                () -> batchReadingDialog.openForCreate(this::refreshAll));
-
-        if (photoImportDialog != null && appSettingService.getVisionConfig().isConfigured()) {
+        if (canEditCurrentHouse()) {
             actionMenu.addAction(
-                    getTranslation("energy.button.photo-import"),
-                    VaadinIcon.CAMERA,
-                    () -> photoImportDialog.openForImport(this::refreshAll));
+                    getTranslation("energy.button.batch-entry"),
+                    VaadinIcon.PLUS,
+                    () -> batchReadingDialog.openForCreate(this::refreshAll, selectedHouseId));
+
+            if (photoImportDialog != null && appSettingService.getVisionConfig().isConfigured()) {
+                actionMenu.addAction(
+                        getTranslation("energy.button.photo-import"),
+                        VaadinIcon.CAMERA,
+                        () -> photoImportDialog.openForImport(this::refreshAll, selectedHouseId));
+            }
+
+            if (selected == amortizationTab) {
+                actionMenu.addSeparator();
+                actionMenu.addAction(
+                        getTranslation("energy.button.new-asset"),
+                        VaadinIcon.PLUS_CIRCLE_O,
+                        () -> assetEditorDialog.openForCreate(this::refreshAll, selectedHouseId));
+            } else if (selected == masterDataTab) {
+                actionMenu.addSeparator();
+                actionMenu.addAction(
+                        getTranslation("energy.button.new-meter"),
+                        VaadinIcon.PLUS_CIRCLE_O,
+                        () -> meterEditorDialog.openForCreate(this::refreshAll, selectedHouseId));
+                actionMenu.addAction(
+                        getTranslation("energy.button.new-tariff"),
+                        VaadinIcon.PLUS_CIRCLE_O,
+                        () -> tariffEditorDialog.openForCreate(this::refreshAll, selectedHouseId));
+            }
+            actionMenu.addSeparator();
         }
 
-        if (selected == amortizationTab) {
+        if (houseDialog != null && isCurrentUserAdmin()) {
+            actionMenu.addAction(
+                    getTranslation("energy.house.manage"),
+                    VaadinIcon.HOME,
+                    () -> houseDialog.openDialog(this::onHousesChanged));
             actionMenu.addSeparator();
-            actionMenu.addAction(
-                    getTranslation("energy.button.new-asset"),
-                    VaadinIcon.PLUS_CIRCLE_O,
-                    () -> assetEditorDialog.openForCreate(this::refreshAll));
-        } else if (selected == masterDataTab) {
-            actionMenu.addSeparator();
-            actionMenu.addAction(
-                    getTranslation("energy.button.new-meter"),
-                    VaadinIcon.PLUS_CIRCLE_O,
-                    () -> meterEditorDialog.openForCreate(this::refreshAll));
-            actionMenu.addAction(
-                    getTranslation("energy.button.new-tariff"),
-                    VaadinIcon.PLUS_CIRCLE_O,
-                    () -> tariffEditorDialog.openForCreate(this::refreshAll));
         }
 
-        actionMenu.addSeparator();
         actionMenu.addToggle(
                 getTranslation("ui.action-menu.show-kpis"),
                 kpisVisible,
                 this::setKpisVisible);
+    }
+
+    private void configureHouseSelector() {
+        houseSelector.setPlaceholder(getTranslation("energy.house.selector.label"));
+        houseSelector.setItemLabelGenerator(EnergyHouse::getName);
+        houseSelector.setClearButtonVisible(false);
+        houseSelector.addValueChangeListener(event -> {
+            if (event.isFromClient()) {
+                selectedHouseId = event.getValue() != null ? event.getValue().getId() : null;
+                refreshAll();
+                renderSelectedTab();
+            }
+        });
+    }
+
+    private void reloadAccessibleHouses() {
+        if (houseService == null) {
+            accessibleHouses = List.of();
+            selectedHouseId = null;
+            return;
+        }
+        accessibleHouses = houseService.findAccessibleHousesForCurrentUser();
+        if (accessibleHouses.isEmpty()) {
+            selectedHouseId = null;
+        } else if (selectedHouseId == null
+                || accessibleHouses.stream().noneMatch(h -> Objects.equals(h.getId(), selectedHouseId))) {
+            selectedHouseId = accessibleHouses.get(0).getId();
+        }
+
+        houseSelector.setVisible(false);
+        if (houseSelector.getParent().isPresent()) {
+            headerLayout.remove(houseSelector);
+        }
+        houseSelector.setItems(accessibleHouses);
+        accessibleHouses.stream()
+                .filter(h -> Objects.equals(h.getId(), selectedHouseId))
+                .findFirst()
+                .ifPresent(houseSelector::setValue);
+    }
+
+    private void onHousesChanged() {
+        reloadAccessibleHouses();
+        refreshAll();
+        renderSelectedTab();
+        if (UI.getCurrent() != null) {
+            UI.getCurrent().getPage().reload();
+        }
+    }
+
+    private boolean hasHouseAccess() {
+        return houseService == null || selectedHouseId != null;
+    }
+
+    private boolean canEditCurrentHouse() {
+        return houseService == null
+                || (selectedHouseId != null && houseService.canEditHouseForCurrentUser(selectedHouseId));
+    }
+
+    private static boolean isCurrentUserAdmin() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        return authentication != null
+                && authentication.isAuthenticated()
+                && authentication.getAuthorities().stream()
+                        .anyMatch(a -> "ROLE_ADMIN".equals(a.getAuthority()));
     }
 
     private void setKpisVisible(boolean visible) {
@@ -264,6 +405,17 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle {
 
     private void renderSelectedTab() {
         tabContent.removeAll();
+        if (!hasHouseAccess()) {
+            tabBar.setVisible(false);
+            kpiRow.setVisible(false);
+            Paragraph emptyMessage = new Paragraph(getTranslation("energy.house.empty"));
+            emptyMessage.addClassName(LumoUtility.TextColor.SECONDARY);
+            tabContent.add(emptyMessage);
+            rebuildActionMenu();
+            return;
+        }
+        tabBar.setVisible(false);
+        kpiRow.setVisible(kpisVisible);
         Tab selected = tabBar.getSelectedTab();
         if (selected == readingsTab) {
             readingsGrid.setSizeFull();
@@ -502,16 +654,19 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle {
     }
 
     private HorizontalLayout renderReadingRowActions(EnergyDateRow row) {
+        if (!canEditCurrentHouse()) {
+            return new HorizontalLayout();
+        }
         Button editButton = GridActionButton.create(
                 VaadinIcon.EDIT,
                 getTranslation("energy.readings.action.edit-row"),
-                e -> batchReadingDialog.openForEdit(row, this::refreshAll));
+                e -> batchReadingDialog.openForEdit(row, this::refreshAll, selectedHouseId));
 
         Button deleteButton = GridActionButton.createDanger(
                 VaadinIcon.TRASH,
                 getTranslation("energy.readings.action.delete-row"),
                 e -> {
-                    readingService.deleteReadingsForDate(row.readingDate());
+                    readingService.deleteReadingsForDate(selectedHouseId, row.readingDate());
                     Notification.show(getTranslation("energy.notification.deleted"),
                             3000, Notification.Position.BOTTOM_START);
                     refreshAll();
@@ -602,6 +757,9 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle {
     }
 
     private HorizontalLayout renderAssetActions(AssetAmortizationSummary summary) {
+        if (!canEditCurrentHouse()) {
+            return new HorizontalLayout();
+        }
         Button editButton = GridActionButton.create(
                 VaadinIcon.EDIT,
                 getTranslation("energy.action.edit"),
@@ -659,6 +817,9 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle {
     }
 
     private HorizontalLayout renderMeterActions(Meter meter) {
+        if (!canEditCurrentHouse()) {
+            return new HorizontalLayout();
+        }
         Button editButton = GridActionButton.create(
                 VaadinIcon.EDIT,
                 getTranslation("energy.action.edit"),
@@ -703,6 +864,9 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle {
     }
 
     private HorizontalLayout renderTariffActions(EnergyTariff tariff) {
+        if (!canEditCurrentHouse()) {
+            return new HorizontalLayout();
+        }
         Button editButton = GridActionButton.create(
                 VaadinIcon.EDIT,
                 getTranslation("energy.action.edit"),
@@ -739,15 +903,26 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle {
     }
 
     private void refreshAll() {
-        List<EnergyAsset> assets = assetService.findAll();
+        if (!hasHouseAccess()) {
+            readingsGrid.setItems(List.of());
+            amortizationGrid.setItems(List.of());
+            metersGrid.setItems(List.of());
+            tariffsGrid.setItems(List.of());
+            totalInvestmentValue.setText(formatCurrency(BigDecimal.ZERO));
+            totalAmortizedValue.setText(formatCurrency(BigDecimal.ZERO));
+            remainingCostValue.setText(formatCurrency(BigDecimal.ZERO));
+            activeMetersValue.setText("0");
+            return;
+        }
+        List<EnergyAsset> assets = assetService.findByHouse(selectedHouseId);
         assetNamesById = assets.stream()
                 .filter(a -> a.getId() != null)
                 .collect(Collectors.toMap(EnergyAsset::getId, EnergyAsset::getName));
 
-        List<Meter> activeMeters = meterService.findActive();
-        List<Meter> allMeters = meterService.findAll();
-        List<EnergyTariff> tariffs = tariffService.findAll();
-        List<EnergyDateRow> dateRows = amortizationService.buildDateRows();
+        List<Meter> activeMeters = meterService.findActiveByHouse(selectedHouseId);
+        List<Meter> allMeters = meterService.findByHouse(selectedHouseId);
+        List<EnergyTariff> tariffs = tariffService.findByHouse(selectedHouseId);
+        List<EnergyDateRow> dateRows = amortizationService.buildDateRows(selectedHouseId);
         averageDeltasByMeter = amortizationService.calculateAverageDeltasByMeter(dateRows);
 
         List<String> signature = meterColumnSignature(activeMeters);
@@ -766,13 +941,13 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle {
             }
         }
         readingsGrid.setItems(dateRows);
-        amortizationGrid.setItems(amortizationService.calculateAssetAmortizations());
+        amortizationGrid.setItems(amortizationService.calculateAssetAmortizations(selectedHouseId));
         metersGrid.setItems(allMeters);
         tariffsGrid.setItems(tariffs);
 
-        totalInvestmentValue.setText(formatCurrency(amortizationService.calculateTotalInvestmentCost()));
-        totalAmortizedValue.setText(formatCurrency(amortizationService.calculateTotalAmortized()));
-        remainingCostValue.setText(formatCurrency(amortizationService.calculateTotalRemainingCost()));
+        totalInvestmentValue.setText(formatCurrency(amortizationService.calculateTotalInvestmentCost(selectedHouseId)));
+        totalAmortizedValue.setText(formatCurrency(amortizationService.calculateTotalAmortized(selectedHouseId)));
+        remainingCostValue.setText(formatCurrency(amortizationService.calculateTotalRemainingCost(selectedHouseId)));
         activeMetersValue.setText(String.valueOf(activeMeters.size()));
     }
 

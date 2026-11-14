@@ -78,15 +78,20 @@ public class MeterEditorDialog extends Dialog {
     }
 
     public void openForCreate(Runnable onSaved) {
+        openForCreate(onSaved, null);
+    }
+
+    public void openForCreate(Runnable onSaved, UUID houseId) {
         this.onSaved = onSaved;
         this.currentMeter = new Meter();
+        this.currentMeter.setHouseId(houseId);
         this.currentMeter.setType(MeterType.GRID_IMPORT);
         this.currentMeter.setUnit("kWh");
         this.currentMeter.setConversionFactor(BigDecimal.ONE);
         this.currentMeter.setDisplayOrder(100);
         this.currentMeter.setActive(true);
         setHeaderTitle(getTranslation("energy.meter.editor.title.new"));
-        refreshAssets();
+        refreshAssets(houseId);
         binder.readBean(currentMeter);
         asset.clear();
         open();
@@ -96,7 +101,7 @@ public class MeterEditorDialog extends Dialog {
         this.onSaved = onSaved;
         this.currentMeter = meter;
         setHeaderTitle(getTranslation("energy.meter.editor.title.edit"));
-        List<EnergyAsset> assets = refreshAssets();
+        List<EnergyAsset> assets = refreshAssets(meter.getHouseId());
         binder.readBean(meter);
         UUID assetId = meter.getAssetId();
         asset.setValue(assets.stream()
@@ -159,8 +164,8 @@ public class MeterEditorDialog extends Dialog {
                 .bind(Meter::isActive, Meter::setActive);
     }
 
-    private List<EnergyAsset> refreshAssets() {
-        List<EnergyAsset> assets = assetService.findAll();
+    private List<EnergyAsset> refreshAssets(UUID houseId) {
+        List<EnergyAsset> assets = assetService.findByHouse(houseId);
         asset.setItems(assets);
         return assets;
     }

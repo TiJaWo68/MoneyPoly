@@ -17,8 +17,10 @@ import de.in.mp.admin.DatabaseResetService;
 import de.in.mp.admin.PersonService;
 import de.in.mp.admin.SystemHealthService;
 import de.in.mp.admin.UserService;
+import de.in.mp.energy.EnergyHouseService;
 import de.in.mp.energy.EnergyOdsImportService;
 import de.in.mp.energy.vision.VisionMeterClient;
+import de.in.mp.finance.HouseholdService;
 import de.in.mp.importer.FinanceOdsImportService;
 import de.in.mp.loans.LoanContractRepository;
 import de.in.mp.ui.layout.MainLayout;
@@ -45,7 +47,30 @@ public class AdminView extends VerticalLayout implements HasDynamicTitle {
             AppSettingService appSettingService) {
         this(userService, personService, categoryService, classificationRuleService, systemHealthService,
                 authenticationContext, loanContractRepository, financeOdsImportService, energyOdsImportService,
-                databaseResetService, appSettingService, null);
+                databaseResetService, appSettingService, null, null);
+    }
+
+    public AdminView(UserService userService, PersonService personService,
+            CategoryService categoryService, ClassificationRuleService classificationRuleService,
+            SystemHealthService systemHealthService, AuthenticationContext authenticationContext,
+            LoanContractRepository loanContractRepository, FinanceOdsImportService financeOdsImportService,
+            EnergyOdsImportService energyOdsImportService, DatabaseResetService databaseResetService,
+            AppSettingService appSettingService, VisionMeterClient visionMeterClient) {
+        this(userService, personService, categoryService, classificationRuleService, systemHealthService,
+                authenticationContext, loanContractRepository, financeOdsImportService, energyOdsImportService,
+                databaseResetService, appSettingService, visionMeterClient, null);
+    }
+
+    public AdminView(UserService userService, PersonService personService,
+            CategoryService categoryService, ClassificationRuleService classificationRuleService,
+            SystemHealthService systemHealthService, AuthenticationContext authenticationContext,
+            LoanContractRepository loanContractRepository, FinanceOdsImportService financeOdsImportService,
+            EnergyOdsImportService energyOdsImportService, DatabaseResetService databaseResetService,
+            AppSettingService appSettingService, VisionMeterClient visionMeterClient,
+            EnergyHouseService houseService) {
+        this(userService, personService, categoryService, classificationRuleService, systemHealthService,
+                authenticationContext, loanContractRepository, financeOdsImportService, energyOdsImportService,
+                databaseResetService, appSettingService, visionMeterClient, houseService, null);
     }
 
     @Autowired
@@ -54,7 +79,9 @@ public class AdminView extends VerticalLayout implements HasDynamicTitle {
             SystemHealthService systemHealthService, AuthenticationContext authenticationContext,
             LoanContractRepository loanContractRepository, FinanceOdsImportService financeOdsImportService,
             EnergyOdsImportService energyOdsImportService, DatabaseResetService databaseResetService,
-            AppSettingService appSettingService, VisionMeterClient visionMeterClient) {
+            AppSettingService appSettingService, VisionMeterClient visionMeterClient,
+            @Autowired(required = false) EnergyHouseService houseService,
+            @Autowired(required = false) HouseholdService householdService) {
         setSizeFull();
         setPadding(true);
         setSpacing(false);
@@ -63,7 +90,7 @@ public class AdminView extends VerticalLayout implements HasDynamicTitle {
         content.setSizeFull();
         content.setPadding(false);
 
-        registerTab(new UsersTab(userService, personService, authenticationContext));
+        registerTab(new UsersTab(userService, personService, authenticationContext, houseService, householdService));
         registerTab(new PersonsTab(personService));
         registerTab(new CategoriesTab(categoryService));
         registerTab(new ClassificationRulesTab(classificationRuleService, categoryService, loanContractRepository));

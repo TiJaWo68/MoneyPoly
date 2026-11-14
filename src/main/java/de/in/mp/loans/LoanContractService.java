@@ -4,8 +4,11 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import de.in.mp.finance.HouseholdService;
 
 /**
  * Domain service for private loan contracts: validation, balance and
@@ -18,16 +21,46 @@ public class LoanContractService {
 
     private final LoanContractRepository loanContractRepository;
     private final LoanRepaymentRepository loanRepaymentRepository;
+    private final HouseholdService householdService;
 
     public LoanContractService(LoanContractRepository loanContractRepository,
             LoanRepaymentRepository loanRepaymentRepository) {
+        this(loanContractRepository, loanRepaymentRepository, null);
+    }
+
+    @Autowired
+    public LoanContractService(LoanContractRepository loanContractRepository,
+            LoanRepaymentRepository loanRepaymentRepository,
+            @Autowired(required = false) HouseholdService householdService) {
         this.loanContractRepository = loanContractRepository;
         this.loanRepaymentRepository = loanRepaymentRepository;
+        this.householdService = householdService;
     }
 
     @Transactional(readOnly = true)
     public List<LoanContract> findAll() {
-        return loanContractRepository.findAllByOrderByDesignationAsc();
+        UUID householdId = householdService == null ? null : householdService.resolveEffectiveHouseholdId(null);
+        return householdId == null
+                ? loanContractRepository.findAllByOrderByDesignationAsc()
+                : loanContractRepository.findByHouseholdIdOrderByDesignationAsc(householdId);
+    }
+
+    @Transactional(readOnly = true)
+    public List<LoanContract> findByHousehold(UUID householdId) {
+        UUID effectiveId = householdService == null
+                ? householdId
+                : householdService.resolveEffectiveHouseholdId(householdId);
+        return effectiveId == null
+                ? loanContractRepository.findAllByOrderByDesignationAsc()
+                : loanContractRepository.findByHouseholdIdOrderByDesignationAsc(effectiveId);
+    }
+
+    @Transactional(readOnly = true)
+    public List<LoanContract> findByBorrower(UUID personId) {
+        if (personId == null) {
+            return List.of();
+        }
+        return loanContractRepository.findByDebtorIdOrderByDesignationAsc(personId);
     }
 
     @Transactional(readOnly = true)
@@ -38,6 +71,9 @@ public class LoanContractService {
 
     @Transactional
     public LoanContract save(LoanContract contract) {
+        if (contract != null && contract.getHouseholdId() == null && householdService != null) {
+            contract.setHouseholdId(householdService.resolveEffectiveHouseholdId(null));
+        }
         validate(contract);
         return loanContractRepository.save(contract);
     }
@@ -68,21 +104,36 @@ public class LoanContractService {
 
     @Transactional(readOnly = true)
     public BigDecimal calculateTotalLentCapital() {
-        return findAll().stream()
+        return calculateTotalLentCapital(findAll());
+    }
+
+    @Transactional(readOnly = true)
+    public BigDecimal calculateTotalLentCapital(List<LoanContract> contracts) {
+        return contracts.stream()
                 .map(LoanContract::getOriginalAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
     @Transactional(readOnly = true)
     public BigDecimal calculateTotalRepaid() {
-        return findAll().stream()
+        return calculateTotalRepaid(findAll());
+    }
+
+    @Transactional(readOnly = true)
+    public BigDecimal calculateTotalRepaid(List<LoanContract> contracts) {
+        return contracts.stream()
                 .map(this::totalRepaid)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
     @Transactional(readOnly = true)
     public BigDecimal calculateTotalOutstanding() {
-        return findAll().stream()
+        return calculateTotalOutstanding(findAll());
+    }
+
+    @Transactional(readOnly = true)
+    public BigDecimal calculateTotalOutstanding(List<LoanContract> contracts) {
+        return contracts.stream()
                 .filter(contract -> !isPaidOff(contract))
                 .map(this::remainingBalance)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
@@ -93,7 +144,17 @@ public class LoanContractService {
      */
     @Transactional(readOnly = true)
     public BigDecimal calculateActiveOutstanding() {
-        return findAll().stream()
+        return calculateActiveOutstanding(findAll());
+    }
+
+    @Transactional(readOnly = true)
+    public BigDecimal calculateActiveOutstanding(UUID householdId) {
+        return calculateActiveOutstanding(findByHousehold(householdId));
+    }
+
+    @Transactional(readOnly = true)
+    public BigDecimal calculateActiveOutstanding(List<LoanContract> contracts) {
+        return contracts.stream()
                 .filter(LoanContract::isActive)
                 .filter(contract -> !isPaidOff(contract))
                 .map(this::remainingBalance)

@@ -28,6 +28,8 @@ import com.vaadin.flow.spring.security.AuthenticationContext;
 
 import de.in.mp.admin.PersonService;
 import de.in.mp.admin.UserService;
+import de.in.mp.energy.EnergyHouseService;
+import de.in.mp.finance.HouseholdService;
 import de.in.mp.finance.Person;
 import de.in.mp.security.AppRole;
 import de.in.mp.security.AppUser;
@@ -42,7 +44,9 @@ public class UsersTab extends VerticalLayout implements AdminTab {
     private final UserService userService;
     private final PersonService personService;
     private final AuthenticationContext authenticationContext;
+    private final HouseholdService householdService;
     private final UserEditorDialog editorDialog;
+    private final HouseholdDialog householdDialog;
 
     private final Grid<AppUser> grid = new Grid<>(AppUser.class, false);
 
@@ -51,10 +55,23 @@ public class UsersTab extends VerticalLayout implements AdminTab {
 
     public UsersTab(UserService userService, PersonService personService,
             AuthenticationContext authenticationContext) {
+        this(userService, personService, authenticationContext, null, null);
+    }
+
+    public UsersTab(UserService userService, PersonService personService,
+            AuthenticationContext authenticationContext, EnergyHouseService houseService) {
+        this(userService, personService, authenticationContext, houseService, null);
+    }
+
+    public UsersTab(UserService userService, PersonService personService,
+            AuthenticationContext authenticationContext, EnergyHouseService houseService,
+            HouseholdService householdService) {
         this.userService = userService;
         this.personService = personService;
         this.authenticationContext = authenticationContext;
-        this.editorDialog = new UserEditorDialog(userService, personService);
+        this.householdService = householdService;
+        this.editorDialog = new UserEditorDialog(userService, personService, houseService, householdService);
+        this.householdDialog = householdService != null ? new HouseholdDialog(householdService) : null;
 
         setSizeFull();
         setPadding(false);
@@ -92,7 +109,18 @@ public class UsersTab extends VerticalLayout implements AdminTab {
         newUserButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
         newUserButton.addClickListener(event -> editorDialog.openForCreate(this::refresh));
 
-        HorizontalLayout header = new HorizontalLayout(title, newUserButton);
+        HorizontalLayout header = new HorizontalLayout(title);
+        if (householdDialog != null) {
+            Button manageHouseholdsButton = new Button(
+                    getTranslation("admin.users.button.manage-households"),
+                    VaadinIcon.HOME_O.create());
+            manageHouseholdsButton.addClickListener(event -> householdDialog.openDialog(() -> {
+                refresh();
+                UI.getCurrent().getPage().reload();
+            }));
+            header.add(manageHouseholdsButton);
+        }
+        header.add(newUserButton);
         header.setWidthFull();
         header.setDefaultVerticalComponentAlignment(Alignment.CENTER);
         header.expand(title);

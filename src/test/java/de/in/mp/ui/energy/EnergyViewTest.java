@@ -162,6 +162,49 @@ class EnergyViewTest {
                 .doesNotContain("end-aligned");
     }
 
+    @Test
+    void showsHouseSelectorForMultipleHousesAndHidesWriteActionsForViewer() {
+        var assetService = org.mockito.Mockito.mock(de.in.mp.energy.EnergyAssetService.class);
+        var meterService = org.mockito.Mockito.mock(de.in.mp.energy.MeterService.class);
+        var readingService = org.mockito.Mockito.mock(de.in.mp.energy.MeterReadingService.class);
+        var tariffService = org.mockito.Mockito.mock(de.in.mp.energy.EnergyTariffService.class);
+        var amortizationService = org.mockito.Mockito.mock(de.in.mp.energy.EnergyAmortizationService.class);
+        var houseService = org.mockito.Mockito.mock(de.in.mp.energy.EnergyHouseService.class);
+
+        var house1 = new de.in.mp.energy.EnergyHouse();
+        house1.setId(java.util.UUID.randomUUID());
+        house1.setName("Haus 1");
+        var house2 = new de.in.mp.energy.EnergyHouse();
+        house2.setId(java.util.UUID.randomUUID());
+        house2.setName("Haus 2");
+
+        org.mockito.Mockito.when(houseService.findAccessibleHousesForCurrentUser())
+                .thenReturn(java.util.List.of(house1, house2));
+        org.mockito.Mockito.when(houseService.canEditHouseForCurrentUser(house1.getId())).thenReturn(false);
+        org.mockito.Mockito.when(assetService.findByHouse(house1.getId())).thenReturn(java.util.List.of());
+        org.mockito.Mockito.when(meterService.findActiveByHouse(house1.getId())).thenReturn(java.util.List.of());
+        org.mockito.Mockito.when(meterService.findByHouse(house1.getId())).thenReturn(java.util.List.of());
+        org.mockito.Mockito.when(tariffService.findByHouse(house1.getId())).thenReturn(java.util.List.of());
+        org.mockito.Mockito.when(amortizationService.buildDateRows(house1.getId())).thenReturn(java.util.List.of());
+        org.mockito.Mockito.when(amortizationService.calculateAssetAmortizations(house1.getId())).thenReturn(java.util.List.of());
+        org.mockito.Mockito.when(amortizationService.calculateTotalInvestmentCost(house1.getId())).thenReturn(BigDecimal.ZERO);
+        org.mockito.Mockito.when(amortizationService.calculateTotalAmortized(house1.getId())).thenReturn(BigDecimal.ZERO);
+        org.mockito.Mockito.when(amortizationService.calculateTotalRemainingCost(house1.getId())).thenReturn(BigDecimal.ZERO);
+
+        EnergyView view = new EnergyView(assetService, meterService, readingService,
+                tariffService, amortizationService, null, null, houseService);
+
+        var header = view.getChildren()
+                .filter(com.vaadin.flow.component.orderedlayout.HorizontalLayout.class::isInstance)
+                .map(com.vaadin.flow.component.orderedlayout.HorizontalLayout.class::cast)
+                .findFirst()
+                .orElseThrow();
+        assertThat(header.getChildren().toList())
+                .noneMatch(com.vaadin.flow.component.combobox.ComboBox.class::isInstance);
+        // Viewer without admin rights only sees the "Show KPIs" toggle
+        assertThat(view.getActionMenuForTest().getSubMenu().getItems()).hasSize(1);
+    }
+
     private static Meter meter(String name, MeterType type) {
         Meter meter = new Meter();
         meter.setName(name);

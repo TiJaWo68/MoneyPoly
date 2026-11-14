@@ -1,27 +1,39 @@
 package de.in.mp.ui;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.User;
+import org.springframework.security.core.userdetails.UserDetails;
 
 import com.vaadin.flow.component.Component;
+import com.vaadin.flow.component.UI;
+import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.html.H1;
 import com.vaadin.flow.component.html.Image;
 import com.vaadin.flow.component.html.Span;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
+import com.vaadin.flow.component.page.Page;
 import com.vaadin.flow.router.BeforeEnterEvent;
 import com.vaadin.flow.router.Location;
 import com.vaadin.flow.router.QueryParameters;
 
+import de.in.mp.admin.DemoSeedService;
+import de.in.mp.security.AppUser;
 import de.in.mp.security.AppUserRepository;
+import de.in.mp.security.UserDetailsServiceImpl;
 import de.in.mp.ui.setup.SetupView;
 
 class LoginViewTest {
@@ -92,5 +104,42 @@ class LoginViewTest {
         assertThat(logo.getSrc()).isEqualTo("/icons/moneypoly-logo.svg");
 
         assertThat(view.createLoginI18n().getForm().getTitle()).isEmpty();
+    }
+
+    @Test
+    void demoLoginAuthenticatesDemoUserAndNavigatesToRoot() {
+        AppUser demoUser = mock(AppUser.class);
+        when(demoUser.isEnabled()).thenReturn(true);
+        when(repository.findByUsername(DemoSeedService.DEMO_USERNAME)).thenReturn(Optional.of(demoUser));
+
+        UserDetailsServiceImpl userDetailsService = mock(UserDetailsServiceImpl.class);
+        UserDetails demoDetails = User.withUsername(DemoSeedService.DEMO_USERNAME)
+                .password("unused")
+                .roles("VIEWER")
+                .build();
+        when(userDetailsService.loadUserByUsername(DemoSeedService.DEMO_USERNAME)).thenReturn(demoDetails);
+
+        UI ui = spy(new UI());
+        Page page = mock(Page.class);
+        doReturn(page).when(ui).getPage();
+        UI.setCurrent(ui);
+        try {
+            LoginView view = new LoginView(repository, userDetailsService, "");
+            Button demoButton = view.getChildren()
+                    .filter(Button.class::isInstance)
+                    .map(Button.class::cast)
+                    .findFirst()
+                    .orElseThrow();
+
+            demoButton.click();
+
+            assertThat(SecurityContextHolder.getContext().getAuthentication()).isNotNull();
+            assertThat(SecurityContextHolder.getContext().getAuthentication().getName())
+                    .isEqualTo(DemoSeedService.DEMO_USERNAME);
+            verify(page).setLocation("/");
+        } finally {
+            UI.setCurrent(null);
+            SecurityContextHolder.clearContext();
+        }
     }
 }

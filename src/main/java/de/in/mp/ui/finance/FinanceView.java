@@ -10,10 +10,13 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import org.springframework.beans.factory.annotation.Autowired;
+
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
+import com.vaadin.flow.component.combobox.ComboBox;
 import com.vaadin.flow.component.dialog.Dialog;
 import com.vaadin.flow.component.grid.ColumnTextAlign;
 import com.vaadin.flow.component.grid.Grid;
@@ -46,6 +49,8 @@ import de.in.mp.finance.AccountSnapshotService;
 import de.in.mp.finance.AccountType;
 import de.in.mp.finance.BalanceDateRow;
 import de.in.mp.finance.BankLookupService;
+import de.in.mp.finance.Household;
+import de.in.mp.finance.HouseholdService;
 import de.in.mp.i18n.DateFormatter;
 import de.in.mp.i18n.MoneyFormatter;
 import de.in.mp.i18n.MoneyPolyI18nProvider;
@@ -76,9 +81,12 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
 
     private final AccountSnapshotService snapshotService;
     private final AppSettingService appSettingService;
+    private final HouseholdService householdService;
     private final AccountEditorDialog editorDialog;
     private final BalanceEntryDialog balanceDialog;
     private final StatementImportDialog statementDialog;
+    private final ComboBox<Household> householdSelector = new ComboBox<>();
+    private UUID selectedHouseholdId;
 
     private final Span netWorthValue = new Span();
     private final Span activeAccountsValue = new Span();
@@ -106,9 +114,18 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
     public FinanceView(AccountService accountService, AccountSnapshotService snapshotService,
             BankLookupService bankLookupService, StatementImportService statementImportService,
             AppSettingService appSettingService) {
+        this(accountService, snapshotService, bankLookupService, statementImportService, appSettingService, null);
+    }
+
+    @Autowired
+    public FinanceView(AccountService accountService, AccountSnapshotService snapshotService,
+            BankLookupService bankLookupService, StatementImportService statementImportService,
+            AppSettingService appSettingService,
+            @Autowired(required = false) HouseholdService householdService) {
         this.accountService = accountService;
         this.snapshotService = snapshotService;
         this.appSettingService = appSettingService;
+        this.householdService = householdService;
         this.editorDialog = new AccountEditorDialog(accountService, bankLookupService);
         this.balanceDialog = new BalanceEntryDialog(accountService, snapshotService);
         this.statementDialog = new StatementImportDialog(statementImportService, accountService);
@@ -128,6 +145,7 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
         accountsTab.setLabel(getTranslation("finance.tab.accounts"));
         tabBar.add(chartTab, balancesTab, accountsTab);
         tabBar.setWidthFull();
+        tabBar.setVisible(false);
         tabBar.addSelectedChangeListener(event -> renderSelectedTab());
 
         tabContent.setSizeFull();
@@ -138,7 +156,9 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
         treeGrid.setSizeFull();
         treeGrid.getStyle().set("min-height", GRID_MIN_HEIGHT);
 
-        add(actionMenu.createTitleHeader(getTranslation("finance.view.title")), kpiRow, tabBar, tabContent);
+        configureHouseholdSelector();
+        HorizontalLayout titleHeader = actionMenu.createTitleHeader(getTranslation("finance.view.title"));
+        add(titleHeader, kpiRow, tabBar, tabContent);
         expand(tabContent);
         refresh();
         renderSelectedTab();
@@ -151,7 +171,34 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
 
     @Override
     public void beforeEnter(BeforeEnterEvent event) {
-        List<String> values = event.getLocation().getQueryParameters().getParameters().get(ACCOUNT_QUERY_PARAM);
+        Map<String, List<String>> params = event.getLocation().getQueryParameters().getParameters();
+        List<String> householdParam = params.get("household");
+        if (householdParam != null && !householdParam.isEmpty() && householdService != null) {
+            try {
+                UUID requestedId = UUID.fromString(householdParam.get(0));
+                boolean allowed = householdService.getAccessibleHouseholdsForCurrentUser().stream()
+                        .anyMatch(h -> h.getId().equals(requestedId));
+                if (allowed && !Objects.equals(selectedHouseholdId, requestedId)) {
+                    selectedHouseholdId = requestedId;
+                    refresh();
+                }
+            } catch (IllegalArgumentException ignored) {
+                // Ignore malformed query parameter.
+            }
+        }
+
+        List<String> tabParam = params.get("tab");
+        if (tabParam != null && !tabParam.isEmpty()) {
+            switch (tabParam.get(0)) {
+                case "chart" -> tabBar.setSelectedTab(chartTab);
+                case "balances" -> tabBar.setSelectedTab(balancesTab);
+                case "accounts" -> tabBar.setSelectedTab(accountsTab);
+                default -> { }
+            }
+            renderSelectedTab();
+        }
+
+        List<String> values = params.get(ACCOUNT_QUERY_PARAM);
         if (values != null && !values.isEmpty()) {
             try {
                 focusAccount(UUID.fromString(values.get(0)));
@@ -213,28 +260,30 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
         actionMenu.clear();
         Tab selected = tabBar.getSelectedTab();
 
-        actionMenu.addAction(
-                getTranslation("finance.view.button.record-balances"),
-                VaadinIcon.PLUS,
-                () -> balanceDialog.openForCreate(this::refresh));
-        actionMenu.addAction(
-                getTranslation("finance.view.button.import-statement"),
-                VaadinIcon.FILE_TEXT_O,
-                () -> statementDialog.openForImport(this::refresh));
+        if (canModify()) {
+            actionMenu.addAction(
+                    getTranslation("finance.view.button.record-balances"),
+                    VaadinIcon.PLUS,
+                    () -> balanceDialog.openForCreate(this::refresh));
+            actionMenu.addAction(
+                    getTranslation("finance.view.button.import-statement"),
+                    VaadinIcon.FILE_TEXT_O,
+                    () -> statementDialog.openForImport(this::refresh));
 
-        if (selected == accountsTab) {
+            if (selected == accountsTab) {
+                actionMenu.addSeparator();
+                actionMenu.addAction(
+                        getTranslation("finance.view.button.new-account"),
+                        VaadinIcon.PLUS_CIRCLE_O,
+                        () -> editorDialog.openForCreate(this::refresh));
+                actionMenu.addAction(
+                        getTranslation("finance.view.button.threshold"),
+                        VaadinIcon.SLIDERS,
+                        this::openThresholdDialog);
+            }
+
             actionMenu.addSeparator();
-            actionMenu.addAction(
-                    getTranslation("finance.view.button.new-account"),
-                    VaadinIcon.PLUS_CIRCLE_O,
-                    () -> editorDialog.openForCreate(this::refresh));
-            actionMenu.addAction(
-                    getTranslation("finance.view.button.threshold"),
-                    VaadinIcon.SLIDERS,
-                    this::openThresholdDialog);
         }
-
-        actionMenu.addSeparator();
         if (selected == balancesTab || selected == accountsTab) {
             actionMenu.addToggle(
                     getTranslation("finance.balance.show-inactive"),
@@ -459,13 +508,16 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
     }
 
     private HorizontalLayout renderRowActions(BalanceDateRow row) {
+        if (!canModify()) {
+            return new HorizontalLayout();
+        }
         Button editButton = GridActionButton.create(VaadinIcon.EDIT,
                 getTranslation("finance.balance.action.edit-row"),
                 event -> balanceDialog.openForEdit(row, this::refresh));
         Button deleteButton = GridActionButton.createDanger(VaadinIcon.TRASH,
                 getTranslation("finance.balance.action.delete-row"),
                 event -> {
-                    snapshotService.deleteSnapshotsForDate(row.date());
+                    snapshotService.deleteSnapshotsForDate(selectedHouseholdId, row.date());
                     Notification.show(getTranslation("finance.balance.notification.deleted"), 3000,
                             Notification.Position.BOTTOM_START);
                     refresh();
@@ -642,6 +694,9 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
     }
 
     private HorizontalLayout renderAccountActions(Account account) {
+        if (!canModify()) {
+            return new HorizontalLayout();
+        }
         Button editButton = GridActionButton.create(
                 VaadinIcon.EDIT,
                 getTranslation("finance.action.edit"),
@@ -734,10 +789,42 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
 
     // ---------------------------------------------------------------- shared
 
+    private void configureHouseholdSelector() {
+        householdSelector.setItemLabelGenerator(Household::getName);
+        householdSelector.setWidth("240px");
+        if (householdService == null) {
+            householdSelector.setVisible(false);
+            return;
+        }
+        List<Household> accessible = householdService.getAccessibleHouseholdsForCurrentUser();
+        householdSelector.setItems(accessible);
+        if (!accessible.isEmpty()) {
+            UUID defaultId = householdService.resolveEffectiveHouseholdId(null);
+            Household initial = accessible.stream()
+                    .filter(h -> h.getId().equals(defaultId))
+                    .findFirst()
+                    .orElse(accessible.get(0));
+            householdSelector.setValue(initial);
+            selectedHouseholdId = initial.getId();
+        }
+        householdSelector.setVisible(accessible.size() > 1);
+        householdSelector.addValueChangeListener(event -> {
+            Household chosen = event.getValue();
+            selectedHouseholdId = chosen != null ? chosen.getId() : null;
+            refresh();
+        });
+    }
+
+    private boolean canModify() {
+        return householdService == null || householdService.canModifyCurrentHousehold();
+    }
+
     private void refresh() {
-        List<Account> accounts = accountService.findAll();
+        List<Account> accounts = selectedHouseholdId == null
+                ? accountService.findAll()
+                : accountService.findAllByHousehold(selectedHouseholdId);
         this.currentAccounts = accounts;
-        List<BalanceDateRow> rows = snapshotService.buildDateRows();
+        List<BalanceDateRow> rows = snapshotService.buildDateRows(selectedHouseholdId);
 
         chartPanel.setData(accounts, rows);
         Map<UUID, Account> byId = AccountLabels.byId(accounts);
@@ -746,8 +833,10 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
         List<String> signature = balanceColumnSignature(columns, byId);
         if (!signature.equals(configuredBalanceSignature)) {
             if (configuredBalanceSignature != null) {
-                // Replace the grid before attaching instead of calling removeAllColumns() + prependHeaderRow()
-                // on an attached Vaadin Grid, which corrupts client-side column ordering on refresh.
+                // Replace the grid before attaching instead of calling removeAllColumns() +
+                // prependHeaderRow()
+                // on an attached Vaadin Grid, which corrupts client-side column ordering on
+                // refresh.
                 balanceGrid = createBalanceGrid();
             }
             rebuildBalanceColumns(columns, byId);

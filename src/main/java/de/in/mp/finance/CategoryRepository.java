@@ -15,7 +15,11 @@ public interface CategoryRepository extends JpaRepository<Category, UUID> {
 
     List<Category> findAllByOrderByNameAsc();
 
+    List<Category> findByHouseholdIdOrderByNameAsc(UUID householdId);
+
     Optional<Category> findByName(String name);
+
+    Optional<Category> findByHouseholdIdAndName(UUID householdId, String name);
 
     /**
      * Counts transaction allocations that reference the given category. The

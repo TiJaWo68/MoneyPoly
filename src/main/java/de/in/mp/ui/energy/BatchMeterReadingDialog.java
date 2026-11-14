@@ -91,32 +91,40 @@ public class BatchMeterReadingDialog extends Dialog {
     }
 
     public void openForCreate(Runnable onSaved) {
+        openForCreate(onSaved, null);
+    }
+
+    public void openForCreate(Runnable onSaved, UUID houseId) {
         this.onSaved = onSaved;
         this.warningAcknowledged = false;
         setHeaderTitle(getTranslation("energy.batch.title.new"));
         readingDate.setValue(LocalDate.now());
         notes.clear();
-        rebuildMeterFields(Map.of());
+        rebuildMeterFields(Map.of(), houseId);
         updatePreviousHints();
         open();
     }
 
     public void openForEdit(EnergyDateRow row, Runnable onSaved) {
+        openForEdit(row, onSaved, null);
+    }
+
+    public void openForEdit(EnergyDateRow row, Runnable onSaved, UUID houseId) {
         this.onSaved = onSaved;
         this.warningAcknowledged = false;
         setHeaderTitle(getTranslation("energy.batch.title.edit"));
         readingDate.setValue(row.readingDate());
         notes.setValue(row.notes() != null ? row.notes() : "");
-        rebuildMeterFields(row.readingsByMeter());
+        rebuildMeterFields(row.readingsByMeter(), houseId);
         updatePreviousHints();
         open();
     }
 
-    private void rebuildMeterFields(Map<UUID, MeterReading> existingByMeter) {
+    private void rebuildMeterFields(Map<UUID, MeterReading> existingByMeter, UUID houseId) {
         meterFieldsLayout.removeAll();
         fieldsByMeterId.clear();
 
-        List<Meter> activeMeters = meterService.findActive();
+        List<Meter> activeMeters = meterService.findActiveByHouse(houseId);
         for (Meter meter : activeMeters) {
             BigDecimalField field = new BigDecimalField(meter.getName() + " (" + meter.getUnit() + ")");
             field.setWidthFull();
