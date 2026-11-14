@@ -177,8 +177,8 @@ class FinanceViewTest {
 
         Account c24 = institution(UUID.randomUUID(), "C24");
         Account giro = childAccount(UUID.randomUUID(), "Girokonto", c24.getId(), 1);
-        giro.setAccountHolder("Till Woitendorf");
-        giro.setAccountNumber("DE61500240245446454801");
+        giro.setAccountHolder("Max Mustermann");
+        giro.setAccountNumber("DE02500240240000000001");
 
         when(accountService.findAll()).thenReturn(List.of(c24, giro));
         when(accountService.calculateInstitutionTotals()).thenReturn(Map.of());
@@ -190,8 +190,8 @@ class FinanceViewTest {
 
         com.vaadin.flow.component.html.Div header = view.createAccountColumnHeader(giro);
         assertThat(header.getChildren().count()).isEqualTo(2);
-        assertThat(header.getElement().getTextRecursively()).contains("Till Woitendorf");
-        assertThat(header.getElement().getAttribute("title")).isEqualTo("DE61500240245446454801");
+        assertThat(header.getElement().getTextRecursively()).contains("Max Mustermann");
+        assertThat(header.getElement().getAttribute("title")).isEqualTo("DE02500240240000000001");
     }
 
     @Test
