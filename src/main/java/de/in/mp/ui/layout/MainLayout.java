@@ -4,6 +4,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.UnaryOperator;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -54,6 +55,7 @@ public class MainLayout extends AppLayout {
     private final AuthenticationContext authenticationContext;
     private final EnergyHouseService energyHouseService;
     private final HouseholdService householdService;
+    private SideNav sideNav;
 
     public MainLayout(AuthenticationContext authenticationContext) {
         this(authenticationContext, null, null);
@@ -110,8 +112,23 @@ public class MainLayout extends AppLayout {
     }
 
     private SideNav createDrawer() {
-        SideNav sideNav = new SideNav(getTranslation("ui.nav.title"));
+        sideNav = new SideNav(getTranslation("ui.nav.title"));
+        populateDrawer(sideNav);
+        return sideNav;
+    }
 
+    /**
+     * Rebuilds the navigation drawer items, e.g. after toggling per-household
+     * opt-in features such as the exit plan tab.
+     */
+    public void refreshNavigation() {
+        if (sideNav != null) {
+            sideNav.removeAll();
+            populateDrawer(sideNav);
+        }
+    }
+
+    private void populateDrawer(SideNav targetNav) {
         Set<String> grantedAuthorities = authenticationContext.getGrantedAuthorities().stream()
                 .map(GrantedAuthority::getAuthority)
                 .collect(Collectors.toSet());
@@ -121,14 +138,12 @@ public class MainLayout extends AppLayout {
         boolean hasEnergyAccess = energyHouseService == null || energyHouseService.hasAccessibleHouseForCurrentUser();
         navigationItems().stream()
                 .filter(item -> isItemVisible(item, grantedAuthorities, hasFinanceAccess, hasLoansAccess, hasEnergyAccess))
-                .forEach(item -> sideNav.addItem(toSideNavItem(item)));
-
-        return sideNav;
+                .forEach(item -> targetNav.addItem(toSideNavItem(item)));
     }
 
     private SideNavItem toSideNavItem(NavigationItem item) {
         if (FINANCE_PATH.equals(item.path())) {
-            return buildFinanceTreeItem(item);
+            return buildFinanceTreeItem(item, householdService, this::getTranslation);
         }
         if (ENERGY_PATH.equals(item.path())) {
             return buildEnergyTreeItem(item);
@@ -139,34 +154,46 @@ public class MainLayout extends AppLayout {
         return navItem;
     }
 
-    private SideNavItem buildFinanceTreeItem(NavigationItem item) {
+    static SideNavItem buildFinanceTreeItem(
+            NavigationItem item,
+            HouseholdService householdService,
+            UnaryOperator<String> translator) {
         List<Household> households = householdService != null
                 ? householdService.getAccessibleHouseholdsForCurrentUser()
                 : List.of();
         if (households.size() > 1) {
-            SideNavItem root = new SideNavItem(getTranslation(item.labelKey()));
+            SideNavItem root = new SideNavItem(translator.apply(item.labelKey()));
             root.setPrefixComponent(new Icon(item.icon()));
-            root.setTooltipText(getTranslation(item.labelKey()));
+            root.setTooltipText(translator.apply(item.labelKey()));
             for (Household household : households) {
                 SideNavItem hNode = new SideNavItem(household.getName());
                 hNode.setTooltipText(household.getName());
                 String hId = household.getId().toString();
-                hNode.addItem(createQueryNavItem("finance.tab.chart", FINANCE_PATH,
+                hNode.addItem(createQueryNavItem(translator, "finance.tab.chart", FINANCE_PATH,
                         Map.of("household", hId, "tab", "chart")));
-                hNode.addItem(createQueryNavItem("finance.tab.balances", FINANCE_PATH,
+                hNode.addItem(createQueryNavItem(translator, "finance.tab.balances", FINANCE_PATH,
                         Map.of("household", hId, "tab", "balances")));
-                hNode.addItem(createQueryNavItem("finance.tab.accounts", FINANCE_PATH,
+                hNode.addItem(createQueryNavItem(translator, "finance.tab.accounts", FINANCE_PATH,
                         Map.of("household", hId, "tab", "accounts")));
+                if (household.isExitPlanEnabled()) {
+                    hNode.addItem(createQueryNavItem(translator, "finance.tab.exit-plan", FINANCE_PATH,
+                            Map.of("household", hId, "tab", "exit-plan")));
+                }
                 root.addItem(hNode);
             }
             return root;
         }
-        SideNavItem root = new SideNavItem(getTranslation(item.labelKey()), item.path());
+        SideNavItem root = new SideNavItem(translator.apply(item.labelKey()), item.path());
         root.setPrefixComponent(new Icon(item.icon()));
-        root.setTooltipText(getTranslation(item.labelKey()));
-        root.addItem(createQueryNavItem("finance.tab.chart", FINANCE_PATH, Map.of("tab", "chart")));
-        root.addItem(createQueryNavItem("finance.tab.balances", FINANCE_PATH, Map.of("tab", "balances")));
-        root.addItem(createQueryNavItem("finance.tab.accounts", FINANCE_PATH, Map.of("tab", "accounts")));
+        root.setTooltipText(translator.apply(item.labelKey()));
+        root.addItem(createQueryNavItem(translator, "finance.tab.chart", FINANCE_PATH, Map.of("tab", "chart")));
+        root.addItem(createQueryNavItem(translator, "finance.tab.balances", FINANCE_PATH, Map.of("tab", "balances")));
+        root.addItem(createQueryNavItem(translator, "finance.tab.accounts", FINANCE_PATH, Map.of("tab", "accounts")));
+        boolean exitPlanEnabled = households.stream().anyMatch(Household::isExitPlanEnabled);
+        if (exitPlanEnabled) {
+            root.addItem(createQueryNavItem(translator, "finance.tab.exit-plan", FINANCE_PATH,
+                    Map.of("tab", "exit-plan")));
+        }
         return root;
     }
 
@@ -202,7 +229,15 @@ public class MainLayout extends AppLayout {
     }
 
     private SideNavItem createQueryNavItem(String labelKey, String path, Map<String, String> params) {
-        String label = getTranslation(labelKey);
+        return createQueryNavItem(this::getTranslation, labelKey, path, params);
+    }
+
+    private static SideNavItem createQueryNavItem(
+            UnaryOperator<String> translator,
+            String labelKey,
+            String path,
+            Map<String, String> params) {
+        String label = translator.apply(labelKey);
         SideNavItem child = new SideNavItem(label, path);
         child.setTooltipText(label);
         child.setQueryParameters(QueryParameters.simple(params));

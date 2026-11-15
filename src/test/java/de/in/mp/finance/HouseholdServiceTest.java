@@ -154,4 +154,58 @@ class HouseholdServiceTest {
         assertThat(service.canModifyCurrentHousehold()).isTrue();
         assertThat(service.getAccessibleHouseholdsForCurrentUser()).containsExactly(h1, hDemo);
     }
+
+    @Test
+    void togglesExitPlanOptInForModifiableHousehold() {
+        HouseholdRepository householdRepo = mock(HouseholdRepository.class);
+        AppUserRepository userRepo = mock(AppUserRepository.class);
+        AccountRepository accountRepo = mock(AccountRepository.class);
+        LoanContractRepository loanRepo = mock(LoanContractRepository.class);
+
+        UUID householdId = UUID.randomUUID();
+        Household household = new Household();
+        household.setId(householdId);
+        household.setName("Familie");
+        household.setExitPlanEnabled(false);
+
+        when(householdRepo.findById(householdId)).thenReturn(Optional.of(household));
+        when(householdRepo.save(org.mockito.ArgumentMatchers.any(Household.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(
+                        "admin", null, List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))));
+
+        HouseholdService service = new HouseholdService(householdRepo, userRepo, accountRepo, loanRepo);
+
+        assertThat(service.isExitPlanEnabled(householdId)).isFalse();
+
+        Household updated = service.setExitPlanEnabled(householdId, true);
+        assertThat(updated.isExitPlanEnabled()).isTrue();
+        assertThat(service.isExitPlanEnabled(householdId)).isTrue();
+    }
+
+    @Test
+    void rejectsExitPlanToggleForReadOnlyDemoUser() {
+        HouseholdRepository householdRepo = mock(HouseholdRepository.class);
+        AppUserRepository userRepo = mock(AppUserRepository.class);
+        AccountRepository accountRepo = mock(AccountRepository.class);
+        LoanContractRepository loanRepo = mock(LoanContractRepository.class);
+
+        UUID demoId = UUID.randomUUID();
+        AppUser demo = new AppUser();
+        demo.setUsername("demo");
+        demo.setHouseholdId(demoId);
+        demo.setRoles(Set.of(AppRole.ROLE_DEMO));
+        when(userRepo.findByUsername("demo")).thenReturn(Optional.of(demo));
+
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(
+                        "demo", null, List.of(new SimpleGrantedAuthority("ROLE_DEMO"))));
+
+        HouseholdService service = new HouseholdService(householdRepo, userRepo, accountRepo, loanRepo);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.setExitPlanEnabled(demoId, true))
+                .isInstanceOf(IllegalStateException.class);
+    }
 }

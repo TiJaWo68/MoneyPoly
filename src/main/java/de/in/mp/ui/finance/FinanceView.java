@@ -54,6 +54,7 @@ import de.in.mp.finance.Household;
 import de.in.mp.finance.HouseholdService;
 import de.in.mp.finance.PortfolioPositionImportService;
 import de.in.mp.finance.PortfolioPositionService;
+import de.in.mp.finance.exitplan.ExitPlanCalculator;
 import de.in.mp.i18n.DateFormatter;
 import de.in.mp.i18n.MoneyFormatter;
 import de.in.mp.i18n.MoneyPolyI18nProvider;
@@ -101,9 +102,11 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
     private final Tab chartTab = new Tab();
     private final Tab balancesTab = new Tab();
     private final Tab accountsTab = new Tab();
+    private final Tab exitPlanTab = new Tab();
     private final VerticalLayout tabContent = new VerticalLayout();
 
     private final BalanceChartPanel chartPanel = new BalanceChartPanel();
+    private final ExitPlanPanel exitPlanPanel = new ExitPlanPanel(new ExitPlanCalculator());
     private Grid<BalanceDateRow> balanceGrid = createBalanceGrid();
     private final TreeGrid<Account> treeGrid = new TreeGrid<>();
     private final ActionMenu actionMenu;
@@ -173,7 +176,9 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
         chartTab.setLabel(getTranslation("finance.tab.chart"));
         balancesTab.setLabel(getTranslation("finance.tab.balances"));
         accountsTab.setLabel(getTranslation("finance.tab.accounts"));
-        tabBar.add(chartTab, balancesTab, accountsTab);
+        exitPlanTab.setLabel(getTranslation("finance.tab.exit-plan"));
+        exitPlanTab.setVisible(isExitPlanEnabledForSelectedHousehold());
+        tabBar.add(chartTab, balancesTab, accountsTab, exitPlanTab);
         tabBar.setWidthFull();
         tabBar.setVisible(false);
         tabBar.addSelectedChangeListener(event -> renderSelectedTab());
@@ -217,12 +222,18 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
             }
         }
 
+        updateExitPlanTabVisibility();
         List<String> tabParam = params.get("tab");
         if (tabParam != null && !tabParam.isEmpty()) {
             switch (tabParam.get(0)) {
                 case "chart" -> tabBar.setSelectedTab(chartTab);
                 case "balances" -> tabBar.setSelectedTab(balancesTab);
                 case "accounts" -> tabBar.setSelectedTab(accountsTab);
+                case "exit-plan" -> {
+                    if (exitPlanTab.isVisible()) {
+                        tabBar.setSelectedTab(exitPlanTab);
+                    }
+                }
                 default -> { }
             }
             renderSelectedTab();
@@ -312,6 +323,14 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
                         this::openThresholdDialog);
             }
 
+            if (householdService != null && resolveActiveHouseholdId() != null) {
+                actionMenu.addSeparator();
+                actionMenu.addToggle(
+                        getTranslation("finance.action.toggle-exit-plan"),
+                        isExitPlanEnabledForSelectedHousehold(),
+                        this::setExitPlanEnabled);
+            }
+
             actionMenu.addSeparator();
         }
         if (selected == balancesTab || selected == accountsTab) {
@@ -320,10 +339,12 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
                     showInactiveAccounts,
                     this::setShowInactiveAccounts);
         }
-        actionMenu.addToggle(
-                getTranslation("ui.action-menu.show-kpis"),
-                kpisVisible,
-                this::setKpisVisible);
+        if (selected != exitPlanTab) {
+            actionMenu.addToggle(
+                    getTranslation("ui.action-menu.show-kpis"),
+                    kpisVisible,
+                    this::setKpisVisible);
+        }
     }
 
     private void setShowInactiveAccounts(boolean value) {
@@ -336,7 +357,11 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
 
     private void setKpisVisible(boolean visible) {
         this.kpisVisible = visible;
-        kpiRow.setVisible(visible);
+        updateKpiRowVisibility();
+    }
+
+    private void updateKpiRowVisibility() {
+        kpiRow.setVisible(kpisVisible && tabBar.getSelectedTab() != exitPlanTab);
     }
 
     private HorizontalLayout createKpiRow() {
@@ -378,10 +403,14 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
         } else if (tabBar.getSelectedTab() == accountsTab) {
             tabContent.add(treeGrid);
             tabContent.expand(treeGrid);
+        } else if (tabBar.getSelectedTab() == exitPlanTab && exitPlanTab.isVisible()) {
+            tabContent.add(exitPlanPanel);
+            tabContent.expand(exitPlanPanel);
         } else {
             tabContent.add(balanceGrid);
             tabContent.expand(balanceGrid);
         }
+        updateKpiRowVisibility();
         rebuildActionMenu();
     }
 
@@ -867,6 +896,8 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
         List<BalanceDateRow> rows = snapshotService.buildDateRows(selectedHouseholdId);
 
         chartPanel.setData(accounts, rows, resolveLiveDepotValuations(accounts));
+        exitPlanPanel.setHouseholdAccounts(accounts, balancesByAccount);
+        updateExitPlanTabVisibility();
         Map<UUID, Account> byId = AccountLabels.byId(accounts);
         List<Account> columns = visibleBalanceAccounts(accounts, rows);
         this.displayedBalanceColumns = columns;
@@ -946,6 +977,68 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
 
     boolean isAccountsTabSelected() {
         return tabBar.getSelectedTab() == accountsTab;
+    }
+
+    boolean isExitPlanTabVisibleForTest() {
+        return exitPlanTab.isVisible();
+    }
+
+    boolean isExitPlanTabSelected() {
+        return tabBar.getSelectedTab() == exitPlanTab;
+    }
+
+    void toggleExitPlanForTest(boolean enabled) {
+        setExitPlanEnabled(enabled);
+    }
+
+    private UUID resolveActiveHouseholdId() {
+        if (selectedHouseholdId != null) {
+            return selectedHouseholdId;
+        }
+        return householdService != null ? householdService.resolveEffectiveHouseholdId(null) : null;
+    }
+
+    private boolean isExitPlanEnabledForSelectedHousehold() {
+        if (householdService == null) {
+            return false;
+        }
+        UUID householdId = resolveActiveHouseholdId();
+        return householdId != null && householdService.isExitPlanEnabled(householdId);
+    }
+
+    private void updateExitPlanTabVisibility() {
+        boolean enabled = isExitPlanEnabledForSelectedHousehold();
+        exitPlanTab.setVisible(enabled);
+        if (!enabled && tabBar.getSelectedTab() == exitPlanTab) {
+            tabBar.setSelectedTab(chartTab);
+        }
+    }
+
+    private void setExitPlanEnabled(boolean enabled) {
+        UUID householdId = resolveActiveHouseholdId();
+        if (householdService == null || householdId == null) {
+            return;
+        }
+        householdService.setExitPlanEnabled(householdId, enabled);
+        exitPlanTab.setVisible(enabled);
+        if (enabled) {
+            tabBar.setSelectedTab(exitPlanTab);
+        } else if (tabBar.getSelectedTab() == exitPlanTab) {
+            tabBar.setSelectedTab(chartTab);
+        }
+        renderSelectedTab();
+        refreshMainLayoutNavigation();
+    }
+
+    private void refreshMainLayoutNavigation() {
+        Component current = getParent().orElse(null);
+        while (current != null) {
+            if (current instanceof MainLayout mainLayout) {
+                mainLayout.refreshNavigation();
+                return;
+            }
+            current = current.getParent().orElse(null);
+        }
     }
 
     Account selectedTreeAccount() {

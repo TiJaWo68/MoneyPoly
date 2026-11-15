@@ -25,6 +25,8 @@ import de.in.mp.finance.AccountSnapshotService;
 import de.in.mp.finance.AccountType;
 import de.in.mp.finance.BalanceDateRow;
 import de.in.mp.finance.BankLookupService;
+import de.in.mp.finance.Household;
+import de.in.mp.finance.HouseholdService;
 import de.in.mp.importer.StatementImportService;
 
 class FinanceViewTest {
@@ -428,6 +430,52 @@ class FinanceViewTest {
         assertThat(header.getFlexGrow(headerChildren.get(0))).isZero();
         assertThat(view.getActionMenuForTest().getMenuBar().getThemeNames())
                 .doesNotContain("end-aligned");
+    }
+
+    @Test
+    void exitPlanTabIsHiddenByDefaultAndCanBeToggledPerHouseholdViaActionMenu() {
+        AccountService accountService = mock(AccountService.class);
+        AccountSnapshotService snapshotService = mock(AccountSnapshotService.class);
+        BankLookupService bankLookupService = mock(BankLookupService.class);
+        StatementImportService statementImportService = mock(StatementImportService.class);
+        HouseholdService householdService = mock(HouseholdService.class);
+
+        UUID householdId = UUID.randomUUID();
+        Household household = new Household();
+        household.setId(householdId);
+        household.setName("Familie");
+        household.setExitPlanEnabled(false);
+
+        when(householdService.getAccessibleHouseholdsForCurrentUser()).thenReturn(List.of(household));
+        when(householdService.resolveEffectiveHouseholdId(null)).thenReturn(householdId);
+        when(householdService.canModifyCurrentHousehold()).thenReturn(true);
+        when(householdService.isExitPlanEnabled(householdId)).thenAnswer(inv -> household.isExitPlanEnabled());
+        when(householdService.setExitPlanEnabled(org.mockito.ArgumentMatchers.eq(householdId),
+                org.mockito.ArgumentMatchers.anyBoolean())).thenAnswer(inv -> {
+            household.setExitPlanEnabled(inv.getArgument(1));
+            return household;
+        });
+        when(accountService.findAllByHousehold(householdId)).thenReturn(List.of());
+        when(accountService.calculateInstitutionTotals()).thenReturn(Map.of());
+        when(accountService.calculateNetWorth()).thenReturn(BigDecimal.ZERO);
+        when(accountService.countActiveAccounts()).thenReturn(0L);
+        when(snapshotService.buildDateRows(householdId)).thenReturn(List.of());
+
+        FinanceView view = new FinanceView(accountService, snapshotService, bankLookupService,
+                statementImportService, mockAppSettingService(), householdService);
+
+        assertThat(view.isExitPlanTabVisibleForTest()).isFalse();
+        assertThat(view.getKpiRowForTest().isVisible()).isTrue();
+
+        view.toggleExitPlanForTest(true);
+        assertThat(view.isExitPlanTabVisibleForTest()).isTrue();
+        assertThat(view.isExitPlanTabSelected()).isTrue();
+        assertThat(view.getKpiRowForTest().isVisible()).isFalse();
+
+        view.toggleExitPlanForTest(false);
+        assertThat(view.isExitPlanTabVisibleForTest()).isFalse();
+        assertThat(view.isChartTabSelected()).isTrue();
+        assertThat(view.getKpiRowForTest().isVisible()).isTrue();
     }
 
     private static AppSettingService mockAppSettingService() {

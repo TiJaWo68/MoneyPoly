@@ -37,6 +37,9 @@ public class Household {
     @Column(name = "dashboard_warning_threshold", nullable = false, precision = 5, scale = 2)
     private BigDecimal dashboardWarningThreshold = DEFAULT_WARNING_THRESHOLD;
 
+    @Column(name = "exit_plan_enabled", nullable = false)
+    private boolean exitPlanEnabled = false;
+
     @Column(name = "created_at", nullable = false, insertable = false, updatable = false)
     private OffsetDateTime createdAt;
 
@@ -78,6 +81,14 @@ public class Household {
 
     public void setDashboardWarningThreshold(BigDecimal dashboardWarningThreshold) {
         this.dashboardWarningThreshold = dashboardWarningThreshold;
+    }
+
+    public boolean isExitPlanEnabled() {
+        return exitPlanEnabled;
+    }
+
+    public void setExitPlanEnabled(boolean exitPlanEnabled) {
+        this.exitPlanEnabled = exitPlanEnabled;
     }
 
     public OffsetDateTime getCreatedAt() {

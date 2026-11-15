@@ -15,6 +15,10 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.oauth2.core.user.DefaultOAuth2User;
 import org.springframework.security.oauth2.core.user.OAuth2User;
 
+import com.vaadin.flow.component.sidenav.SideNavItem;
+
+import de.in.mp.finance.Household;
+import de.in.mp.finance.HouseholdService;
 import jakarta.annotation.security.PermitAll;
 
 class MainLayoutTest {
@@ -103,6 +107,42 @@ class MainLayoutTest {
 
         assertThat(MainLayout.isItemVisible(finance, Set.of("ROLE_BORROWER"), false, true, false)).isFalse();
         assertThat(MainLayout.isItemVisible(loans, Set.of("ROLE_BORROWER"), false, true, false)).isTrue();
+    }
+
+    @Test
+    void financeTreeIncludesExitPlanOnlyWhenHouseholdEnabledIt() {
+        HouseholdService householdService = org.mockito.Mockito.mock(HouseholdService.class);
+        Household disabled = new Household();
+        disabled.setId(java.util.UUID.randomUUID());
+        disabled.setName("Jung");
+        disabled.setExitPlanEnabled(false);
+
+        Household enabled = new Household();
+        enabled.setId(java.util.UUID.randomUUID());
+        enabled.setName("Reif");
+        enabled.setExitPlanEnabled(true);
+
+        org.mockito.Mockito.when(householdService.getAccessibleHouseholdsForCurrentUser())
+                .thenReturn(List.of(disabled, enabled));
+
+        org.springframework.security.core.Authentication auth = new UsernamePasswordAuthenticationToken(
+                "user", null, List.of(new SimpleGrantedAuthority("ROLE_USER")));
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(auth);
+        try {
+            SideNavItem financeTree = MainLayout.buildFinanceTreeItem(
+                    new MainLayout.NavigationItem("ui.nav.finance", "finance",
+                            com.vaadin.flow.component.icon.VaadinIcon.WALLET, Set.of()),
+                    householdService,
+                    key -> key);
+
+            List<SideNavItem> householdNodes = financeTree.getItems();
+            assertThat(householdNodes).hasSize(2);
+            assertThat(householdNodes.get(0).getItems()).hasSize(3);
+            assertThat(householdNodes.get(1).getItems()).hasSize(4);
+            assertThat(householdNodes.get(1).getItems().get(3).getLabel()).isEqualTo("finance.tab.exit-plan");
+        } finally {
+            org.springframework.security.core.context.SecurityContextHolder.clearContext();
+        }
     }
 
     private MainLayout.NavigationItem adminItem() {

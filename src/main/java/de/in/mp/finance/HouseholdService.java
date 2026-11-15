@@ -209,6 +209,31 @@ public class HouseholdService {
                 .orElse(Household.DEFAULT_WARNING_THRESHOLD);
     }
 
+    @Transactional(readOnly = true)
+    public boolean isExitPlanEnabled(UUID householdId) {
+        UUID effectiveId = resolveEffectiveHouseholdId(householdId);
+        if (effectiveId == null) {
+            return false;
+        }
+        return householdRepository.findById(effectiveId)
+                .map(Household::isExitPlanEnabled)
+                .orElse(false);
+    }
+
+    @Transactional
+    public Household setExitPlanEnabled(UUID householdId, boolean enabled) {
+        if (!canModifyCurrentHousehold()) {
+            throw new IllegalStateException("Read-only demo user cannot modify household settings");
+        }
+        UUID effectiveId = resolveEffectiveHouseholdId(householdId);
+        if (effectiveId == null) {
+            throw new IllegalArgumentException("No active household available");
+        }
+        Household household = requireHousehold(effectiveId);
+        household.setExitPlanEnabled(enabled);
+        return householdRepository.save(household);
+    }
+
     private boolean hasAuthority(String roleName) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null || !authentication.isAuthenticated()) {

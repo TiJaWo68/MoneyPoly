@@ -1,0 +1,2 @@
+ALTER TABLE household
+    ADD COLUMN exit_plan_enabled BOOLEAN NOT NULL DEFAULT FALSE;
