@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
@@ -54,11 +55,19 @@ class AccountRepositoryIntegrationTest {
     private AppSettingRepository appSettingRepository;
 
     @Autowired
+    private HouseholdRepository householdRepository;
+
+    @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    private UUID defaultHouseholdId;
 
     @BeforeEach
     void setUp() {
         accountRepository.deleteAll();
+        defaultHouseholdId = householdRepository.findFirstByDemoFalseOrderByCreatedAtAsc()
+                .orElseThrow()
+                .getId();
     }
 
     @Test
@@ -74,7 +83,8 @@ class AccountRepositoryIntegrationTest {
     @Test
     void checkConstraintRejectsInvalidAccountType() {
         assertThatThrownBy(() -> jdbcTemplate.update(
-                "INSERT INTO finance_account (name, account_type) VALUES (?, ?)", "Invalid", "CASH"))
+                "INSERT INTO finance_account (name, account_type, household_id) VALUES (?, ?, ?)",
+                "Invalid", "CASH", defaultHouseholdId))
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
 
@@ -149,6 +159,7 @@ class AccountRepositoryIntegrationTest {
 
     private Account account(String name, AccountType type, BigDecimal balance) {
         Account account = new Account();
+        account.setHouseholdId(defaultHouseholdId);
         account.setName(name);
         account.setAccountType(type);
         account.setCurrency("EUR");

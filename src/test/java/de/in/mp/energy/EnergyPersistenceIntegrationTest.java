@@ -6,6 +6,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -56,9 +57,18 @@ class EnergyPersistenceIntegrationTest {
     @Autowired
     private EnergyAmortizationService amortizationService;
 
+    @Autowired
+    private EnergyHouseRepository houseRepository;
+
     @Test
     void persistsAssetsMetersTariffsBatchReadingsAndRecalculatesAmortization() {
+        UUID houseId = houseRepository.findAllByOrderByDisplayOrderAscNameAsc().stream()
+                .findFirst()
+                .orElseThrow()
+                .getId();
+
         EnergyAsset pvAsset = new EnergyAsset();
+        pvAsset.setHouseId(houseId);
         pvAsset.setName("PV Dach IT");
         pvAsset.setInstallationDate(LocalDate.of(2024, 7, 1));
         pvAsset.setInvestmentCost(new BigDecimal("10000.00"));
@@ -66,6 +76,7 @@ class EnergyPersistenceIntegrationTest {
         EnergyAsset savedAsset = assetService.save(pvAsset);
 
         Meter pvMeter = new Meter();
+        pvMeter.setHouseId(houseId);
         pvMeter.setName("PV Erzeugung IT");
         pvMeter.setType(MeterType.PV_GENERATION);
         pvMeter.setAssetId(savedAsset.getId());
@@ -73,6 +84,7 @@ class EnergyPersistenceIntegrationTest {
         Meter savedPvMeter = meterService.save(pvMeter);
 
         Meter exportMeter = new Meter();
+        exportMeter.setHouseId(houseId);
         exportMeter.setName("Einspeisung IT");
         exportMeter.setType(MeterType.GRID_EXPORT);
         exportMeter.setAssetId(savedAsset.getId());
@@ -80,6 +92,7 @@ class EnergyPersistenceIntegrationTest {
         Meter savedExportMeter = meterService.save(exportMeter);
 
         EnergyTariff importTariff = new EnergyTariff();
+        importTariff.setHouseId(houseId);
         importTariff.setName("Strombezug IT");
         importTariff.setForMeterType(MeterType.GRID_IMPORT);
         importTariff.setValidFrom(LocalDate.of(2024, 1, 1));
@@ -87,6 +100,7 @@ class EnergyPersistenceIntegrationTest {
         tariffService.save(importTariff);
 
         EnergyTariff exportTariff = new EnergyTariff();
+        exportTariff.setHouseId(houseId);
         exportTariff.setName("EEG IT");
         exportTariff.setForMeterType(MeterType.GRID_EXPORT);
         exportTariff.setValidFrom(LocalDate.of(2024, 1, 1));
