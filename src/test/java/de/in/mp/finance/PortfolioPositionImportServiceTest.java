@@ -117,8 +117,6 @@ class PortfolioPositionImportServiceTest {
         List<PortfolioPosition> deletedList = new ArrayList<>();
         deletedCaptor.getValue().forEach(deletedList::add);
         assertThat(deletedList).containsExactlyInAnyOrder(etfTranche2, etfTranche3, soldPosition);
-
-        verify(positionService).synchronizeDepot(depotId);
     }
 
     @Test
@@ -138,7 +136,6 @@ class PortfolioPositionImportServiceTest {
         a.setId(id);
         a.setName("Brokerage");
         a.setAccountType(AccountType.INVESTMENT);
-        a.setCurrentBalance(BigDecimal.ZERO);
         return a;
     }
 

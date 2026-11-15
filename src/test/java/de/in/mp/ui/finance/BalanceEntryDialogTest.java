@@ -99,10 +99,11 @@ class BalanceEntryDialogTest {
         modeADepot.setId(UUID.randomUUID());
         modeADepot.setName("Depot A");
         modeADepot.setAccountType(AccountType.INVESTMENT);
-        modeADepot.setCurrentBalance(new BigDecimal("14500.00"));
         modeADepot.setActive(true);
 
         when(accountService.findAll()).thenReturn(List.of(checking, modeADepot));
+        when(accountService.resolveCurrentBalances(org.mockito.ArgumentMatchers.anyCollection()))
+                .thenReturn(Map.of(modeADepot.getId(), new BigDecimal("14500.00")));
         when(snapshotService.buildDateRows()).thenReturn(List.of());
         when(positionService.hasPositions(modeADepot.getId())).thenReturn(true);
 

@@ -10,7 +10,6 @@ import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
 import java.time.Instant;
-import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -18,13 +17,11 @@ import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 
 class PortfolioPositionServiceTest {
 
     private PortfolioPositionRepository positionRepository;
     private AccountRepository accountRepository;
-    private AccountSnapshotRepository snapshotRepository;
     private MarketPriceProvider marketPriceProvider;
     private EcbExchangeRateService exchangeRateService;
     private HouseholdService householdService;
@@ -34,7 +31,6 @@ class PortfolioPositionServiceTest {
     void setUp() {
         positionRepository = mock(PortfolioPositionRepository.class);
         accountRepository = mock(AccountRepository.class);
-        snapshotRepository = mock(AccountSnapshotRepository.class);
         marketPriceProvider = mock(MarketPriceProvider.class);
         exchangeRateService = mock(EcbExchangeRateService.class);
         householdService = mock(HouseholdService.class);
@@ -52,7 +48,6 @@ class PortfolioPositionServiceTest {
         service = new PortfolioPositionService(
                 positionRepository,
                 accountRepository,
-                snapshotRepository,
                 marketPriceProvider,
                 exchangeRateService,
                 householdService);
@@ -115,7 +110,22 @@ class PortfolioPositionServiceTest {
     }
 
     @Test
-    void refreshesUsdQuoteConvertsViaEcbAndUpdatesMonthlySnapshotInPlace() {
+    void modeBFallsBackToInitialBalanceWhenNoSnapshotExists() {
+        UUID depotId = UUID.randomUUID();
+        Account depot = investmentAccount(depotId, new BigDecimal("7500.00"));
+
+        when(positionRepository.findByAccountIdIn(List.of(depotId))).thenReturn(List.of());
+
+        Map<UUID, DepotValuation> valuations = service.resolveValuations(List.of(depot), Map.of());
+        DepotValuation val = valuations.get(depotId);
+
+        assertThat(val.positionBased()).isFalse();
+        assertThat(val.currentValue()).isEqualByComparingTo("7500.00");
+        assertThat(val.investedCapital()).isNull();
+    }
+
+    @Test
+    void refreshesUsdQuoteAndConvertsViaEcbWithoutWritingRedundantSnapshotsOrAccountBalance() {
         UUID depotId = UUID.randomUUID();
         Account depot = investmentAccount(depotId, BigDecimal.ZERO);
 
@@ -123,33 +133,18 @@ class PortfolioPositionServiceTest {
                 new BigDecimal("10"), new BigDecimal("150.00"), new BigDecimal("180.00"));
         apple.setLastPriceEur(new BigDecimal("162.00"));
 
-        AccountSnapshot currentMonthSnap = new AccountSnapshot();
-        currentMonthSnap.setId(UUID.randomUUID());
-        currentMonthSnap.setAccountId(depotId);
-        currentMonthSnap.setSnapshotDate(LocalDate.now().withDayOfMonth(1));
-        currentMonthSnap.setBalance(new BigDecimal("1620.00"));
-
         when(accountRepository.findById(depotId)).thenReturn(Optional.of(depot));
         when(positionRepository.findByAccountIdOrderByNameAsc(depotId)).thenReturn(List.of(apple));
         when(marketPriceProvider.fetchQuote("AAPL"))
                 .thenReturn(Optional.of(new MarketQuote("AAPL", new BigDecimal("200.00"), "USD", Instant.now())));
         when(exchangeRateService.getRateToEur("USD")).thenReturn(Optional.of(new BigDecimal("0.900000")));
-        when(snapshotRepository.findFirstByAccountIdOrderBySnapshotDateDesc(depotId))
-                .thenReturn(Optional.of(currentMonthSnap));
 
         int updated = service.refreshAccountPrices(depotId);
 
         assertThat(updated).isEqualTo(1);
         assertThat(apple.getLastPrice()).isEqualByComparingTo("200.00");
         assertThat(apple.getLastPriceEur()).isEqualByComparingTo("180.0000");
-        // Depot balance synced to 10 * 180 = 1800.00
-        assertThat(depot.getCurrentBalance()).isEqualByComparingTo("1800.00");
-
-        ArgumentCaptor<AccountSnapshot> snapCaptor = ArgumentCaptor.forClass(AccountSnapshot.class);
-        verify(snapshotRepository).save(snapCaptor.capture());
-        assertThat(snapCaptor.getValue().getId()).isEqualTo(currentMonthSnap.getId());
-        assertThat(snapCaptor.getValue().getBalance()).isEqualByComparingTo("1800.00");
-        assertThat(snapCaptor.getValue().getInvestedCapital()).isEqualByComparingTo("1500.00");
+        verify(accountRepository, never()).save(any());
     }
 
     @Test
@@ -169,7 +164,6 @@ class PortfolioPositionServiceTest {
         when(accountRepository.findById(depotId)).thenReturn(Optional.of(depot));
         when(positionRepository.findByAccountIdOrderByNameAsc(depotId)).thenReturn(List.of(manual, failing));
         when(marketPriceProvider.fetchQuote("XXXX.DE")).thenReturn(Optional.empty());
-        when(snapshotRepository.findFirstByAccountIdOrderBySnapshotDateDesc(depotId)).thenReturn(Optional.empty());
 
         int updated = service.refreshAccountPrices(depotId);
 
@@ -198,7 +192,7 @@ class PortfolioPositionServiceTest {
     }
 
     @Test
-    void deletingLastPositionRevertsDepotBalanceToLatestSnapshot() {
+    void deletingLastPositionRemovesPositionWithoutMutatingSnapshotsOrAccount() {
         UUID depotId = UUID.randomUUID();
         Account depot = investmentAccount(depotId, new BigDecimal("14500.00"));
         UUID posId = UUID.randomUUID();
@@ -206,20 +200,13 @@ class PortfolioPositionServiceTest {
                 new BigDecimal("10"), new BigDecimal("80.00"), new BigDecimal("100.00"));
         pos.setId(posId);
 
-        AccountSnapshot snap = new AccountSnapshot();
-        snap.setAccountId(depotId);
-        snap.setBalance(new BigDecimal("5000.00"));
-
         when(positionRepository.findById(posId)).thenReturn(Optional.of(pos));
         when(accountRepository.findById(depotId)).thenReturn(Optional.of(depot));
-        when(positionRepository.findByAccountIdOrderByNameAsc(depotId)).thenReturn(List.of());
-        when(snapshotRepository.findFirstByAccountIdOrderBySnapshotDateDesc(depotId))
-                .thenReturn(Optional.of(snap));
 
         service.delete(posId);
 
-        assertThat(depot.getCurrentBalance()).isEqualByComparingTo("5000.00");
-        verify(accountRepository).save(depot);
+        verify(positionRepository).delete(pos);
+        verify(accountRepository, never()).save(any());
     }
 
     @Test
@@ -263,23 +250,21 @@ class PortfolioPositionServiceTest {
         when(exchangeRateService.getRateToEur("USD")).thenReturn(Optional.empty());
         when(marketPriceProvider.fetchQuote("USDEUR=X"))
                 .thenReturn(Optional.of(new MarketQuote("USDEUR=X", new BigDecimal("0.9000"), "EUR", Instant.now())));
-        when(snapshotRepository.findFirstByAccountIdOrderBySnapshotDateDesc(depotId)).thenReturn(Optional.empty());
 
         int updated = service.refreshAccountPrices(depotId);
 
         assertThat(updated).isEqualTo(1);
         assertThat(novo.getLastPrice()).isEqualByComparingTo("70.0000");
         assertThat(novo.getLastPriceEur()).isEqualByComparingTo("63.0000");
-        assertThat(depot.getCurrentBalance()).isEqualByComparingTo("630.00");
+        verify(accountRepository, never()).save(any());
     }
 
-    private static Account investmentAccount(UUID id, BigDecimal balance) {
+    private static Account investmentAccount(UUID id, BigDecimal initialBalance) {
         Account account = new Account();
         account.setId(id);
         account.setName("Depot");
         account.setAccountType(AccountType.INVESTMENT);
-        account.setCurrentBalance(balance);
-        account.setInitialBalance(BigDecimal.ZERO);
+        account.setInitialBalance(initialBalance);
         return account;
     }
 

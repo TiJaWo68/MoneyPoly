@@ -23,17 +23,57 @@ class AccountServiceTest {
 
     private AccountRepository repository;
     private AccountSnapshotRepository snapshotRepository;
+    private PortfolioPositionRepository positionRepository;
     private AccountService service;
 
     @BeforeEach
     void setUp() {
         repository = mock(AccountRepository.class);
         snapshotRepository = mock(AccountSnapshotRepository.class);
-        service = new AccountService(repository, snapshotRepository);
+        positionRepository = mock(PortfolioPositionRepository.class);
+        service = new AccountService(repository, snapshotRepository, null, positionRepository);
     }
 
     @Test
-    void saveNewAccountSynchronizesCurrentBalanceWithInitialBalance() {
+    void resolveCurrentBalancesPrefersPositionsThenLatestSnapshotThenInitialBalance() {
+        Account checkingWithSnap = account(AccountType.CHECKING, new BigDecimal("100.00"));
+        checkingWithSnap.setId(UUID.randomUUID());
+
+        Account savingsNoSnap = account(AccountType.SAVINGS, new BigDecimal("750.00"));
+        savingsNoSnap.setId(UUID.randomUUID());
+
+        Account modeADepot = account(AccountType.INVESTMENT, new BigDecimal("500.00"));
+        modeADepot.setId(UUID.randomUUID());
+
+        Account institution = account(AccountType.INSTITUTION, new BigDecimal("999.00"));
+        institution.setId(UUID.randomUUID());
+
+        AccountSnapshot snap = new AccountSnapshot();
+        snap.setAccountId(checkingWithSnap.getId());
+        snap.setSnapshotDate(java.time.LocalDate.of(2026, 10, 31));
+        snap.setBalance(new BigDecimal("2450.00"));
+
+        PortfolioPosition pos = new PortfolioPosition();
+        pos.setAccountId(modeADepot.getId());
+        pos.setName("ETF");
+        pos.setQuantity(new BigDecimal("10"));
+        pos.setLastPriceEur(new BigDecimal("125.00"));
+
+        when(positionRepository.findByAccountIdIn(List.of(modeADepot.getId()))).thenReturn(List.of(pos));
+        when(snapshotRepository.findLatestByAccountIds(org.mockito.ArgumentMatchers.anyCollection()))
+                .thenReturn(List.of(snap));
+
+        Map<UUID, BigDecimal> balances = service.resolveCurrentBalances(
+                List.of(checkingWithSnap, savingsNoSnap, modeADepot, institution));
+
+        assertThat(balances.get(checkingWithSnap.getId())).isEqualByComparingTo("2450.00");
+        assertThat(balances.get(savingsNoSnap.getId())).isEqualByComparingTo("750.00");
+        assertThat(balances.get(modeADepot.getId())).isEqualByComparingTo("1250.00");
+        assertThat(balances.get(institution.getId())).isEqualByComparingTo("0");
+    }
+
+    @Test
+    void saveNewAccountSetsInitialBalanceWithoutSyncingRedundantBalance() {
         when(repository.save(any(Account.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         Account account = account(AccountType.CHECKING, BigDecimal.ZERO);
@@ -41,32 +81,13 @@ class AccountServiceTest {
 
         Account saved = service.save(account);
 
-        assertThat(saved.getCurrentBalance()).isEqualByComparingTo("1500.00");
+        assertThat(saved.getInitialBalance()).isEqualByComparingTo("1500.00");
+        assertThat(service.resolveCurrentBalance(saved)).isEqualByComparingTo("1500.00");
         verify(repository).save(account);
     }
 
     @Test
-    void saveExistingAccountAdjustsCurrentBalanceByInitialBalanceDelta() {
-        UUID id = UUID.randomUUID();
-
-        Account existing = account(AccountType.SAVINGS, new BigDecimal("1500.00"));
-        existing.setId(id);
-        existing.setInitialBalance(new BigDecimal("1000.00"));
-
-        when(repository.findById(id)).thenReturn(Optional.of(existing));
-        when(repository.save(any(Account.class))).thenAnswer(invocation -> invocation.getArgument(0));
-
-        Account update = account(AccountType.SAVINGS, BigDecimal.ZERO);
-        update.setId(id);
-        update.setInitialBalance(new BigDecimal("1200.00"));
-
-        Account saved = service.save(update);
-
-        assertThat(saved.getCurrentBalance()).isEqualByComparingTo("1700.00");
-    }
-
-    @Test
-    void saveInstitutionForcesZeroBalances() {
+    void saveInstitutionForcesZeroInitialBalance() {
         when(repository.save(any(Account.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         Account institution = account(AccountType.INSTITUTION, new BigDecimal("500.00"));
@@ -75,7 +96,31 @@ class AccountServiceTest {
         Account saved = service.save(institution);
 
         assertThat(saved.getInitialBalance()).isEqualByComparingTo("0");
-        assertThat(saved.getCurrentBalance()).isEqualByComparingTo("0");
+        assertThat(service.resolveCurrentBalance(saved)).isEqualByComparingTo("0");
+    }
+
+    @Test
+    void calculateNetWorthReflectsSnapshotChangesImmediatelyWithoutSync() {
+        Account checking = account(AccountType.CHECKING, BigDecimal.ZERO);
+        checking.setId(UUID.randomUUID());
+
+        AccountSnapshot older = new AccountSnapshot();
+        older.setAccountId(checking.getId());
+        older.setSnapshotDate(java.time.LocalDate.of(2026, 9, 30));
+        older.setBalance(new BigDecimal("1000.00"));
+
+        AccountSnapshot newer = new AccountSnapshot();
+        newer.setAccountId(checking.getId());
+        newer.setSnapshotDate(java.time.LocalDate.of(2026, 10, 31));
+        newer.setBalance(new BigDecimal("1750.00"));
+
+        when(repository.findByActiveTrueOrderByAccountTypeAscNameAsc()).thenReturn(List.of(checking));
+        when(snapshotRepository.findLatestByAccountIds(List.of(checking.getId())))
+                .thenReturn(List.of(newer))
+                .thenReturn(List.of(older));
+
+        assertThat(service.calculateNetWorth()).isEqualByComparingTo("1750.00");
+        assertThat(service.calculateNetWorth()).isEqualByComparingTo("1000.00");
     }
 
     @Test
@@ -300,12 +345,12 @@ class AccountServiceTest {
         assertThat(saved.getSubsequentInterestRate()).isNull();
     }
 
-    private Account account(AccountType type, BigDecimal currentBalance) {
+    private Account account(AccountType type, BigDecimal initialBalance) {
         Account account = new Account();
         account.setName("account-" + type.name());
         account.setAccountType(type);
         account.setCurrency("EUR");
-        account.setCurrentBalance(currentBalance);
+        account.setInitialBalance(initialBalance);
         return account;
     }
 }

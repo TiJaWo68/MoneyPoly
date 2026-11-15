@@ -14,6 +14,7 @@ import de.in.mp.finance.Account;
 import de.in.mp.finance.AccountSnapshot;
 import de.in.mp.finance.AccountType;
 import de.in.mp.finance.BalanceDateRow;
+import de.in.mp.finance.DepotValuation;
 
 class BalanceChartPanelTest {
 
@@ -158,6 +159,39 @@ class BalanceChartPanelTest {
                 .extracting(BalanceChartPoint::investedCapital)
                 .containsExactly(new BigDecimal("18000.00"), new BigDecimal("21000.00"));
         assertThat(panel.svgMarkupForTest()).contains("data-series=\"INVESTED_CAPITAL\"");
+    }
+
+    @Test
+    void appendsTodayPointForLiveModeADepotWithoutPersistedSnapshot() {
+        Account checking = account(AccountType.CHECKING, true);
+        Account modeADepot = account(AccountType.INVESTMENT, true);
+
+        LocalDate past = LocalDate.of(2026, 10, 31);
+        LocalDate today = LocalDate.of(2026, 11, 15);
+
+        BalanceDateRow historicalRow = new BalanceDateRow(past, Map.of(
+                checking.getId(), snapshot(checking.getId(), past, "5000.00"),
+                modeADepot.getId(), snapshot(modeADepot.getId(), past, "20000.00")));
+        DepotValuation liveDepot = new DepotValuation(
+                modeADepot.getId(), true,
+                new BigDecimal("22500.00"), new BigDecimal("18000.00"),
+                new BigDecimal("22500.00"), true, 2);
+
+        List<BalanceChartPoint> points = BalanceChartPoint.fromRows(
+                List.of(checking, modeADepot),
+                List.of(historicalRow),
+                Map.of(modeADepot.getId(), liveDepot),
+                today);
+
+        assertThat(points).hasSize(2);
+        assertThat(points.get(0).date()).isEqualTo(past);
+        assertThat(points.get(0).total()).isEqualByComparingTo("25000.00");
+
+        assertThat(points.get(1).date()).isEqualTo(today);
+        assertThat(points.get(1).checking()).isEqualByComparingTo("5000.00");
+        assertThat(points.get(1).investment()).isEqualByComparingTo("22500.00");
+        assertThat(points.get(1).investedCapital()).isEqualByComparingTo("18000.00");
+        assertThat(points.get(1).total()).isEqualByComparingTo("27500.00");
     }
 
     private static Account account(AccountType type, boolean active) {

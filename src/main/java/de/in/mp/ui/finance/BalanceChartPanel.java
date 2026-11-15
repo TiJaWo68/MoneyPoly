@@ -9,6 +9,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.UUID;
 import java.util.function.Function;
 
 import com.vaadin.flow.component.UI;
@@ -24,6 +25,7 @@ import com.vaadin.flow.theme.lumo.LumoUtility;
 
 import de.in.mp.finance.Account;
 import de.in.mp.finance.BalanceDateRow;
+import de.in.mp.finance.DepotValuation;
 import de.in.mp.i18n.DateFormatter;
 import de.in.mp.i18n.MoneyFormatter;
 
@@ -93,7 +95,11 @@ class BalanceChartPanel extends VerticalLayout {
     }
 
     void setData(List<Account> accounts, List<BalanceDateRow> rows) {
-        this.allPoints = BalanceChartPoint.fromRows(accounts, rows);
+        setData(accounts, rows, Map.of());
+    }
+
+    void setData(List<Account> accounts, List<BalanceDateRow> rows, Map<UUID, DepotValuation> liveDepots) {
+        this.allPoints = BalanceChartPoint.fromRows(accounts, rows, liveDepots);
         if (allPoints.isEmpty()) {
             startIndex = 0;
             endIndex = 0;

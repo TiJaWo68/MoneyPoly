@@ -28,10 +28,12 @@ import jakarta.persistence.Table;
  * plain string enum against the {@code VARCHAR(30)} column with a CHECK
  * constraint, mirroring the V3 approach for the security role column.
  * <p>
- * {@code currentBalance} mirrors the balance of the most recent
- * {@link AccountSnapshot} (or the initial balance while no snapshot exists).
- * {@code importKeys} holds statement identifiers confirmed by the user so
- * that statements without a matching IBAN resolve to this account again.
+ * Current balances are not persisted on the account entity; they are derived
+ * dynamically from {@link PortfolioPosition} holdings (for position-managed
+ * depots) or from the most recent {@link AccountSnapshot} (falling back to
+ * {@code initialBalance}). {@code importKeys} holds statement identifiers
+ * confirmed by the user so that statements without a matching IBAN resolve
+ * to this account again.
  */
 @Entity
 @Table(name = "finance_account")
@@ -79,9 +81,6 @@ public class Account {
 
     @Column(name = "initial_balance", nullable = false, precision = 12, scale = 2)
     private BigDecimal initialBalance = BigDecimal.ZERO;
-
-    @Column(name = "current_balance", nullable = false, precision = 12, scale = 2)
-    private BigDecimal currentBalance = BigDecimal.ZERO;
 
     @Column(name = "active", nullable = false)
     private boolean active = true;
@@ -230,14 +229,6 @@ public class Account {
 
     public void setInitialBalance(BigDecimal initialBalance) {
         this.initialBalance = initialBalance;
-    }
-
-    public BigDecimal getCurrentBalance() {
-        return currentBalance;
-    }
-
-    public void setCurrentBalance(BigDecimal currentBalance) {
-        this.currentBalance = currentBalance;
     }
 
     public boolean isActive() {

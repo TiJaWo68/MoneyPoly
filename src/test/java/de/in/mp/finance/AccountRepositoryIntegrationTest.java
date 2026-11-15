@@ -89,7 +89,7 @@ class AccountRepositoryIntegrationTest {
 
         Account reloaded = accountRepository.findById(saved.getId()).orElseThrow();
         assertThat(reloaded.getAccountType()).isEqualTo(AccountType.CHECKING);
-        assertThat(reloaded.getCurrentBalance()).isEqualByComparingTo("1234.56");
+        assertThat(reloaded.getInitialBalance()).isEqualByComparingTo("1234.56");
     }
 
     @Test
@@ -153,7 +153,6 @@ class AccountRepositoryIntegrationTest {
         account.setAccountType(type);
         account.setCurrency("EUR");
         account.setInitialBalance(balance);
-        account.setCurrentBalance(balance);
         return account;
     }
 }

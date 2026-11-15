@@ -109,6 +109,7 @@ public class BalanceEntryDialog extends Dialog {
         positionManagedAccounts.clear();
 
         List<Account> all = accountService.findAll();
+        Map<UUID, BigDecimal> resolvedBalances = accountService.resolveCurrentBalances(all);
         Map<UUID, Account> byId = AccountLabels.byId(all);
         for (Account account : AccountLabels.matrixOrder(all, byId)) {
             AccountSnapshot snapshot = existing.get(account.getId());
@@ -129,7 +130,7 @@ public class BalanceEntryDialog extends Dialog {
             if (snapshot != null) {
                 field.setValue(snapshot.getBalance());
             } else if (isPositionManaged) {
-                field.setValue(account.getCurrentBalance());
+                field.setValue(resolvedBalances.getOrDefault(account.getId(), BigDecimal.ZERO));
             }
             field.setReadOnly(isPositionManaged);
             fieldsByAccount.put(account.getId(), field);

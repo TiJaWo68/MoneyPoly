@@ -97,7 +97,6 @@ public class PortfolioPositionImportService {
         }
         int deleted = Math.max(0, toDelete.size() - consolidated);
 
-        positionService.synchronizeDepot(depot.getId());
         return new DepotImportResult(created, updated, consolidated, deleted, importedByIsin.size());
     }
 

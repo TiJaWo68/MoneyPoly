@@ -49,6 +49,7 @@ import de.in.mp.finance.AccountSnapshotService;
 import de.in.mp.finance.AccountType;
 import de.in.mp.finance.BalanceDateRow;
 import de.in.mp.finance.BankLookupService;
+import de.in.mp.finance.DepotValuation;
 import de.in.mp.finance.Household;
 import de.in.mp.finance.HouseholdService;
 import de.in.mp.finance.PortfolioPositionImportService;
@@ -112,6 +113,7 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
     private boolean kpisVisible = true;
     private List<String> configuredBalanceSignature;
     private List<Account> displayedBalanceColumns = List.of();
+    private Map<UUID, BigDecimal> balancesByAccount = Map.of();
     private Map<UUID, BigDecimal> institutionTotals = Map.of();
     private List<Account> currentAccounts = List.of();
 
@@ -619,7 +621,7 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
     private Span renderBalance(Account account) {
         BigDecimal balance = account.getAccountType() == AccountType.INSTITUTION
                 ? institutionTotals.getOrDefault(account.getId(), BigDecimal.ZERO)
-                : account.getCurrentBalance();
+                : balancesByAccount.getOrDefault(account.getId(), BigDecimal.ZERO);
         Span span = new Span(formatMoney(balance));
         span.addClassName(balance.signum() < 0 ? LumoUtility.TextColor.ERROR : LumoUtility.TextColor.SUCCESS);
         return span;
@@ -861,9 +863,10 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
                 ? accountService.findAll()
                 : accountService.findAllByHousehold(selectedHouseholdId);
         this.currentAccounts = accounts;
+        this.balancesByAccount = accountService.resolveCurrentBalances(accounts);
         List<BalanceDateRow> rows = snapshotService.buildDateRows(selectedHouseholdId);
 
-        chartPanel.setData(accounts, rows);
+        chartPanel.setData(accounts, rows, resolveLiveDepotValuations(accounts));
         Map<UUID, Account> byId = AccountLabels.byId(accounts);
         List<Account> columns = visibleBalanceAccounts(accounts, rows);
         this.displayedBalanceColumns = columns;
@@ -892,6 +895,17 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
         netWorthValue.setText(formatMoney(accountService.calculateNetWorth()));
         activeAccountsValue.setText(String.valueOf(accountService.countActiveAccounts()));
         latestDateValue.setText(rows.isEmpty() ? "–" : DateFormatter.format(rows.get(0).date(), locale()));
+    }
+
+    private Map<UUID, DepotValuation> resolveLiveDepotValuations(List<Account> accounts) {
+        if (positionService == null || accounts == null || accounts.isEmpty()) {
+            return Map.of();
+        }
+        List<Account> investments = accounts.stream()
+                .filter(Account::isActive)
+                .filter(a -> a.getAccountType() == AccountType.INVESTMENT)
+                .toList();
+        return investments.isEmpty() ? Map.of() : positionService.resolveValuations(investments, Map.of());
     }
 
     TreeData<Account> treeDataForTest() {

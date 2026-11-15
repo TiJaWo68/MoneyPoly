@@ -52,6 +52,17 @@ class AccountSnapshotServiceTest {
             }
             return snapshot;
         });
+        org.mockito.Mockito.doAnswer(invocation -> {
+            Iterable<AccountSnapshot> removed = invocation.getArgument(0);
+            for (AccountSnapshot snap : removed) {
+                store.remove(snap);
+            }
+            return null;
+        }).when(snapshotRepository).deleteAll(any());
+        when(snapshotRepository.findBySnapshotDate(any())).thenAnswer(invocation ->
+                store.stream()
+                        .filter(s -> s.getSnapshotDate().equals(invocation.getArgument(0)))
+                        .toList());
         when(snapshotRepository.findByAccountIdAndSnapshotDate(any(), any())).thenAnswer(invocation ->
                 store.stream()
                         .filter(s -> s.getAccountId().equals(invocation.getArgument(0))
@@ -66,11 +77,14 @@ class AccountSnapshotServiceTest {
     }
 
     @Test
-    void recordSnapshotSynchronizesCurrentBalanceWithLatestDate() {
+    void recordSnapshotStoresOutOfOrderSnapshotsWithoutTouchingAccountEntity() {
         service.recordSnapshot(checking.getId(), SnapshotValue.ofBalance(OCTOBER, new BigDecimal("1200.00")));
         service.recordSnapshot(checking.getId(), SnapshotValue.ofBalance(SEPTEMBER, new BigDecimal("900.00")));
 
-        assertThat(checking.getCurrentBalance()).isEqualByComparingTo("1200.00");
+        assertThat(service.findLatest(checking.getId())).get()
+                .extracting(AccountSnapshot::getBalance)
+                .satisfies(balance -> assertThat(balance).isEqualByComparingTo("1200.00"));
+        verify(accountRepository, never()).save(any());
     }
 
     @Test
@@ -121,13 +135,15 @@ class AccountSnapshotServiceTest {
     }
 
     @Test
-    void recordSnapshotsSynchronizesBalanceOnce() {
+    void recordSnapshotsPersistsAllEntriesWithoutLoadingAllAccounts() {
         int saved = service.recordSnapshots(checking.getId(), List.of(
                 SnapshotValue.ofBalance(SEPTEMBER, new BigDecimal("10")),
                 SnapshotValue.ofBalance(OCTOBER, new BigDecimal("20"))));
 
         assertThat(saved).isEqualTo(2);
-        assertThat(checking.getCurrentBalance()).isEqualByComparingTo("20");
+        assertThat(service.findLatest(checking.getId())).get()
+                .extracting(AccountSnapshot::getBalance)
+                .satisfies(balance -> assertThat(balance).isEqualByComparingTo("20.00"));
         verify(accountRepository, never()).findAll();
     }
 
@@ -191,6 +207,19 @@ class AccountSnapshotServiceTest {
         assertThat(zeroCostBasis.returnPercent()).isNull();
 
         assertThat(InvestmentPerformance.of(new BigDecimal("1000.00"), null)).isEmpty();
+    }
+
+    @Test
+    void deleteSnapshotsForDateRemovesRowSoLatestRevertsToPreviousSnapshot() {
+        service.recordSnapshot(checking.getId(), SnapshotValue.ofBalance(SEPTEMBER, new BigDecimal("900.00")));
+        service.recordSnapshot(checking.getId(), SnapshotValue.ofBalance(OCTOBER, new BigDecimal("1500.00")));
+
+        service.deleteSnapshotsForDate(null, OCTOBER);
+
+        assertThat(service.findLatest(checking.getId())).get()
+                .extracting(AccountSnapshot::getBalance)
+                .satisfies(balance -> assertThat(balance).isEqualByComparingTo("900.00"));
+        verify(accountRepository, never()).save(any());
     }
 
     private static Account account(AccountType type) {

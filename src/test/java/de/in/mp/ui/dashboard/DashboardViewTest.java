@@ -272,14 +272,12 @@ class DashboardViewTest {
         withCostBasis.setId(UUID.randomUUID());
         withCostBasis.setName("Depot A");
         withCostBasis.setAccountType(AccountType.INVESTMENT);
-        withCostBasis.setCurrentBalance(new BigDecimal("52210.00"));
         withCostBasis.setActive(true);
 
         Account withoutCostBasis = new Account();
         withoutCostBasis.setId(UUID.randomUUID());
         withoutCostBasis.setName("Depot B");
         withoutCostBasis.setAccountType(AccountType.INVESTMENT);
-        withoutCostBasis.setCurrentBalance(new BigDecimal("10000.00"));
         withoutCostBasis.setActive(true);
 
         AccountSnapshot snap = new AccountSnapshot();
@@ -288,6 +286,10 @@ class DashboardViewTest {
         snap.setInvestedCapital(new BigDecimal("48000.00"));
 
         when(accountService.findAll()).thenReturn(List.of(withCostBasis, withoutCostBasis));
+        when(accountService.resolveCurrentBalances(org.mockito.ArgumentMatchers.anyCollection()))
+                .thenReturn(Map.of(
+                        withCostBasis.getId(), new BigDecimal("52210.00"),
+                        withoutCostBasis.getId(), new BigDecimal("10000.00")));
         when(snapshotService.findLatestSnapshots(org.mockito.ArgumentMatchers.anyCollection()))
                 .thenReturn(Map.of(withCostBasis.getId(), snap));
 
@@ -351,7 +353,6 @@ class DashboardViewTest {
         depot.setId(UUID.randomUUID());
         depot.setName("Depot Positionen");
         depot.setAccountType(AccountType.INVESTMENT);
-        depot.setCurrentBalance(new BigDecimal("1000.00"));
         depot.setActive(true);
 
         PortfolioPositionService positionService = mock(PortfolioPositionService.class);

@@ -48,7 +48,6 @@ class PortfolioPositionsDialogTest {
         depot.setId(UUID.randomUUID());
         depot.setName("Direktbroker Depot");
         depot.setAccountType(AccountType.INVESTMENT);
-        depot.setCurrentBalance(new BigDecimal("14500.00"));
 
         PortfolioPosition pos = new PortfolioPosition();
         pos.setId(UUID.randomUUID());
@@ -85,7 +84,6 @@ class PortfolioPositionsDialogTest {
         depot.setId(UUID.randomUUID());
         depot.setName("Direktbroker Depot");
         depot.setAccountType(AccountType.INVESTMENT);
-        depot.setCurrentBalance(BigDecimal.ZERO);
 
         DepotValuation valuation = new DepotValuation(
                 depot.getId(), true, new BigDecimal("1000.00"),

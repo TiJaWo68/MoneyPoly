@@ -124,6 +124,7 @@ public class DashboardView extends VerticalLayout implements HasDynamicTitle {
     private BigDecimal warningThreshold = new BigDecimal("2.00");
     private Map<UUID, String> personNames = Map.of();
     private Map<UUID, Account> accountsById = Map.of();
+    private Map<UUID, BigDecimal> balancesByAccount = Map.of();
     private Map<UUID, DepotValuation> depotValuationsByAccount = Map.of();
     private Registration resizeRegistration;
     private Boolean mobileLayoutActive;
@@ -345,7 +346,7 @@ public class DashboardView extends VerticalLayout implements HasDynamicTitle {
             String infoHeaderKey,
             com.vaadin.flow.function.SerializableFunction<Account, Component> infoRenderer,
             Comparator<Account> infoComparator) {
-        Comparator<Account> byBalance = Comparator.comparing(Account::getCurrentBalance);
+        Comparator<Account> byBalance = Comparator.comparing(this::effectiveAccountBalance);
         grid.addColumn(new ComponentRenderer<>(this::renderAccountLabel))
                 .setKey(DashboardSortColumn.NAME.key())
                 .setComparator(Comparator.comparing(this::accountLabel, String.CASE_INSENSITIVE_ORDER))
@@ -366,7 +367,7 @@ public class DashboardView extends VerticalLayout implements HasDynamicTitle {
                 .setWidth(AMOUNT_COLUMN_WIDTH)
                 .setFlexGrow(0);
         grid.addColumn(new ComponentRenderer<>(
-                account -> renderProgress(sharePercent(account.getCurrentBalance()))))
+                account -> renderProgress(sharePercent(effectiveAccountBalance(account)))))
                 .setKey(DashboardSortColumn.SHARE.key())
                 .setComparator(byBalance)
                 .setHeader(rightAlignedHeader("dashboard.grid.column.share"))
@@ -637,6 +638,7 @@ public class DashboardView extends VerticalLayout implements HasDynamicTitle {
 
             List<Account> allAccounts = accountService.findAll();
             accountsById = allAccounts.stream().collect(Collectors.toMap(Account::getId, account -> account));
+            balancesByAccount = accountService.resolveCurrentBalances(allAccounts);
 
             List<Account> activeAccounts = allAccounts.stream().filter(Account::isActive).toList();
             List<Account> liquidity = activeAccounts.stream()
@@ -647,16 +649,16 @@ public class DashboardView extends VerticalLayout implements HasDynamicTitle {
                     .filter(account -> account.getAccountType() == AccountType.INVESTMENT)
                     .toList();
 
-            liquidityTotal = liquidity.stream()
-                    .map(Account::getCurrentBalance)
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
-            investedTotal = investments.stream()
-                    .map(Account::getCurrentBalance)
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
-
             Map<UUID, AccountSnapshot> latestInvestmentSnapshots = snapshotService.findLatestSnapshots(
                     investments.stream().map(Account::getId).toList());
             depotValuationsByAccount = resolveDepotValuations(investments, latestInvestmentSnapshots);
+
+            liquidityTotal = liquidity.stream()
+                    .map(this::effectiveAccountBalance)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            investedTotal = investments.stream()
+                    .map(this::effectiveAccountBalance)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
 
             personNames = personService.findAll().stream()
                     .collect(Collectors.toMap(Person::getId, Person::getName));
@@ -697,8 +699,10 @@ public class DashboardView extends VerticalLayout implements HasDynamicTitle {
                         account -> fallbackSnapshotValuation(account, latestSnapshots.get(account.getId()))));
     }
 
-    private static DepotValuation fallbackSnapshotValuation(Account account, AccountSnapshot snapshot) {
-        BigDecimal balance = account.getCurrentBalance() == null ? BigDecimal.ZERO : account.getCurrentBalance();
+    private DepotValuation fallbackSnapshotValuation(Account account, AccountSnapshot snapshot) {
+        BigDecimal balance = snapshot != null && snapshot.getBalance() != null
+                ? snapshot.getBalance()
+                : balancesByAccount.getOrDefault(account.getId(), BigDecimal.ZERO);
         BigDecimal invested = snapshot != null ? snapshot.getInvestedCapital() : null;
         return new DepotValuation(
                 account.getId(),
@@ -741,16 +745,16 @@ public class DashboardView extends VerticalLayout implements HasDynamicTitle {
     }
 
     private BigDecimal effectiveAccountBalance(Account account) {
-        if (account == null) {
+        if (account == null || account.getId() == null) {
             return BigDecimal.ZERO;
         }
-        if (account.getAccountType() == AccountType.INVESTMENT && account.getId() != null) {
+        if (account.getAccountType() == AccountType.INVESTMENT) {
             DepotValuation valuation = depotValuationsByAccount.get(account.getId());
             if (valuation != null && valuation.positionBased() && valuation.currentValue() != null) {
                 return valuation.currentValue();
             }
         }
-        return account.getCurrentBalance() == null ? BigDecimal.ZERO : account.getCurrentBalance();
+        return balancesByAccount.getOrDefault(account.getId(), BigDecimal.ZERO);
     }
 
     Component renderLiquidityInterestRate(Account account) {

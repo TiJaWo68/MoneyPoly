@@ -3,8 +3,6 @@ package de.in.mp.finance;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
-import java.time.LocalDate;
-import java.time.YearMonth;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
@@ -41,7 +39,6 @@ public class PortfolioPositionService {
 
     private final PortfolioPositionRepository positionRepository;
     private final AccountRepository accountRepository;
-    private final AccountSnapshotRepository snapshotRepository;
     private final MarketPriceProvider marketPriceProvider;
     private final EcbExchangeRateService exchangeRateService;
     private final HouseholdService householdService;
@@ -50,13 +47,11 @@ public class PortfolioPositionService {
     public PortfolioPositionService(
             PortfolioPositionRepository positionRepository,
             AccountRepository accountRepository,
-            AccountSnapshotRepository snapshotRepository,
             MarketPriceProvider marketPriceProvider,
             EcbExchangeRateService exchangeRateService,
             @Autowired(required = false) HouseholdService householdService) {
         this.positionRepository = positionRepository;
         this.accountRepository = accountRepository;
-        this.snapshotRepository = snapshotRepository;
         this.marketPriceProvider = marketPriceProvider;
         this.exchangeRateService = exchangeRateService;
         this.householdService = householdService;
@@ -137,7 +132,6 @@ public class PortfolioPositionService {
         }
 
         PortfolioPosition saved = positionRepository.save(position);
-        synchronizeDepotAndMonthlySnapshot(depot);
         return saved;
     }
 
@@ -148,23 +142,18 @@ public class PortfolioPositionService {
         }
         PortfolioPosition position = positionRepository.findById(positionId)
                 .orElseThrow(() -> new IllegalArgumentException("Position not found: " + positionId));
-        Account depot = requireInvestmentAccount(position.getAccountId());
+        requireInvestmentAccount(position.getAccountId());
         positionRepository.delete(position);
-        synchronizeDepotAfterChange(depot);
     }
 
     @Transactional
     public int refreshAccountPrices(UUID accountId) {
-        Account depot = requireInvestmentAccount(accountId);
+        requireInvestmentAccount(accountId);
         List<PortfolioPosition> positions = positionRepository.findByAccountIdOrderByNameAsc(accountId);
         if (positions.isEmpty()) {
             return 0;
         }
-        int updatedCount = refreshPositions(positions);
-        if (updatedCount > 0) {
-            synchronizeDepotAndMonthlySnapshot(depot, positions);
-        }
-        return updatedCount;
+        return refreshPositions(positions);
     }
 
     @Transactional
@@ -176,11 +165,7 @@ public class PortfolioPositionService {
             if (positions.isEmpty()) {
                 continue;
             }
-            int updated = refreshPositions(positions);
-            if (updated > 0) {
-                synchronizeDepotAndMonthlySnapshot(depot, positions);
-                totalUpdated += updated;
-            }
+            totalUpdated += refreshPositions(positions);
         }
         return totalUpdated;
     }
@@ -191,12 +176,6 @@ public class PortfolioPositionService {
      */
     public Optional<String> lookupTickerByIsin(String isin) {
         return marketPriceProvider.resolveTickerByIsin(isin);
-    }
-
-    @Transactional
-    public void synchronizeDepot(UUID accountId) {
-        Account depot = requireInvestmentAccount(accountId);
-        synchronizeDepotAfterChange(depot);
     }
 
     private int refreshPositions(List<PortfolioPosition> positions) {
@@ -274,59 +253,7 @@ public class PortfolioPositionService {
                 .filter(rate -> rate != null && rate.signum() > 0);
     }
 
-    private void synchronizeDepotAfterChange(Account depot) {
-        List<PortfolioPosition> remaining = positionRepository.findByAccountIdOrderByNameAsc(depot.getId());
-        if (remaining.isEmpty()) {
-            // Mode B fallback: restore latest manual snapshot balance
-            BigDecimal latest = snapshotRepository.findFirstByAccountIdOrderBySnapshotDateDesc(depot.getId())
-                    .map(AccountSnapshot::getBalance)
-                    .orElse(depot.getInitialBalance());
-            depot.setCurrentBalance(latest == null ? BigDecimal.ZERO : latest);
-            accountRepository.save(depot);
-            return;
-        }
-        synchronizeDepotAndMonthlySnapshot(depot, remaining);
-    }
-
-    private void synchronizeDepotAndMonthlySnapshot(Account depot) {
-        List<PortfolioPosition> positions = positionRepository.findByAccountIdOrderByNameAsc(depot.getId());
-        if (!positions.isEmpty()) {
-            synchronizeDepotAndMonthlySnapshot(depot, positions);
-        }
-    }
-
-    private void synchronizeDepotAndMonthlySnapshot(Account depot, List<PortfolioPosition> positions) {
-        DepotValuation valuation = buildPositionValuation(depot.getId(), positions);
-        depot.setCurrentBalance(valuation.currentValue());
-        accountRepository.save(depot);
-
-        upsertMonthlySnapshot(depot.getId(), valuation);
-    }
-
-    /**
-     * Upserts at most one snapshot for the current calendar month so that
-     * {@code BalanceChartPanel} tracks live depot performance without flooding
-     * the monthly snapshot matrix with 365 daily rows per year.
-     */
-    private void upsertMonthlySnapshot(UUID accountId, DepotValuation valuation) {
-        LocalDate today = LocalDate.now();
-        YearMonth currentMonth = YearMonth.from(today);
-        AccountSnapshot snapshot = snapshotRepository.findFirstByAccountIdOrderBySnapshotDateDesc(accountId)
-                .filter(existing -> YearMonth.from(existing.getSnapshotDate()).equals(currentMonth))
-                .orElseGet(() -> {
-                    AccountSnapshot created = new AccountSnapshot();
-                    created.setAccountId(accountId);
-                    created.setSnapshotDate(today);
-                    return created;
-                });
-        snapshot.setBalance(valuation.currentValue());
-        if (valuation.investedCapital() != null) {
-            snapshot.setInvestedCapital(valuation.investedCapital());
-        }
-        snapshotRepository.save(snapshot);
-    }
-
-    private static DepotValuation buildPositionValuation(UUID accountId, List<PortfolioPosition> positions) {
+    static DepotValuation buildPositionValuation(UUID accountId, List<PortfolioPosition> positions) {
         BigDecimal totalValue = BigDecimal.ZERO;
         BigDecimal investedCapital = BigDecimal.ZERO;
         BigDecimal valueWithCostBasis = BigDecimal.ZERO;
@@ -365,7 +292,9 @@ public class PortfolioPositionService {
     }
 
     private static DepotValuation buildSnapshotValuation(Account account, AccountSnapshot snapshot) {
-        BigDecimal balance = account.getCurrentBalance() == null ? BigDecimal.ZERO : account.getCurrentBalance();
+        BigDecimal balance = snapshot != null && snapshot.getBalance() != null
+                ? snapshot.getBalance()
+                : (account.getInitialBalance() == null ? BigDecimal.ZERO : account.getInitialBalance());
         BigDecimal invested = snapshot != null ? snapshot.getInvestedCapital() : null;
         return new DepotValuation(
                 account.getId(),

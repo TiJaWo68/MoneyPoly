@@ -23,10 +23,9 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Maintains the balance history of finance accounts.
  * <p>
- * Snapshots are upserted per (account, date). After every change the
- * account's {@code currentBalance} is re-synchronized with its most recent
- * snapshot so that KPIs and the dashboard always reflect the latest known
- * statement balance.
+ * Snapshots are upserted per (account, date). Account balances are derived
+ * dynamically from the latest snapshot by {@link AccountService} without
+ * duplicating balance state onto the account entity.
  */
 @Service
 public class AccountSnapshotService {
@@ -36,30 +35,20 @@ public class AccountSnapshotService {
     private final AccountSnapshotRepository snapshotRepository;
     private final AccountRepository accountRepository;
     private final HouseholdService householdService;
-    private final PortfolioPositionRepository positionRepository;
 
     public AccountSnapshotService(AccountSnapshotRepository snapshotRepository,
             AccountRepository accountRepository) {
-        this(snapshotRepository, accountRepository, null, null);
-    }
-
-    public AccountSnapshotService(
-            AccountSnapshotRepository snapshotRepository,
-            AccountRepository accountRepository,
-            HouseholdService householdService) {
-        this(snapshotRepository, accountRepository, householdService, null);
+        this(snapshotRepository, accountRepository, null);
     }
 
     @Autowired
     public AccountSnapshotService(
             AccountSnapshotRepository snapshotRepository,
             AccountRepository accountRepository,
-            @Autowired(required = false) HouseholdService householdService,
-            @Autowired(required = false) PortfolioPositionRepository positionRepository) {
+            @Autowired(required = false) HouseholdService householdService) {
         this.snapshotRepository = snapshotRepository;
         this.accountRepository = accountRepository;
         this.householdService = householdService;
-        this.positionRepository = positionRepository;
     }
 
     /**
@@ -69,23 +58,19 @@ public class AccountSnapshotService {
      */
     @Transactional
     public AccountSnapshot recordSnapshot(UUID accountId, SnapshotValue value) {
-        Account account = requireBalanceAccount(accountId);
-        AccountSnapshot saved = upsert(accountId, value);
-        synchronizeCurrentBalance(account);
-        return saved;
+        requireBalanceAccount(accountId);
+        return upsert(accountId, value);
     }
 
     /**
-     * Records many snapshots of one account (e.g. a historical migration) and
-     * synchronizes the current balance only once.
+     * Records many snapshots of one account (e.g. a historical migration).
      */
     @Transactional
     public int recordSnapshots(UUID accountId, List<SnapshotValue> values) {
-        Account account = requireBalanceAccount(accountId);
+        requireBalanceAccount(accountId);
         for (SnapshotValue value : values) {
             upsert(accountId, value);
         }
-        synchronizeCurrentBalance(account);
         return values.size();
     }
 
@@ -153,10 +138,6 @@ public class AccountSnapshotService {
                     .toList();
         }
         snapshotRepository.deleteAll(snapshots);
-        snapshots.stream()
-                .map(AccountSnapshot::getAccountId)
-                .distinct()
-                .forEach(id -> accountRepository.findById(id).ifPresent(this::synchronizeCurrentBalance));
     }
 
     @Transactional(readOnly = true)
@@ -249,20 +230,6 @@ public class AccountSnapshotService {
             snapshot.setNotes(value.notes().trim());
         }
         return snapshotRepository.save(snapshot);
-    }
-
-    private void synchronizeCurrentBalance(Account account) {
-        if (account.getAccountType() == AccountType.INVESTMENT
-                && positionRepository != null
-                && positionRepository.existsByAccountId(account.getId())) {
-            // Mode A: position-based valuation takes precedence over manual snapshots.
-            return;
-        }
-        BigDecimal latest = snapshotRepository.findFirstByAccountIdOrderBySnapshotDateDesc(account.getId())
-                .map(AccountSnapshot::getBalance)
-                .orElse(account.getInitialBalance());
-        account.setCurrentBalance(latest == null ? BigDecimal.ZERO : latest);
-        accountRepository.save(account);
     }
 
     private Account requireBalanceAccount(UUID accountId) {

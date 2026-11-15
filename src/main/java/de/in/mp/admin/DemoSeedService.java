@@ -178,7 +178,6 @@ public class DemoSeedService implements ApplicationRunner {
         checking.setBankName("Musterbank AG");
         checking.setDisplayOrder(10);
         checking.setInitialBalance(new BigDecimal("3200.00"));
-        checking.setCurrentBalance(new BigDecimal("3200.00"));
         checking = accountRepository.save(checking);
 
         Account savings = new Account();
@@ -189,7 +188,6 @@ public class DemoSeedService implements ApplicationRunner {
         savings.setDisplayOrder(20);
         savings.setSubsequentInterestRate(new BigDecimal("3.1000"));
         savings.setInitialBalance(new BigDecimal("18500.00"));
-        savings.setCurrentBalance(new BigDecimal("18500.00"));
         savings = accountRepository.save(savings);
 
         Account depot = new Account();
@@ -199,7 +197,6 @@ public class DemoSeedService implements ApplicationRunner {
         depot.setBankName("Direktbroker");
         depot.setDisplayOrder(30);
         depot.setInitialBalance(new BigDecimal("24000.00"));
-        depot.setCurrentBalance(new BigDecimal("24000.00"));
         depot = accountRepository.save(depot);
 
         LocalDate today = LocalDate.now().withDayOfMonth(1);
