@@ -3,6 +3,7 @@ package de.in.mp.ui.energy;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.text.NumberFormat;
+import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
@@ -19,6 +20,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.button.Button;
+import com.vaadin.flow.component.checkbox.Checkbox;
 import com.vaadin.flow.component.combobox.ComboBox;
 import com.vaadin.flow.component.grid.ColumnTextAlign;
 import com.vaadin.flow.component.grid.Grid;
@@ -117,6 +119,7 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle, Befor
     private final HorizontalLayout kpiRow;
 
     private boolean kpisVisible = true;
+    private boolean showExpiredTariffs;
     private List<EnergyHouse> accessibleHouses = List.of();
     private UUID selectedHouseId;
     private Map<UUID, String> assetNamesById = Map.of();
@@ -442,13 +445,33 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle, Befor
         H3 tariffsTitle = new H3(getTranslation("energy.tariff.column.name"));
         tariffsTitle.addClassName(LumoUtility.Margin.NONE);
 
+        Checkbox showExpiredCheckbox = new Checkbox(getTranslation("energy.tariff.show-expired"));
+        showExpiredCheckbox.setValue(showExpiredTariffs);
+        showExpiredCheckbox.addValueChangeListener(event -> {
+            showExpiredTariffs = Boolean.TRUE.equals(event.getValue());
+            refreshAll();
+        });
+
+        HorizontalLayout tariffsHeader = new HorizontalLayout(tariffsTitle, showExpiredCheckbox);
+        tariffsHeader.setAlignItems(Alignment.CENTER);
+        tariffsHeader.addClassNames(LumoUtility.Gap.MEDIUM);
+
         metersGrid.setHeight("300px");
         tariffsGrid.setHeight("260px");
 
-        VerticalLayout layout = new VerticalLayout(metersTitle, metersGrid, tariffsTitle, tariffsGrid);
+        VerticalLayout layout = new VerticalLayout(metersTitle, metersGrid, tariffsHeader, tariffsGrid);
         layout.setSizeFull();
         layout.setPadding(false);
         return layout;
+    }
+
+    Grid<EnergyTariff> getTariffsGridForTest() {
+        return tariffsGrid;
+    }
+
+    void setShowExpiredTariffsForTest(boolean showExpiredTariffs) {
+        this.showExpiredTariffs = showExpiredTariffs;
+        refreshAll();
     }
 
     ActionMenu getActionMenuForTest() {
@@ -940,15 +963,23 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle, Befor
                 renderSelectedTab();
             }
         }
+        List<EnergyTariff> visibleTariffs = showExpiredTariffs
+                ? tariffs
+                : tariffs.stream().filter(t -> isTariffActiveOn(t, LocalDate.now())).toList();
+
         readingsGrid.setItems(dateRows);
         amortizationGrid.setItems(amortizationService.calculateAssetAmortizations(selectedHouseId));
         metersGrid.setItems(allMeters);
-        tariffsGrid.setItems(tariffs);
+        tariffsGrid.setItems(visibleTariffs);
 
         totalInvestmentValue.setText(formatCurrency(amortizationService.calculateTotalInvestmentCost(selectedHouseId)));
         totalAmortizedValue.setText(formatCurrency(amortizationService.calculateTotalAmortized(selectedHouseId)));
         remainingCostValue.setText(formatCurrency(amortizationService.calculateTotalRemainingCost(selectedHouseId)));
         activeMetersValue.setText(String.valueOf(activeMeters.size()));
+    }
+
+    static boolean isTariffActiveOn(EnergyTariff tariff, LocalDate date) {
+        return tariff != null && (tariff.getValidTo() == null || !tariff.getValidTo().isBefore(date));
     }
 
     private String formatCurrency(BigDecimal amount) {

@@ -205,6 +205,50 @@ class EnergyViewTest {
         assertThat(view.getActionMenuForTest().getSubMenu().getItems()).hasSize(1);
     }
 
+    @Test
+    void hidesExpiredTariffsByDefaultAndShowsThemWhenToggled() {
+        de.in.mp.energy.EnergyAssetService assetService = org.mockito.Mockito.mock(de.in.mp.energy.EnergyAssetService.class);
+        de.in.mp.energy.MeterService meterService = org.mockito.Mockito.mock(de.in.mp.energy.MeterService.class);
+        de.in.mp.energy.MeterReadingService readingService = org.mockito.Mockito.mock(de.in.mp.energy.MeterReadingService.class);
+        de.in.mp.energy.EnergyTariffService tariffService = org.mockito.Mockito.mock(de.in.mp.energy.EnergyTariffService.class);
+        de.in.mp.energy.EnergyAmortizationService amortizationService = org.mockito.Mockito.mock(de.in.mp.energy.EnergyAmortizationService.class);
+
+        de.in.mp.energy.EnergyTariff expired = new de.in.mp.energy.EnergyTariff();
+        expired.setName("Old Tariff");
+        expired.setForMeterType(MeterType.GRID_IMPORT);
+        expired.setValidFrom(java.time.LocalDate.of(2024, 1, 1));
+        expired.setValidTo(java.time.LocalDate.now().minusDays(1));
+        expired.setUnitPriceEur(new BigDecimal("0.3400"));
+
+        de.in.mp.energy.EnergyTariff active = new de.in.mp.energy.EnergyTariff();
+        active.setName("Current Tariff");
+        active.setForMeterType(MeterType.GRID_IMPORT);
+        active.setValidFrom(java.time.LocalDate.now());
+        active.setUnitPriceEur(new BigDecimal("0.2650"));
+
+        org.mockito.Mockito.when(assetService.findAll()).thenReturn(java.util.List.of());
+        org.mockito.Mockito.when(meterService.findActive()).thenReturn(java.util.List.of());
+        org.mockito.Mockito.when(meterService.findAll()).thenReturn(java.util.List.of());
+        org.mockito.Mockito.when(tariffService.findAll()).thenReturn(java.util.List.of(active, expired));
+        org.mockito.Mockito.when(tariffService.findByHouse(null)).thenReturn(java.util.List.of(active, expired));
+        org.mockito.Mockito.when(amortizationService.buildDateRows()).thenReturn(java.util.List.of());
+        org.mockito.Mockito.when(amortizationService.calculateTotalInvestmentCost()).thenReturn(BigDecimal.ZERO);
+        org.mockito.Mockito.when(amortizationService.calculateTotalAmortized()).thenReturn(BigDecimal.ZERO);
+        org.mockito.Mockito.when(amortizationService.calculateTotalRemainingCost()).thenReturn(BigDecimal.ZERO);
+
+        EnergyView view = new EnergyView(assetService, meterService, readingService, tariffService, amortizationService);
+        @SuppressWarnings("unchecked")
+        com.vaadin.flow.data.provider.ListDataProvider<de.in.mp.energy.EnergyTariff> initialProvider =
+                (com.vaadin.flow.data.provider.ListDataProvider<de.in.mp.energy.EnergyTariff>) view.getTariffsGridForTest().getDataProvider();
+        assertThat(initialProvider.getItems()).containsExactly(active);
+
+        view.setShowExpiredTariffsForTest(true);
+        @SuppressWarnings("unchecked")
+        com.vaadin.flow.data.provider.ListDataProvider<de.in.mp.energy.EnergyTariff> allProvider =
+                (com.vaadin.flow.data.provider.ListDataProvider<de.in.mp.energy.EnergyTariff>) view.getTariffsGridForTest().getDataProvider();
+        assertThat(allProvider.getItems()).containsExactly(active, expired);
+    }
+
     private static Meter meter(String name, MeterType type) {
         Meter meter = new Meter();
         meter.setName(name);
