@@ -46,8 +46,7 @@ import de.in.mp.ui.GridActionButton;
  */
 class PortfolioPositionsDialog extends Dialog {
 
-    private static final String DIALOG_WIDTH = "1020px";
-    private static final String DIALOG_HEIGHT = "680px";
+    private static final String DIALOG_WIDTH = "1220px";
     private static final String EMPTY_PLACEHOLDER = "-";
     private static final String PDF_FILE_EXTENSION = ".pdf";
     private static final String PDF_MIME_TYPE = "application/pdf";
@@ -92,7 +91,6 @@ class PortfolioPositionsDialog extends Dialog {
 
         setWidth(DIALOG_WIDTH);
         setMaxWidth("96vw");
-        setHeight(DIALOG_HEIGHT);
         setMaxHeight("92vh");
 
         configureGrid();
@@ -150,10 +148,9 @@ class PortfolioPositionsDialog extends Dialog {
         }
 
         VerticalLayout content = new VerticalLayout(summaryBar, toolbar, grid);
-        content.setSizeFull();
+        content.setWidthFull();
         content.setPadding(false);
         content.setSpacing(true);
-        content.expand(grid);
         add(content);
     }
 
@@ -170,45 +167,53 @@ class PortfolioPositionsDialog extends Dialog {
 
         grid.addColumn(PortfolioPosition::getSymbolDisplay)
                 .setHeader(getTranslation("finance.positions.column.symbol"))
-                .setAutoWidth(true);
+                .setAutoWidth(true)
+                .setFlexGrow(0);
 
         grid.addColumn(pos -> formatQuantity(pos.getQuantity()))
                 .setHeader(getTranslation("finance.positions.column.quantity"))
                 .setTextAlign(ColumnTextAlign.END)
-                .setAutoWidth(true);
+                .setAutoWidth(true)
+                .setFlexGrow(0);
 
         grid.addColumn(pos -> pos.getBuyInPrice() != null
                 ? MoneyFormatter.format(pos.getBuyInPrice(), locale())
                 : EMPTY_PLACEHOLDER)
                 .setHeader(getTranslation("finance.positions.column.buy-in"))
                 .setTextAlign(ColumnTextAlign.END)
-                .setAutoWidth(true);
+                .setAutoWidth(true)
+                .setFlexGrow(0);
 
         grid.addColumn(new ComponentRenderer<>(this::renderPriceCell))
                 .setHeader(getTranslation("finance.positions.column.price"))
                 .setTextAlign(ColumnTextAlign.END)
-                .setAutoWidth(true);
+                .setAutoWidth(true)
+                .setFlexGrow(0);
 
         grid.addColumn(pos -> pos.getMarketValueEur()
                 .map(val -> MoneyFormatter.format(val, locale()))
                 .orElse(EMPTY_PLACEHOLDER))
                 .setHeader(getTranslation("finance.positions.column.value"))
                 .setTextAlign(ColumnTextAlign.END)
-                .setAutoWidth(true);
+                .setAutoWidth(true)
+                .setFlexGrow(0);
 
         grid.addColumn(new ComponentRenderer<>(this::renderPerformanceCell))
                 .setHeader(getTranslation("finance.positions.column.performance"))
                 .setTextAlign(ColumnTextAlign.END)
-                .setAutoWidth(true);
+                .setAutoWidth(true)
+                .setFlexGrow(0);
 
         if (canModify) {
             grid.addColumn(new ComponentRenderer<>(this::renderRowActions))
                     .setHeader(getTranslation("finance.positions.column.actions"))
-                    .setAutoWidth(true);
+                    .setAutoWidth(true)
+                    .setFlexGrow(0);
         }
 
         grid.addThemeVariants(GridVariant.LUMO_COMPACT, GridVariant.LUMO_ROW_STRIPES);
-        grid.setSizeFull();
+        grid.setWidthFull();
+        grid.setAllRowsVisible(true);
     }
 
     private Span renderPriceCell(PortfolioPosition pos) {

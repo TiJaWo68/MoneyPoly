@@ -65,7 +65,9 @@ public class StatementImportDialog extends Dialog {
         this.accountService = accountService;
 
         setHeaderTitle(getTranslation("finance.statement.title"));
-        setWidth("1100px");
+        setWidth("1200px");
+        setMaxWidth("96vw");
+        setMaxHeight("92vh");
 
         upload = new Upload(this::receiveUpload);
         upload.setAcceptedFileTypes(".pdf", PDF_MIME_TYPE);

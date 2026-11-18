@@ -117,7 +117,9 @@ public class UtilityBillCheckDialog extends Dialog {
         this.photoService = photoService;
 
         setHeaderTitle(getTranslation("energy.bill.dialog.title"));
-        setWidth("1140px");
+        setWidth("1220px");
+        setMaxWidth("96vw");
+        setMaxHeight("92vh");
         setCloseOnEsc(true);
         setCloseOnOutsideClick(false);
 
