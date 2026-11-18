@@ -8,6 +8,7 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 
 import com.vaadin.flow.component.ClientCallable;
@@ -41,7 +42,9 @@ import com.vaadin.flow.data.value.ValueChangeMode;
 import com.vaadin.flow.dom.Element;
 import com.vaadin.flow.theme.lumo.LumoUtility;
 
+import de.in.mp.energy.ArchivedMeterPhoto;
 import de.in.mp.energy.Meter;
+import de.in.mp.energy.MeterReadingPhotoService;
 import de.in.mp.energy.MeterService;
 import de.in.mp.energy.bill.ArithmeticCheckResult;
 import de.in.mp.energy.bill.BillVerdict;
@@ -69,6 +72,7 @@ public class UtilityBillCheckDialog extends Dialog {
 
     private final UtilityBillVerificationService verificationService;
     private final MeterService meterService;
+    private final MeterReadingPhotoService photoService;
 
     private final Upload upload;
     private final ComboBox<Meter> meterSelector = new ComboBox<>();
@@ -79,6 +83,7 @@ public class UtilityBillCheckDialog extends Dialog {
     private final Div verdictBanner = new Div();
     private final HorizontalLayout summaryRow = new HorizontalLayout();
     private final VerticalLayout checksList = new VerticalLayout();
+    private final HorizontalLayout proofPhotosRow = new HorizontalLayout();
     private final Grid<PeriodComparison> periodGrid = new Grid<>(PeriodComparison.class, false);
     private final VerticalLayout complaintSection = new VerticalLayout();
     private final BigDecimalField currentReadingField = new BigDecimalField();
@@ -100,8 +105,16 @@ public class UtilityBillCheckDialog extends Dialog {
     private Runnable onMeterUpdated;
 
     public UtilityBillCheckDialog(UtilityBillVerificationService verificationService, MeterService meterService) {
+        this(verificationService, meterService, null);
+    }
+
+    public UtilityBillCheckDialog(
+            UtilityBillVerificationService verificationService,
+            MeterService meterService,
+            MeterReadingPhotoService photoService) {
         this.verificationService = verificationService;
         this.meterService = meterService;
+        this.photoService = photoService;
 
         setHeaderTitle(getTranslation("energy.bill.dialog.title"));
         setWidth("1140px");
@@ -161,9 +174,14 @@ public class UtilityBillCheckDialog extends Dialog {
         checksList.setSpacing(false);
         checksList.addClassNames(LumoUtility.Gap.XSMALL);
 
+        proofPhotosRow.setPadding(false);
+        proofPhotosRow.setAlignItems(Alignment.CENTER);
+        proofPhotosRow.getStyle().set("flex-wrap", "wrap");
+        proofPhotosRow.setVisible(false);
+
         resultsContainer.setPadding(false);
         resultsContainer.setSpacing(true);
-        resultsContainer.add(verdictBanner, summaryRow, checksList, periodGrid, complaintSection);
+        resultsContainer.add(verdictBanner, summaryRow, checksList, proofPhotosRow, periodGrid, complaintSection);
         resultsContainer.setVisible(false);
 
         Button closeButton = new Button(getTranslation("energy.bill.button.close"), event -> close());
@@ -300,11 +318,58 @@ public class UtilityBillCheckDialog extends Dialog {
         renderVerdictBanner(result);
         renderSummaryCards(result);
         renderCheckLines(result);
+        renderProofPhotos(selectedMeter, bill);
         periodGrid.setItems(result.periodComparisons());
         if (complaintSection.isVisible()) {
             refreshComplaintDraft();
         }
         resultsContainer.setVisible(true);
+    }
+
+    private void renderProofPhotos(Meter selectedMeter, UtilityBill bill) {
+        proofPhotosRow.removeAll();
+        if (photoService == null || selectedMeter == null || selectedMeter.getId() == null) {
+            proofPhotosRow.setVisible(false);
+            return;
+        }
+        Optional<ArchivedMeterPhoto> periodEndPhoto = bill.periodEnd() != null
+                ? photoService.findForMeterNearDate(selectedMeter.getId(), bill.periodEnd(), 2)
+                : Optional.empty();
+        Optional<ArchivedMeterPhoto> latestPhoto = photoService.findLatestForMeter(selectedMeter.getId());
+
+        if (periodEndPhoto.isEmpty() && latestPhoto.isEmpty()) {
+            proofPhotosRow.setVisible(false);
+            return;
+        }
+
+        Span label = new Span(getTranslation("energy.bill.proof-photos.label"));
+        label.addClassNames(LumoUtility.FontSize.SMALL, LumoUtility.TextColor.SECONDARY);
+        proofPhotosRow.add(label);
+
+        periodEndPhoto.ifPresent(archived -> {
+            Button btn = new Button(
+                    getTranslation("energy.bill.proof-photos.period-end", formatDate(archived.readingDate())),
+                    VaadinIcon.CAMERA.create());
+            btn.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY);
+            proofPhotosRow.add(MeterPhotoUiHelper.createDownloadAnchor(
+                    btn, archived.photo(), archived.downloadFileName(selectedMeter.getName())));
+        });
+
+        latestPhoto.ifPresent(latest -> {
+            boolean sameAsPeriodEnd = periodEndPhoto.isPresent()
+                    && Objects.equals(
+                            periodEndPhoto.get().photo().getMeterReadingId(),
+                            latest.photo().getMeterReadingId());
+            if (!sameAsPeriodEnd) {
+                Button btn = new Button(
+                        getTranslation("energy.bill.proof-photos.latest", formatDate(latest.readingDate())),
+                        VaadinIcon.CAMERA.create());
+                btn.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY);
+                proofPhotosRow.add(MeterPhotoUiHelper.createDownloadAnchor(
+                        btn, latest.photo(), latest.downloadFileName(selectedMeter.getName())));
+            }
+        });
+        proofPhotosRow.setVisible(true);
     }
 
     private void renderVerdictBanner(UtilityBillVerificationResult result) {

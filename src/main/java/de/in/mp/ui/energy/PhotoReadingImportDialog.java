@@ -36,6 +36,7 @@ import com.vaadin.flow.theme.lumo.LumoUtility;
 import de.in.mp.admin.AppSettingService;
 import de.in.mp.energy.Meter;
 import de.in.mp.energy.MeterReading;
+import de.in.mp.energy.MeterReadingPhotoService;
 import de.in.mp.energy.MeterReadingService;
 import de.in.mp.energy.MeterService;
 import de.in.mp.energy.vision.ExifDateExtractor;
@@ -152,10 +153,12 @@ public class PhotoReadingImportDialog extends Dialog {
     private final MeterReadingService readingService;
     private final AppSettingService appSettingService;
     private final VisionMeterClient visionMeterClient;
+    private final MeterReadingPhotoService photoService;
 
     private final Upload upload;
     private final Grid<ReviewRow> grid = new Grid<>();
     private final Checkbox persistHints = new Checkbox();
+    private final Checkbox archivePhotos = new Checkbox();
     private final Button saveButton = new Button();
 
     private final Map<String, ByteArrayOutputStream> buffers = new HashMap<>();
@@ -172,10 +175,20 @@ public class PhotoReadingImportDialog extends Dialog {
             MeterReadingService readingService,
             AppSettingService appSettingService,
             VisionMeterClient visionMeterClient) {
+        this(meterService, readingService, appSettingService, visionMeterClient, null);
+    }
+
+    public PhotoReadingImportDialog(
+            MeterService meterService,
+            MeterReadingService readingService,
+            AppSettingService appSettingService,
+            VisionMeterClient visionMeterClient,
+            MeterReadingPhotoService photoService) {
         this.meterService = meterService;
         this.readingService = readingService;
         this.appSettingService = appSettingService;
         this.visionMeterClient = visionMeterClient;
+        this.photoService = photoService;
 
         setHeaderTitle(getTranslation("energy.photo.title"));
         setWidth("1320px");
@@ -194,15 +207,22 @@ public class PhotoReadingImportDialog extends Dialog {
         persistHints.setLabel(getTranslation("energy.photo.persist-hints"));
         persistHints.setValue(true);
 
+        archivePhotos.setLabel(getTranslation("energy.photo.archive-photos"));
+        archivePhotos.setTooltipText(getTranslation("energy.photo.archive-photos.tooltip"));
+        archivePhotos.setValue(true);
+        archivePhotos.setVisible(photoService != null);
+
         saveButton.setText(getTranslation("energy.photo.button.save"));
         saveButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
         saveButton.addClickListener(event -> requestSave());
         Button cancelButton = new Button(getTranslation("energy.button.cancel"), event -> close());
 
-        HorizontalLayout footer = new HorizontalLayout(persistHints, new HorizontalLayout(cancelButton, saveButton));
+        HorizontalLayout options = new HorizontalLayout(persistHints, archivePhotos);
+        options.setAlignItems(Alignment.CENTER);
+        HorizontalLayout footer = new HorizontalLayout(options, new HorizontalLayout(cancelButton, saveButton));
         footer.setWidthFull();
         footer.setDefaultVerticalComponentAlignment(Alignment.CENTER);
-        footer.expand(persistHints);
+        footer.expand(options);
         footer.setJustifyContentMode(JustifyContentMode.BETWEEN);
 
         Button pasteButton = new Button(getTranslation("energy.photo.paste.button"),
@@ -311,7 +331,7 @@ public class PhotoReadingImportDialog extends Dialog {
                     config, bytes, effectiveMime, exifDate.orElse(null), activeMeters, latestValuesByMeter);
             if (extracted.isEmpty()) {
                 rows.add(new ReviewRow(
-                        fileName, dataUri, null, exifDate.orElse(LocalDate.now()),
+                        fileName, effectiveMime, bytes, dataUri, null, exifDate.orElse(LocalDate.now()),
                         null, false, 0.0, getTranslation("energy.photo.no-match")));
             } else {
                 for (ExtractedMeterReading candidate : extracted) {
@@ -322,7 +342,7 @@ public class PhotoReadingImportDialog extends Dialog {
                             ? candidate.readingDate()
                             : exifDate.orElse(LocalDate.now());
                     rows.add(new ReviewRow(
-                            fileName, dataUri, matched, date, normalized,
+                            fileName, effectiveMime, bytes, dataUri, matched, date, normalized,
                             candidate.delta(), candidate.confidence(), candidate.sourceHint()));
                 }
             }
@@ -581,7 +601,12 @@ public class PhotoReadingImportDialog extends Dialog {
             if (row.meter == null || row.readingDate == null || effective == null) {
                 continue;
             }
-            readingService.recordReading(row.meter.getId(), row.readingDate, effective, row.sourceHint);
+            MeterReading savedReading = readingService.recordReading(
+                    row.meter.getId(), row.readingDate, effective, row.sourceHint);
+            if (photoService != null && Boolean.TRUE.equals(archivePhotos.getValue())
+                    && savedReading != null && savedReading.getId() != null && row.rawBytes != null) {
+                photoService.savePhoto(savedReading.getId(), row.fileName, row.mimeType, row.rawBytes);
+            }
             if (Boolean.TRUE.equals(persistHints.getValue())
                     && (row.meter.getRecognitionHint() == null || row.meter.getRecognitionHint().isBlank())
                     && row.sourceHint != null && !row.sourceHint.isBlank()) {
@@ -606,6 +631,8 @@ public class PhotoReadingImportDialog extends Dialog {
 
     static final class ReviewRow {
         final String fileName;
+        final String mimeType;
+        final byte[] rawBytes;
         final String dataUri;
         Meter meter;
         LocalDate readingDate;
@@ -614,9 +641,12 @@ public class PhotoReadingImportDialog extends Dialog {
         final double confidence;
         final String sourceHint;
 
-        ReviewRow(String fileName, String dataUri, Meter meter, LocalDate readingDate, BigDecimal value,
+        ReviewRow(String fileName, String mimeType, byte[] rawBytes, String dataUri, Meter meter,
+                LocalDate readingDate, BigDecimal value,
                 boolean addToPrevious, double confidence, String sourceHint) {
             this.fileName = fileName;
+            this.mimeType = mimeType;
+            this.rawBytes = rawBytes;
             this.dataUri = dataUri;
             this.meter = meter;
             this.readingDate = readingDate;

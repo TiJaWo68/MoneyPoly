@@ -10,6 +10,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -20,13 +22,16 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.button.Button;
+import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.checkbox.Checkbox;
 import com.vaadin.flow.component.combobox.ComboBox;
+import com.vaadin.flow.component.dialog.Dialog;
 import com.vaadin.flow.component.grid.ColumnTextAlign;
 import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.grid.GridVariant;
 import com.vaadin.flow.component.grid.HeaderRow;
 import com.vaadin.flow.component.html.H3;
+import com.vaadin.flow.component.html.Image;
 import com.vaadin.flow.component.html.Paragraph;
 import com.vaadin.flow.component.html.Span;
 import com.vaadin.flow.component.icon.VaadinIcon;
@@ -54,6 +59,8 @@ import de.in.mp.energy.EnergyHouse;
 import de.in.mp.energy.EnergyHouseService;
 import de.in.mp.energy.EnergyTariff;
 import de.in.mp.energy.EnergyTariffService;
+import de.in.mp.energy.MeterReadingPhoto;
+import de.in.mp.energy.MeterReadingPhotoService;
 import de.in.mp.energy.bill.UtilityBillVerificationService;
 import de.in.mp.energy.Meter;
 import de.in.mp.energy.MeterReading;
@@ -90,6 +97,7 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle, Befor
     private final EnergyTariffService tariffService;
     private final EnergyAmortizationService amortizationService;
     private final AppSettingService appSettingService;
+    private final MeterReadingPhotoService photoService;
 
     private final BatchMeterReadingDialog batchReadingDialog;
     private final PhotoReadingImportDialog photoImportDialog;
@@ -125,7 +133,9 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle, Befor
     private List<EnergyHouse> accessibleHouses = List.of();
     private UUID selectedHouseId;
     private Map<UUID, String> assetNamesById = Map.of();
+    private Map<UUID, Meter> metersById = Map.of();
     private Map<UUID, BigDecimal> averageDeltasByMeter = Map.of();
+    private Set<UUID> archivedPhotoReadingIds = Set.of();
     private List<String> configuredMeterSignature;
     private HeaderRow groupHeaderRow;
 
@@ -135,7 +145,8 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle, Befor
             MeterReadingService readingService,
             EnergyTariffService tariffService,
             EnergyAmortizationService amortizationService) {
-        this(assetService, meterService, readingService, tariffService, amortizationService, null, null, null, null);
+        this(assetService, meterService, readingService, tariffService, amortizationService,
+                null, null, null, null, null);
     }
 
     public EnergyView(
@@ -147,7 +158,7 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle, Befor
             AppSettingService appSettingService,
             VisionMeterClient visionMeterClient) {
         this(assetService, meterService, readingService, tariffService, amortizationService,
-                appSettingService, visionMeterClient, null, null);
+                appSettingService, visionMeterClient, null, null, null);
     }
 
     public EnergyView(
@@ -160,7 +171,21 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle, Befor
             VisionMeterClient visionMeterClient,
             EnergyHouseService houseService) {
         this(assetService, meterService, readingService, tariffService, amortizationService,
-                appSettingService, visionMeterClient, houseService, null);
+                appSettingService, visionMeterClient, houseService, null, null);
+    }
+
+    public EnergyView(
+            EnergyAssetService assetService,
+            MeterService meterService,
+            MeterReadingService readingService,
+            EnergyTariffService tariffService,
+            EnergyAmortizationService amortizationService,
+            AppSettingService appSettingService,
+            VisionMeterClient visionMeterClient,
+            EnergyHouseService houseService,
+            UtilityBillVerificationService billVerificationService) {
+        this(assetService, meterService, readingService, tariffService, amortizationService,
+                appSettingService, visionMeterClient, houseService, billVerificationService, null);
     }
 
     @Autowired
@@ -173,25 +198,28 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle, Befor
             AppSettingService appSettingService,
             VisionMeterClient visionMeterClient,
             @Autowired(required = false) EnergyHouseService houseService,
-            @Autowired(required = false) UtilityBillVerificationService billVerificationService) {
+            @Autowired(required = false) UtilityBillVerificationService billVerificationService,
+            @Autowired(required = false) MeterReadingPhotoService photoService) {
         this.assetService = assetService;
         this.meterService = meterService;
         this.readingService = readingService;
         this.tariffService = tariffService;
         this.amortizationService = amortizationService;
         this.appSettingService = appSettingService;
+        this.photoService = photoService;
         this.houseService = houseService;
         this.houseDialog = houseService != null ? new EnergyHouseDialog(houseService) : null;
 
         this.batchReadingDialog = new BatchMeterReadingDialog(meterService, readingService);
         this.photoImportDialog = (appSettingService != null && visionMeterClient != null)
-                ? new PhotoReadingImportDialog(meterService, readingService, appSettingService, visionMeterClient)
+                ? new PhotoReadingImportDialog(
+                        meterService, readingService, appSettingService, visionMeterClient, photoService)
                 : null;
         this.assetEditorDialog = new EnergyAssetEditorDialog(assetService);
         this.meterEditorDialog = new MeterEditorDialog(meterService, assetService);
         this.tariffEditorDialog = new EnergyTariffEditorDialog(tariffService);
         this.billCheckDialog = billVerificationService != null
-                ? new UtilityBillCheckDialog(billVerificationService, meterService)
+                ? new UtilityBillCheckDialog(billVerificationService, meterService, photoService)
                 : null;
 
         this.readingsTab = new Tab(getTranslation("energy.tab.readings"));
@@ -703,25 +731,108 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle, Befor
     }
 
     private HorizontalLayout renderReadingRowActions(EnergyDateRow row) {
-        if (!canEditCurrentHouse()) {
-            return new HorizontalLayout();
+        HorizontalLayout actions = new HorizontalLayout();
+        boolean hasPhotos = photoService != null && row.readingsByMeter().values().stream()
+                .map(MeterReading::getId)
+                .filter(Objects::nonNull)
+                .anyMatch(archivedPhotoReadingIds::contains);
+        if (hasPhotos) {
+            actions.add(GridActionButton.create(
+                    VaadinIcon.CAMERA,
+                    getTranslation("energy.photo.archive.view"),
+                    e -> openReadingPhotosDialog(row)));
         }
-        Button editButton = GridActionButton.create(
-                VaadinIcon.EDIT,
-                getTranslation("energy.readings.action.edit-row"),
-                e -> batchReadingDialog.openForEdit(row, this::refreshAll, selectedHouseId));
+        if (canEditCurrentHouse()) {
+            actions.add(GridActionButton.create(
+                    VaadinIcon.EDIT,
+                    getTranslation("energy.readings.action.edit-row"),
+                    e -> batchReadingDialog.openForEdit(row, this::refreshAll, selectedHouseId)));
 
-        Button deleteButton = GridActionButton.createDanger(
-                VaadinIcon.TRASH,
-                getTranslation("energy.readings.action.delete-row"),
-                e -> {
-                    readingService.deleteReadingsForDate(selectedHouseId, row.readingDate());
-                    Notification.show(getTranslation("energy.notification.deleted"),
-                            3000, Notification.Position.BOTTOM_START);
-                    refreshAll();
-                });
+            actions.add(GridActionButton.createDanger(
+                    VaadinIcon.TRASH,
+                    getTranslation("energy.readings.action.delete-row"),
+                    e -> {
+                        readingService.deleteReadingsForDate(selectedHouseId, row.readingDate());
+                        Notification.show(getTranslation("energy.notification.deleted"),
+                                3000, Notification.Position.BOTTOM_START);
+                        refreshAll();
+                    }));
+        }
+        return actions;
+    }
 
-        return new HorizontalLayout(editButton, deleteButton);
+    private void openReadingPhotosDialog(EnergyDateRow row) {
+        if (photoService == null) {
+            return;
+        }
+        Dialog dialog = new Dialog();
+        dialog.setHeaderTitle(getTranslation(
+                "energy.photo.archive.dialog.title", DATE_FORMAT.format(row.readingDate())));
+        dialog.setWidth("760px");
+        dialog.setMaxWidth("94vw");
+
+        VerticalLayout list = new VerticalLayout();
+        list.setPadding(false);
+        list.setSpacing(true);
+
+        boolean editable = canEditCurrentHouse();
+        row.readingsByMeter().forEach((meterId, reading) -> {
+            if (reading == null || reading.getId() == null || !archivedPhotoReadingIds.contains(reading.getId())) {
+                return;
+            }
+            Optional<MeterReadingPhoto> maybePhoto = photoService.findByReadingId(reading.getId());
+            if (maybePhoto.isEmpty()) {
+                return;
+            }
+            MeterReadingPhoto photo = maybePhoto.get();
+            Meter meter = metersById.get(meterId);
+            String meterName = meter != null ? meter.getName() : "-";
+            String title = meterName + " · " + formatQuantity(reading.getReadingValue())
+                    + (meter != null && meter.getUnit() != null ? " " + meter.getUnit() : "");
+
+            Span heading = new Span(title);
+            heading.addClassNames(LumoUtility.FontWeight.SEMIBOLD);
+
+            Image preview = new Image(MeterPhotoUiHelper.toDataUri(photo), title);
+            preview.setWidthFull();
+            preview.getStyle().set("max-height", "360px").set("object-fit", "contain")
+                    .set("border-radius", "var(--lumo-border-radius-m)");
+
+            String downloadName = new de.in.mp.energy.ArchivedMeterPhoto(
+                    photo, row.readingDate(), reading.getReadingValue()).downloadFileName(meterName);
+            Button downloadBtn = new Button(
+                    getTranslation("energy.photo.archive.download"), VaadinIcon.DOWNLOAD_ALT.create());
+            downloadBtn.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_PRIMARY);
+            HorizontalLayout photoActions = new HorizontalLayout(
+                    MeterPhotoUiHelper.createDownloadAnchor(downloadBtn, photo, downloadName));
+
+            if (editable) {
+                Button deletePhotoBtn = GridActionButton.createDanger(
+                        VaadinIcon.TRASH,
+                        getTranslation("energy.photo.archive.delete"),
+                        ev -> {
+                            photoService.deleteByReadingId(reading.getId());
+                            Notification.show(getTranslation("energy.photo.archive.deleted"),
+                                    3000, Notification.Position.BOTTOM_START);
+                            dialog.close();
+                            refreshAll();
+                        });
+                photoActions.add(deletePhotoBtn);
+            }
+
+            VerticalLayout card = new VerticalLayout(heading, preview, photoActions);
+            card.setPadding(true);
+            card.setSpacing(true);
+            card.addClassNames(LumoUtility.Background.CONTRAST_5, LumoUtility.BorderRadius.MEDIUM);
+            list.add(card);
+        });
+
+        Button closeBtn = new Button(getTranslation("energy.bill.button.close"), ev -> dialog.close());
+        HorizontalLayout footer = new HorizontalLayout(closeBtn);
+        footer.setWidthFull();
+        footer.setJustifyContentMode(com.vaadin.flow.component.orderedlayout.FlexComponent.JustifyContentMode.END);
+        dialog.add(list, footer);
+        dialog.open();
     }
 
     private void configureAmortizationGrid() {
@@ -970,9 +1081,20 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle, Befor
 
         List<Meter> activeMeters = meterService.findActiveByHouse(selectedHouseId);
         List<Meter> allMeters = meterService.findByHouse(selectedHouseId);
+        metersById = allMeters.stream()
+                .filter(m -> m.getId() != null)
+                .collect(Collectors.toMap(Meter::getId, m -> m, (a, b) -> a));
         List<EnergyTariff> tariffs = tariffService.findByHouse(selectedHouseId);
         List<EnergyDateRow> dateRows = amortizationService.buildDateRows(selectedHouseId);
         averageDeltasByMeter = amortizationService.calculateAverageDeltasByMeter(dateRows);
+        List<UUID> readingIds = dateRows.stream()
+                .flatMap(r -> r.readingsByMeter().values().stream())
+                .map(MeterReading::getId)
+                .filter(Objects::nonNull)
+                .toList();
+        archivedPhotoReadingIds = photoService != null
+                ? photoService.findArchivedReadingIds(readingIds)
+                : Set.of();
 
         List<String> signature = meterColumnSignature(activeMeters);
         if (!signature.equals(configuredMeterSignature)) {
