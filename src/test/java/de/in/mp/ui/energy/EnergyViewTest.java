@@ -206,6 +206,32 @@ class EnergyViewTest {
     }
 
     @Test
+    void includesBillCheckActionWhenVerificationServiceIsProvided() {
+        de.in.mp.energy.EnergyAssetService assetService = org.mockito.Mockito.mock(de.in.mp.energy.EnergyAssetService.class);
+        de.in.mp.energy.MeterService meterService = org.mockito.Mockito.mock(de.in.mp.energy.MeterService.class);
+        de.in.mp.energy.MeterReadingService readingService = org.mockito.Mockito.mock(de.in.mp.energy.MeterReadingService.class);
+        de.in.mp.energy.EnergyTariffService tariffService = org.mockito.Mockito.mock(de.in.mp.energy.EnergyTariffService.class);
+        de.in.mp.energy.EnergyAmortizationService amortizationService = org.mockito.Mockito.mock(de.in.mp.energy.EnergyAmortizationService.class);
+        de.in.mp.energy.bill.UtilityBillVerificationService billService =
+                org.mockito.Mockito.mock(de.in.mp.energy.bill.UtilityBillVerificationService.class);
+
+        org.mockito.Mockito.when(assetService.findAll()).thenReturn(java.util.List.of());
+        org.mockito.Mockito.when(meterService.findActive()).thenReturn(java.util.List.of());
+        org.mockito.Mockito.when(meterService.findAll()).thenReturn(java.util.List.of());
+        org.mockito.Mockito.when(tariffService.findAll()).thenReturn(java.util.List.of());
+        org.mockito.Mockito.when(amortizationService.buildDateRows()).thenReturn(java.util.List.of());
+        org.mockito.Mockito.when(amortizationService.calculateTotalInvestmentCost()).thenReturn(BigDecimal.ZERO);
+        org.mockito.Mockito.when(amortizationService.calculateTotalAmortized()).thenReturn(BigDecimal.ZERO);
+        org.mockito.Mockito.when(amortizationService.calculateTotalRemainingCost()).thenReturn(BigDecimal.ZERO);
+
+        EnergyView view = new EnergyView(assetService, meterService, readingService,
+                tariffService, amortizationService, null, null, null, billService);
+
+        // Tab 0 (Readings): Add reading, Check utility bill, Show KPIs
+        assertThat(view.getActionMenuForTest().getSubMenu().getItems()).hasSize(3);
+    }
+
+    @Test
     void hidesExpiredTariffsByDefaultAndShowsThemWhenToggled() {
         de.in.mp.energy.EnergyAssetService assetService = org.mockito.Mockito.mock(de.in.mp.energy.EnergyAssetService.class);
         de.in.mp.energy.MeterService meterService = org.mockito.Mockito.mock(de.in.mp.energy.MeterService.class);

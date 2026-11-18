@@ -54,6 +54,7 @@ import de.in.mp.energy.EnergyHouse;
 import de.in.mp.energy.EnergyHouseService;
 import de.in.mp.energy.EnergyTariff;
 import de.in.mp.energy.EnergyTariffService;
+import de.in.mp.energy.bill.UtilityBillVerificationService;
 import de.in.mp.energy.Meter;
 import de.in.mp.energy.MeterReading;
 import de.in.mp.energy.MeterReadingService;
@@ -95,6 +96,7 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle, Befor
     private final EnergyAssetEditorDialog assetEditorDialog;
     private final MeterEditorDialog meterEditorDialog;
     private final EnergyTariffEditorDialog tariffEditorDialog;
+    private final UtilityBillCheckDialog billCheckDialog;
 
     private final Span totalInvestmentValue = new Span();
     private final Span totalAmortizedValue = new Span();
@@ -133,7 +135,7 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle, Befor
             MeterReadingService readingService,
             EnergyTariffService tariffService,
             EnergyAmortizationService amortizationService) {
-        this(assetService, meterService, readingService, tariffService, amortizationService, null, null, null);
+        this(assetService, meterService, readingService, tariffService, amortizationService, null, null, null, null);
     }
 
     public EnergyView(
@@ -145,7 +147,20 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle, Befor
             AppSettingService appSettingService,
             VisionMeterClient visionMeterClient) {
         this(assetService, meterService, readingService, tariffService, amortizationService,
-                appSettingService, visionMeterClient, null);
+                appSettingService, visionMeterClient, null, null);
+    }
+
+    public EnergyView(
+            EnergyAssetService assetService,
+            MeterService meterService,
+            MeterReadingService readingService,
+            EnergyTariffService tariffService,
+            EnergyAmortizationService amortizationService,
+            AppSettingService appSettingService,
+            VisionMeterClient visionMeterClient,
+            EnergyHouseService houseService) {
+        this(assetService, meterService, readingService, tariffService, amortizationService,
+                appSettingService, visionMeterClient, houseService, null);
     }
 
     @Autowired
@@ -157,7 +172,8 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle, Befor
             EnergyAmortizationService amortizationService,
             AppSettingService appSettingService,
             VisionMeterClient visionMeterClient,
-            @Autowired(required = false) EnergyHouseService houseService) {
+            @Autowired(required = false) EnergyHouseService houseService,
+            @Autowired(required = false) UtilityBillVerificationService billVerificationService) {
         this.assetService = assetService;
         this.meterService = meterService;
         this.readingService = readingService;
@@ -174,6 +190,9 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle, Befor
         this.assetEditorDialog = new EnergyAssetEditorDialog(assetService);
         this.meterEditorDialog = new MeterEditorDialog(meterService, assetService);
         this.tariffEditorDialog = new EnergyTariffEditorDialog(tariffService);
+        this.billCheckDialog = billVerificationService != null
+                ? new UtilityBillCheckDialog(billVerificationService, meterService)
+                : null;
 
         this.readingsTab = new Tab(getTranslation("energy.tab.readings"));
         this.amortizationTab = new Tab(getTranslation("energy.tab.amortization"));
@@ -264,6 +283,13 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle, Befor
                         getTranslation("energy.button.photo-import"),
                         VaadinIcon.CAMERA,
                         () -> photoImportDialog.openForImport(this::refreshAll, selectedHouseId));
+            }
+
+            if (billCheckDialog != null) {
+                actionMenu.addAction(
+                        getTranslation("energy.button.bill-check"),
+                        VaadinIcon.FILE_TEXT_O,
+                        () -> billCheckDialog.openForCheck(selectedHouseId, this::refreshAll));
             }
 
             if (selected == amortizationTab) {
