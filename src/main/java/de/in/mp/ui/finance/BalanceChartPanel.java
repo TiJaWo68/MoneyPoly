@@ -10,13 +10,16 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Consumer;
 import java.util.function.Function;
 
+import com.vaadin.flow.component.ClientCallable;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.html.Div;
 import com.vaadin.flow.component.html.Span;
+import com.vaadin.flow.component.icon.VaadinIcon;
 import com.vaadin.flow.component.orderedlayout.FlexComponent.Alignment;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
@@ -26,6 +29,7 @@ import com.vaadin.flow.theme.lumo.LumoUtility;
 import de.in.mp.finance.Account;
 import de.in.mp.finance.BalanceDateRow;
 import de.in.mp.finance.DepotValuation;
+import de.in.mp.finance.WealthEvent;
 import de.in.mp.i18n.DateFormatter;
 import de.in.mp.i18n.MoneyFormatter;
 
@@ -51,6 +55,10 @@ class BalanceChartPanel extends VerticalLayout {
     private static final String COLOR_INVESTMENT = "#8b5cf6";
     private static final String COLOR_TOTAL = "#38bdf8";
     private static final String COLOR_INVESTED_CAPITAL = "#f59e0b";
+    private static final String COLOR_WEALTH_EVENT = "#f59e0b";
+
+    record ChartInterval(LocalDate previousDate, LocalDate targetDate, BigDecimal netWorthDelta) {
+    }
 
     private static final List<Integer> YEAR_PRESETS = List.of(1, 3, 5, 10);
     private static final double[] NICE_STEPS = { 1.0, 2.0, 2.5, 5.0, 10.0 };
@@ -66,8 +74,13 @@ class BalanceChartPanel extends VerticalLayout {
     private final Span endDateLabel = new Span();
     private final HorizontalLayout sliderRow = new HorizontalLayout();
     private HorizontalLayout investedLegendItem;
+    private HorizontalLayout eventsLegendItem;
+    private Button manageEventsButton;
 
     private List<BalanceChartPoint> allPoints = List.of();
+    private List<WealthEvent> wealthEvents = List.of();
+    private Consumer<ChartInterval> onIntervalDoubleClick;
+    private Runnable onManageEventsClick;
     private int startIndex;
     private int endIndex;
     private Integer activeYearsPreset;
@@ -89,17 +102,51 @@ class BalanceChartPanel extends VerticalLayout {
                 .set("padding", "var(--lumo-space-m)")
                 .set("box-sizing", "border-box")
                 .set("min-height", "380px");
+        chartContainer.getElement().executeJs(
+                """
+                const host = $0;
+                this.addEventListener('dblclick', (e) => {
+                  const target = e.target && e.target.closest ? e.target.closest('.mp-pt, .mp-seg') : null;
+                  if (!target) return;
+                  const raw = target.getAttribute('data-idx');
+                  if (raw === null) return;
+                  const idx = parseInt(raw, 10);
+                  if (!Number.isNaN(idx) && host.$server && host.$server.handleChartIntervalDoubleClick) {
+                    host.$server.handleChartIntervalDoubleClick(idx);
+                  }
+                });
+                """,
+                getElement());
 
         add(createToolbar(), chartContainer, createSliderBar());
         expand(chartContainer);
     }
 
+    void setChartInteractionCallbacks(
+            Consumer<ChartInterval> onIntervalDoubleClick,
+            Runnable onManageEventsClick) {
+        this.onIntervalDoubleClick = onIntervalDoubleClick;
+        this.onManageEventsClick = onManageEventsClick;
+        if (manageEventsButton != null) {
+            manageEventsButton.setVisible(onManageEventsClick != null);
+        }
+    }
+
     void setData(List<Account> accounts, List<BalanceDateRow> rows) {
-        setData(accounts, rows, Map.of());
+        setData(accounts, rows, Map.of(), List.of());
     }
 
     void setData(List<Account> accounts, List<BalanceDateRow> rows, Map<UUID, DepotValuation> liveDepots) {
+        setData(accounts, rows, liveDepots, List.of());
+    }
+
+    void setData(
+            List<Account> accounts,
+            List<BalanceDateRow> rows,
+            Map<UUID, DepotValuation> liveDepots,
+            List<WealthEvent> wealthEvents) {
         this.allPoints = BalanceChartPoint.fromRows(accounts, rows, liveDepots);
+        this.wealthEvents = wealthEvents != null ? List.copyOf(wealthEvents) : List.of();
         if (allPoints.isEmpty()) {
             startIndex = 0;
             endIndex = 0;
@@ -165,9 +212,14 @@ class BalanceChartPanel extends VerticalLayout {
                 COLOR_INVESTED_CAPITAL, getTranslation("finance.chart.legend.invested-capital"), true);
         investedLegendItem.setVisible(false);
 
+        eventsLegendItem = createLegendItem(
+                COLOR_WEALTH_EVENT, getTranslation("finance.chart.legend.events"), false);
+        eventsLegendItem.setVisible(false);
+
         HorizontalLayout legend = new HorizontalLayout(
                 createLegendItem(COLOR_TOTAL, getTranslation("finance.view.kpi.net-worth"), true),
                 investedLegendItem,
+                eventsLegendItem,
                 createLegendItem(COLOR_INVESTMENT, getTranslation("finance.account.type.INVESTMENT"), false),
                 createLegendItem(COLOR_SAVINGS, getTranslation("finance.account.type.SAVINGS"), false),
                 createLegendItem(COLOR_CHECKING, getTranslation("finance.account.type.CHECKING"), false));
@@ -177,6 +229,18 @@ class BalanceChartPanel extends VerticalLayout {
         rangeSummary.addClassNames(LumoUtility.TextColor.SECONDARY, LumoUtility.FontSize.SMALL);
         deltaBadge.getElement().getThemeList().add("badge");
         deltaBadge.getElement().getThemeList().add("pill");
+
+        manageEventsButton = new Button(
+                getTranslation("finance.chart.button.events"),
+                VaadinIcon.CLIPBOARD_TEXT.create(),
+                event -> {
+                    if (onManageEventsClick != null) {
+                        onManageEventsClick.run();
+                    }
+                });
+        manageEventsButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY);
+        manageEventsButton.setTooltipText(getTranslation("finance.chart.events.hint"));
+        manageEventsButton.setVisible(false);
 
         HorizontalLayout presets = new HorizontalLayout();
         presets.setSpacing(false);
@@ -194,7 +258,7 @@ class BalanceChartPanel extends VerticalLayout {
         presets.add(maxPresetButton);
         updatePresetButtonStyles();
 
-        HorizontalLayout toolbar = new HorizontalLayout(legend, deltaBadge, rangeSummary, presets);
+        HorizontalLayout toolbar = new HorizontalLayout(legend, manageEventsButton, deltaBadge, rangeSummary, presets);
         toolbar.setWidthFull();
         toolbar.setDefaultVerticalComponentAlignment(Alignment.CENTER);
         toolbar.expand(legend);
@@ -344,7 +408,26 @@ class BalanceChartPanel extends VerticalLayout {
         if (investedLegendItem != null) {
             investedLegendItem.setVisible(hasInvestedCapital(visible));
         }
+        if (eventsLegendItem != null) {
+            eventsLegendItem.setVisible(hasVisibleEvents(visible));
+        }
         chartContainer.getElement().setProperty("innerHTML", lastSvgMarkup);
+    }
+
+    @ClientCallable
+    void handleChartIntervalDoubleClick(int visibleIndex) {
+        if (onIntervalDoubleClick == null) {
+            return;
+        }
+        List<BalanceChartPoint> visible = visiblePointsForTest();
+        if (visibleIndex < 0 || visibleIndex >= visible.size()) {
+            return;
+        }
+        BalanceChartPoint target = visible.get(visibleIndex);
+        BalanceChartPoint previous = previousPointForVisibleIndex(visibleIndex);
+        LocalDate prevDate = previous != null ? previous.date() : null;
+        BigDecimal delta = previous != null ? target.total().subtract(previous.total()) : BigDecimal.ZERO;
+        onIntervalDoubleClick.accept(new ChartInterval(prevDate, target.date(), delta));
     }
 
     private void updateDeltaBadge(BigDecimal startTotal, BigDecimal endTotal) {
@@ -405,6 +488,8 @@ class BalanceChartPanel extends VerticalLayout {
                 .append("<style>")
                 .append(".mp-pt{transition:r 0.12s ease,stroke-width 0.12s ease;cursor:pointer;}")
                 .append(".mp-pt:hover{r:7px;stroke-width:2.5px;}")
+                .append(".mp-seg{cursor:pointer;transition:stroke 0.12s ease;}")
+                .append(".mp-seg:hover{stroke:rgba(245,158,11,0.45);}")
                 .append("</style>");
     }
 
@@ -525,6 +610,22 @@ class BalanceChartPanel extends VerticalLayout {
             svg.append("<path data-series=\"TOTAL\" d=\"").append(totalPath)
                     .append("\" fill=\"none\" stroke=\"").append(COLOR_TOTAL)
                     .append("\" stroke-width=\"3\" stroke-linejoin=\"round\" stroke-linecap=\"round\"/>");
+
+            for (int i = 1; i < points.size(); i++) {
+                double x1 = xs[i - 1];
+                double y1 = yFor(points.get(i - 1).total().doubleValue(), maxDouble);
+                double x2 = xs[i];
+                double y2 = yFor(points.get(i).total().doubleValue(), maxDouble);
+                BalanceChartPoint fromPt = points.get(i - 1);
+                BalanceChartPoint toPt = points.get(i);
+                List<WealthEvent> segEvents = eventsForVisibleIndex(i, points);
+                svg.append("<line class=\"mp-seg\" data-idx=\"").append(i)
+                        .append("\" x1=\"").append(fmt(x1)).append("\" y1=\"").append(fmt(y1))
+                        .append("\" x2=\"").append(fmt(x2)).append("\" y2=\"").append(fmt(y2))
+                        .append("\" stroke=\"transparent\" stroke-width=\"14\" stroke-linecap=\"round\">")
+                        .append("<title>").append(escapeXml(buildSegmentTooltip(fromPt, toPt, segEvents))).append("</title>")
+                        .append("</line>");
+            }
         } else {
             svg.append("<g data-series=\"TOTAL\"/>");
         }
@@ -532,15 +633,25 @@ class BalanceChartPanel extends VerticalLayout {
         String radius = points.size() > 60 ? "3" : "4.5";
         for (int i = 0; i < points.size(); i++) {
             BalanceChartPoint point = points.get(i);
+            List<WealthEvent> pointEvents = eventsForVisibleIndex(i, points);
+            BalanceChartPoint prevPoint = previousPointForVisibleIndex(i);
             double x = xs[i];
             double y = yFor(point.total().doubleValue(), maxDouble);
-            svg.append("<circle class=\"mp-pt\" cx=\"").append(fmt(x))
+            svg.append("<circle class=\"mp-pt\" data-idx=\"").append(i)
+                    .append("\" cx=\"").append(fmt(x))
                     .append("\" cy=\"").append(fmt(y))
                     .append("\" r=\"").append(radius)
                     .append("\" fill=\"").append(COLOR_TOTAL)
                     .append("\" stroke=\"var(--lumo-base-color)\" stroke-width=\"1.5\">")
-                    .append("<title>").append(escapeXml(buildPointTooltip(point))).append("</title>")
+                    .append("<title>").append(escapeXml(buildPointTooltip(point, prevPoint, pointEvents))).append("</title>")
                     .append("</circle>");
+            if (!pointEvents.isEmpty()) {
+                svg.append("<circle class=\"mp-ev\" data-idx=\"").append(i)
+                        .append("\" cx=\"").append(fmt(x))
+                        .append("\" cy=\"").append(fmt(y))
+                        .append("\" r=\"7.5\" fill=\"none\" stroke=\"").append(COLOR_WEALTH_EVENT)
+                        .append("\" stroke-width=\"2\" pointer-events=\"none\"/>");
+            }
         }
     }
 
@@ -569,7 +680,8 @@ class BalanceChartPanel extends VerticalLayout {
                 .append("\" stroke-width=\"2.5\" stroke-dasharray=\"6 4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>");
     }
 
-    private String buildPointTooltip(BalanceChartPoint point) {
+    private String buildPointTooltip(
+            BalanceChartPoint point, BalanceChartPoint previousPoint, List<WealthEvent> pointEvents) {
         Locale loc = locale();
         String base = DateFormatter.format(point.date(), loc) + "\n"
                 + getTranslation("finance.view.kpi.net-worth") + ": " + MoneyFormatter.format(point.total(), loc) + "\n"
@@ -580,7 +692,78 @@ class BalanceChartPanel extends VerticalLayout {
             base += "\n" + getTranslation("finance.chart.legend.invested-capital") + ": "
                     + MoneyFormatter.format(point.investedCapital(), loc);
         }
+        if (!pointEvents.isEmpty()) {
+            String header = previousPoint != null
+                    ? getTranslation("finance.chart.tooltip.events-since",
+                            DateFormatter.format(previousPoint.date(), loc))
+                    : getTranslation("finance.chart.tooltip.events");
+            base += "\n" + header + formatEventsLines(pointEvents, loc);
+        }
         return base;
+    }
+
+    private String buildSegmentTooltip(
+            BalanceChartPoint fromPoint, BalanceChartPoint toPoint, List<WealthEvent> segEvents) {
+        Locale loc = locale();
+        BigDecimal delta = toPoint.total().subtract(fromPoint.total());
+        String sign = delta.signum() > 0 ? "+" : "";
+        String text = DateFormatter.format(fromPoint.date(), loc) + " → " + DateFormatter.format(toPoint.date(), loc)
+                + ": " + sign + MoneyFormatter.format(delta, loc);
+        if (!segEvents.isEmpty()) {
+            text += formatEventsLines(segEvents, loc);
+        }
+        return text;
+    }
+
+    private static String formatEventsLines(List<WealthEvent> events, Locale loc) {
+        StringBuilder sb = new StringBuilder();
+        for (WealthEvent ev : events) {
+            BigDecimal amt = ev.getAmount();
+            String sign = amt != null && amt.signum() > 0 ? "+" : "";
+            sb.append("\n• ")
+                    .append(amt != null ? sign + MoneyFormatter.format(amt, loc) : "-")
+                    .append(" · ").append(ev.getDescription());
+        }
+        return sb.toString();
+    }
+
+    private BalanceChartPoint previousPointForVisibleIndex(int visibleIndex) {
+        int absolutePrevIdx = startIndex + visibleIndex - 1;
+        if (absolutePrevIdx >= 0 && absolutePrevIdx < allPoints.size()) {
+            return allPoints.get(absolutePrevIdx);
+        }
+        return null;
+    }
+
+    private List<WealthEvent> eventsForVisibleIndex(int visibleIndex, List<BalanceChartPoint> visible) {
+        if (wealthEvents.isEmpty() || visibleIndex < 0 || visibleIndex >= visible.size()) {
+            return List.of();
+        }
+        BalanceChartPoint prev = previousPointForVisibleIndex(visibleIndex);
+        LocalDate prevDate = prev != null ? prev.date() : null;
+        return eventsForInterval(prevDate, visible.get(visibleIndex).date(), wealthEvents);
+    }
+
+    static List<WealthEvent> eventsForInterval(
+            LocalDate prevExclusive, LocalDate targetInclusive, List<WealthEvent> allEvents) {
+        if (allEvents == null || allEvents.isEmpty() || targetInclusive == null) {
+            return List.of();
+        }
+        return allEvents.stream()
+                .filter(ev -> WealthEventDialog.isDateInInterval(ev.getEventDate(), prevExclusive, targetInclusive))
+                .toList();
+    }
+
+    private boolean hasVisibleEvents(List<BalanceChartPoint> visible) {
+        if (wealthEvents.isEmpty() || visible.isEmpty()) {
+            return false;
+        }
+        for (int i = 0; i < visible.size(); i++) {
+            if (!eventsForVisibleIndex(i, visible).isEmpty()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static List<Integer> selectTickIndices(int totalPoints, int maxTicks) {

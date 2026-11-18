@@ -59,6 +59,8 @@ import de.in.mp.finance.Household;
 import de.in.mp.finance.HouseholdService;
 import de.in.mp.finance.PortfolioPositionImportService;
 import de.in.mp.finance.PortfolioPositionService;
+import de.in.mp.finance.WealthEvent;
+import de.in.mp.finance.WealthEventService;
 import de.in.mp.finance.banksync.BankConnection;
 import de.in.mp.finance.banksync.BankSyncResult;
 import de.in.mp.finance.banksync.BankSyncService;
@@ -67,6 +69,7 @@ import de.in.mp.i18n.DateFormatter;
 import de.in.mp.i18n.MoneyFormatter;
 import de.in.mp.i18n.MoneyPolyI18nProvider;
 import de.in.mp.importer.StatementImportService;
+import de.in.mp.loans.LoanContractService;
 import de.in.mp.ui.ActionMenu;
 import de.in.mp.ui.GridActionButton;
 import de.in.mp.ui.ResponsiveStyles;
@@ -96,11 +99,13 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
     private final HouseholdService householdService;
     private final PortfolioPositionService positionService;
     private final BankSyncService bankSyncService;
+    private final WealthEventService wealthEventService;
     private final AccountEditorDialog editorDialog;
     private final BalanceEntryDialog balanceDialog;
     private final StatementImportDialog statementDialog;
     private final PortfolioPositionsDialog positionsDialog;
     private final BankConnectionDialog connectionDialog;
+    private final WealthEventDialog wealthEventDialog;
     private final ComboBox<Household> householdSelector = new ComboBox<>();
     private UUID selectedHouseholdId;
 
@@ -165,6 +170,17 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
                 householdService, positionService, positionImportService, null);
     }
 
+    public FinanceView(AccountService accountService, AccountSnapshotService snapshotService,
+            BankLookupService bankLookupService, StatementImportService statementImportService,
+            AppSettingService appSettingService,
+            HouseholdService householdService,
+            PortfolioPositionService positionService,
+            PortfolioPositionImportService positionImportService,
+            BankSyncService bankSyncService) {
+        this(accountService, snapshotService, bankLookupService, statementImportService, appSettingService,
+                householdService, positionService, positionImportService, bankSyncService, null, null);
+    }
+
     @Autowired
     public FinanceView(AccountService accountService, AccountSnapshotService snapshotService,
             BankLookupService bankLookupService, StatementImportService statementImportService,
@@ -172,13 +188,16 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
             @Autowired(required = false) HouseholdService householdService,
             @Autowired(required = false) PortfolioPositionService positionService,
             @Autowired(required = false) PortfolioPositionImportService positionImportService,
-            @Autowired(required = false) BankSyncService bankSyncService) {
+            @Autowired(required = false) BankSyncService bankSyncService,
+            @Autowired(required = false) WealthEventService wealthEventService,
+            @Autowired(required = false) LoanContractService loanContractService) {
         this.accountService = accountService;
         this.snapshotService = snapshotService;
         this.appSettingService = appSettingService;
         this.householdService = householdService;
         this.positionService = positionService;
         this.bankSyncService = bankSyncService;
+        this.wealthEventService = wealthEventService;
         this.connectionDialog = bankSyncService != null
                 ? new BankConnectionDialog(bankSyncService, accountService)
                 : null;
@@ -191,6 +210,9 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
         this.statementDialog = new StatementImportDialog(statementImportService, accountService);
         this.positionsDialog = positionService != null
                 ? new PortfolioPositionsDialog(positionService, snapshotService, positionImportService, canModify())
+                : null;
+        this.wealthEventDialog = wealthEventService != null
+                ? new WealthEventDialog(wealthEventService, loanContractService, canModify())
                 : null;
         this.actionMenu = new ActionMenu(getTranslation("ui.action-menu.tooltip"));
         this.kpiRow = createKpiRow();
@@ -222,6 +244,18 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
         treeGrid.getStyle().set("min-height", GRID_MIN_HEIGHT);
 
         configureHouseholdSelector();
+        if (this.wealthEventDialog != null) {
+            chartPanel.setChartInteractionCallbacks(
+                    interval -> this.wealthEventDialog.openForInterval(
+                            resolveActiveHouseholdId(),
+                            interval.previousDate(),
+                            interval.targetDate(),
+                            interval.netWorthDelta(),
+                            this::refresh),
+                    () -> this.wealthEventDialog.openOverview(
+                            resolveActiveHouseholdId(),
+                            this::refresh));
+        }
         HorizontalLayout titleHeader = actionMenu.createTitleHeader(getTranslation("finance.view.title"));
         add(titleHeader, kpiRow, tabBar, tabContent);
         expand(tabContent);
@@ -1020,7 +1054,7 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
         this.connectionsById = loadConnectionsById();
         List<BalanceDateRow> rows = snapshotService.buildDateRows(selectedHouseholdId);
 
-        chartPanel.setData(accounts, rows, resolveLiveDepotValuations(accounts));
+        chartPanel.setData(accounts, rows, resolveLiveDepotValuations(accounts), loadWealthEvents());
         exitPlanPanel.setHouseholdAccounts(accounts, balancesByAccount);
         updateExitPlanTabVisibility();
         Map<UUID, Account> byId = AccountLabels.byId(accounts);
@@ -1191,6 +1225,15 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
 
     void toggleExitPlanForTest(boolean enabled) {
         setExitPlanEnabled(enabled);
+    }
+
+    private List<WealthEvent> loadWealthEvents() {
+        if (wealthEventService == null) {
+            return List.of();
+        }
+        return selectedHouseholdId == null
+                ? wealthEventService.findAll()
+                : wealthEventService.findByHousehold(selectedHouseholdId);
     }
 
     private UUID resolveActiveHouseholdId() {

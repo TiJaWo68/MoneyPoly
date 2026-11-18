@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -15,6 +16,7 @@ import de.in.mp.finance.AccountSnapshot;
 import de.in.mp.finance.AccountType;
 import de.in.mp.finance.BalanceDateRow;
 import de.in.mp.finance.DepotValuation;
+import de.in.mp.finance.WealthEvent;
 
 class BalanceChartPanelTest {
 
@@ -192,6 +194,89 @@ class BalanceChartPanelTest {
         assertThat(points.get(1).investment()).isEqualByComparingTo("22500.00");
         assertThat(points.get(1).investedCapital()).isEqualByComparingTo("18000.00");
         assertThat(points.get(1).total()).isEqualByComparingTo("27500.00");
+    }
+
+    @Test
+    void rendersWealthEventMarkersClickableSegmentsAndTooltipDescriptionsWithoutLumpingOldEventsOnZoom() {
+        Account checking = account(AccountType.CHECKING, true);
+        Account savings = account(AccountType.SAVINGS, true);
+        Account investment = account(AccountType.INVESTMENT, true);
+        List<Account> accounts = List.of(checking, savings, investment);
+
+        LocalDate d1 = LocalDate.of(2023, 1, 31);
+        LocalDate d2 = LocalDate.of(2024, 6, 30);
+        LocalDate d3 = LocalDate.of(2025, 1, 31);
+
+        List<BalanceDateRow> rows = List.of(
+                row(d3, checking, "2000", savings, "10000", investment, "30000"),
+                row(d2, checking, "3000", savings, "15000", investment, "32000"),
+                row(d1, checking, "4000", savings, "12000", investment, "28000"));
+
+        WealthEvent oldEvent = new WealthEvent();
+        oldEvent.setId(UUID.randomUUID());
+        oldEvent.setEventDate(LocalDate.of(2023, 1, 15));
+        oldEvent.setAmount(new BigDecimal("-4500.00"));
+        oldEvent.setDescription("Historical old event");
+
+        WealthEvent intervalEvent = new WealthEvent();
+        intervalEvent.setId(UUID.randomUUID());
+        intervalEvent.setEventDate(LocalDate.of(2024, 10, 15));
+        intervalEvent.setAmount(new BigDecimal("-8000.00"));
+        intervalEvent.setDescription("Loan Gamma");
+
+        BalanceChartPanel panel = new BalanceChartPanel();
+        panel.setData(accounts, rows, Map.of(), List.of(oldEvent, intervalEvent));
+
+        assertThat(panel.svgMarkupForTest())
+                .contains("class=\"mp-seg\"")
+                .contains("class=\"mp-ev\"")
+                .contains("Historical old event")
+                .contains("Loan Gamma");
+
+        // Zoom to [d2, d3] (indices 1..2): prev point for d2 is d1 (in allPoints),
+        // so Historical old event (before d1) must NOT leak onto d2!
+        panel.setRangeIndices(1, 2);
+        assertThat(panel.svgMarkupForTest())
+                .contains("Loan Gamma")
+                .doesNotContain("Historical old event");
+    }
+
+    @Test
+    void invokesIntervalDoubleClickCallbackWithPreviousPointDateAndDeltaEvenWhenZoomed() {
+        Account checking = account(AccountType.CHECKING, true);
+        Account savings = account(AccountType.SAVINGS, true);
+        Account investment = account(AccountType.INVESTMENT, true);
+        List<Account> accounts = List.of(checking, savings, investment);
+
+        LocalDate d1 = LocalDate.of(2024, 1, 31);
+        LocalDate d2 = LocalDate.of(2024, 6, 30);
+        LocalDate d3 = LocalDate.of(2024, 12, 31);
+
+        List<BalanceDateRow> rows = List.of(
+                row(d3, checking, "1000", savings, "5000", investment, "10000"), // total 16000
+                row(d2, checking, "2000", savings, "8000", investment, "10000"), // total 20000
+                row(d1, checking, "5000", savings, "10000", investment, "10000")); // total 25000
+
+        BalanceChartPanel panel = new BalanceChartPanel();
+        List<BalanceChartPanel.ChartInterval> captured = new ArrayList<>();
+        panel.setChartInteractionCallbacks(captured::add, () -> {
+        });
+        panel.setData(accounts, rows, Map.of(), List.of());
+
+        panel.setRangeIndices(1, 2);
+        // visible index 0 is d2 -> previous point in allPoints is d1 -> delta = 20000 - 25000 = -5000
+        panel.handleChartIntervalDoubleClick(0);
+        // visible index 1 is d3 -> previous point is d2 -> delta = 16000 - 20000 = -4000
+        panel.handleChartIntervalDoubleClick(1);
+
+        assertThat(captured).hasSize(2);
+        assertThat(captured.get(0).previousDate()).isEqualTo(d1);
+        assertThat(captured.get(0).targetDate()).isEqualTo(d2);
+        assertThat(captured.get(0).netWorthDelta()).isEqualByComparingTo("-5000");
+
+        assertThat(captured.get(1).previousDate()).isEqualTo(d2);
+        assertThat(captured.get(1).targetDate()).isEqualTo(d3);
+        assertThat(captured.get(1).netWorthDelta()).isEqualByComparingTo("-4000");
     }
 
     private static Account account(AccountType type, boolean active) {
