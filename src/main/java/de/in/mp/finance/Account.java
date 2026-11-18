@@ -97,6 +97,15 @@ public class Account {
     @Column(name = "subsequent_interest_rate", precision = 8, scale = 4)
     private BigDecimal subsequentInterestRate;
 
+    @Column(name = "bank_connection_id")
+    private UUID bankConnectionId;
+
+    @Column(name = "external_account_id", length = 120)
+    private String externalAccountId;
+
+    @Column(name = "auto_sync_enabled", nullable = false)
+    private boolean autoSyncEnabled = false;
+
     @Column(name = "created_at", nullable = false, insertable = false, updatable = false)
     private OffsetDateTime createdAt;
 
@@ -277,6 +286,34 @@ public class Account {
 
     public void setSubsequentInterestRate(BigDecimal subsequentInterestRate) {
         this.subsequentInterestRate = subsequentInterestRate;
+    }
+
+    public UUID getBankConnectionId() {
+        return bankConnectionId;
+    }
+
+    public void setBankConnectionId(UUID bankConnectionId) {
+        this.bankConnectionId = bankConnectionId;
+    }
+
+    public String getExternalAccountId() {
+        return externalAccountId;
+    }
+
+    public void setExternalAccountId(String externalAccountId) {
+        this.externalAccountId = externalAccountId;
+    }
+
+    public boolean isAutoSyncEnabled() {
+        return autoSyncEnabled;
+    }
+
+    public void setAutoSyncEnabled(boolean autoSyncEnabled) {
+        this.autoSyncEnabled = autoSyncEnabled;
+    }
+
+    public boolean isOpenBankingLinked() {
+        return bankConnectionId != null && externalAccountId != null && !externalAccountId.isBlank();
     }
 
     /**

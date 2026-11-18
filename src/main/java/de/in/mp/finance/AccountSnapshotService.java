@@ -63,6 +63,32 @@ public class AccountSnapshotService {
     }
 
     /**
+     * Records or consolidates a snapshot within the same calendar month as
+     * {@code value.date()}. If snapshots already exist for that account in that
+     * month, the latest one is updated to {@code value.date()} and its balance/flows,
+     * and any redundant intra-month snapshots are removed so frequent Open-Banking
+     * syncs do not clutter the balance matrix.
+     */
+    @Transactional
+    public AccountSnapshot recordConsolidatedMonthlySnapshot(UUID accountId, SnapshotValue value) {
+        requireBalanceAccount(accountId);
+        validate(value);
+        LocalDate monthStart = value.date().withDayOfMonth(1);
+        LocalDate monthEnd = value.date().withDayOfMonth(value.date().lengthOfMonth());
+        List<AccountSnapshot> existing = snapshotRepository
+                .findByAccountIdAndSnapshotDateBetweenOrderBySnapshotDateDesc(accountId, monthStart, monthEnd);
+        if (existing == null || existing.isEmpty()) {
+            return upsert(accountId, value);
+        }
+        AccountSnapshot survivor = existing.get(0);
+        if (existing.size() > 1) {
+            snapshotRepository.deleteAll(existing.subList(1, existing.size()));
+        }
+        applyValue(survivor, accountId, value);
+        return snapshotRepository.save(survivor);
+    }
+
+    /**
      * Records many snapshots of one account (e.g. a historical migration).
      */
     @Transactional
@@ -214,6 +240,11 @@ public class AccountSnapshotService {
         validate(value);
         AccountSnapshot snapshot = snapshotRepository.findByAccountIdAndSnapshotDate(accountId, value.date())
                 .orElseGet(AccountSnapshot::new);
+        applyValue(snapshot, accountId, value);
+        return snapshotRepository.save(snapshot);
+    }
+
+    private static void applyValue(AccountSnapshot snapshot, UUID accountId, SnapshotValue value) {
         snapshot.setAccountId(accountId);
         snapshot.setSnapshotDate(value.date());
         snapshot.setBalance(scale(value.balance()));
@@ -229,7 +260,6 @@ public class AccountSnapshotService {
         if (value.notes() != null && !value.notes().isBlank()) {
             snapshot.setNotes(value.notes().trim());
         }
-        return snapshotRepository.save(snapshot);
     }
 
     private Account requireBalanceAccount(UUID accountId) {

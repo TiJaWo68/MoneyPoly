@@ -100,6 +100,9 @@ public class AccountService {
 
         if (account.getAccountType() == AccountType.INSTITUTION) {
             account.setInitialBalance(BigDecimal.ZERO);
+            account.setBankConnectionId(null);
+            account.setExternalAccountId(null);
+            account.setAutoSyncEnabled(false);
         }
         if (account.getAccountType() != AccountType.SAVINGS) {
             account.setPromotionalInterestRate(null);

@@ -3,6 +3,7 @@ package de.in.mp.ui.finance;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
@@ -27,6 +28,10 @@ import de.in.mp.finance.BalanceDateRow;
 import de.in.mp.finance.BankLookupService;
 import de.in.mp.finance.Household;
 import de.in.mp.finance.HouseholdService;
+import de.in.mp.finance.banksync.BankConnection;
+import de.in.mp.finance.banksync.BankConnectionStatus;
+import de.in.mp.finance.banksync.BankSyncResult;
+import de.in.mp.finance.banksync.BankSyncService;
 import de.in.mp.importer.StatementImportService;
 
 class FinanceViewTest {
@@ -476,6 +481,62 @@ class FinanceViewTest {
         assertThat(view.isExitPlanTabVisibleForTest()).isFalse();
         assertThat(view.isChartTabSelected()).isTrue();
         assertThat(view.getKpiRowForTest().isVisible()).isTrue();
+    }
+
+    @Test
+    void supportsOpenBankingActionsAndDisplaysConsentDialogAndStatus() {
+        AccountService accountService = mock(AccountService.class);
+        AccountSnapshotService snapshotService = mock(AccountSnapshotService.class);
+        BankLookupService bankLookupService = mock(BankLookupService.class);
+        StatementImportService statementImportService = mock(StatementImportService.class);
+        HouseholdService householdService = mock(HouseholdService.class);
+        BankSyncService bankSyncService = mock(BankSyncService.class);
+
+        UUID householdId = UUID.randomUUID();
+        Household household = new Household();
+        household.setId(householdId);
+        household.setName("Familie");
+
+        UUID connId = UUID.randomUUID();
+        BankConnection connection = new BankConnection();
+        connection.setId(connId);
+        connection.setHouseholdId(householdId);
+        connection.setProviderId("ENABLE_BANKING");
+        connection.setInstitutionName("C24 Bank");
+        connection.setStatus(BankConnectionStatus.ACTIVE);
+        connection.setConsentExpiresAt(java.time.OffsetDateTime.now().plusDays(10));
+
+        Account c24Main = childAccount(UUID.randomUUID(), "Giro", null, 1);
+        c24Main.setHouseholdId(householdId);
+        c24Main.setBankConnectionId(connId);
+        c24Main.setExternalAccountId("ext-c24-1");
+
+        when(householdService.getAccessibleHouseholdsForCurrentUser()).thenReturn(List.of(household));
+        when(householdService.resolveEffectiveHouseholdId(null)).thenReturn(householdId);
+        when(householdService.canModifyCurrentHousehold()).thenReturn(true);
+        when(accountService.findAllByHousehold(householdId)).thenReturn(List.of(c24Main));
+        when(accountService.findActiveAccountsByHousehold(householdId)).thenReturn(List.of(c24Main));
+        when(accountService.calculateInstitutionTotals()).thenReturn(Map.of());
+        when(accountService.calculateNetWorth()).thenReturn(BigDecimal.ZERO);
+        when(accountService.countActiveAccounts()).thenReturn(1L);
+        when(snapshotService.buildDateRows(householdId)).thenReturn(List.of());
+        when(bankSyncService.findConnectionsByHousehold(householdId)).thenReturn(List.of(connection));
+        when(bankSyncService.isEncryptionConfigured()).thenReturn(false);
+        when(bankSyncService.getProviders()).thenReturn(List.of());
+        when(bankSyncService.syncHouseholdAccounts(org.mockito.ArgumentMatchers.eq(householdId),
+                org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new BankSyncResult(1, 0, 0, List.of()));
+
+        FinanceView view = new FinanceView(accountService, snapshotService, bankLookupService,
+                statementImportService, mockAppSettingService(), householdService, null, null, bankSyncService);
+
+        view.syncAllLinkedAccounts();
+        verify(bankSyncService).syncHouseholdAccounts(org.mockito.ArgumentMatchers.eq(householdId),
+                org.mockito.ArgumentMatchers.any());
+
+        BankConnectionDialog dialog = new BankConnectionDialog(bankSyncService, accountService);
+        dialog.initForHousehold(householdId, () -> { });
+        assertThat(dialog.cryptoWarningForTest().isVisible()).isTrue();
     }
 
     private static AppSettingService mockAppSettingService() {

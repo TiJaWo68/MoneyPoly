@@ -1,12 +1,16 @@
 package de.in.mp.ui.finance;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.ArrayDeque;
 import java.util.Deque;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.OptionalLong;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -27,6 +31,7 @@ import com.vaadin.flow.component.html.Paragraph;
 import com.vaadin.flow.component.html.Span;
 import com.vaadin.flow.component.icon.VaadinIcon;
 import com.vaadin.flow.component.notification.Notification;
+import com.vaadin.flow.component.notification.NotificationVariant;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.tabs.Tab;
@@ -54,6 +59,9 @@ import de.in.mp.finance.Household;
 import de.in.mp.finance.HouseholdService;
 import de.in.mp.finance.PortfolioPositionImportService;
 import de.in.mp.finance.PortfolioPositionService;
+import de.in.mp.finance.banksync.BankConnection;
+import de.in.mp.finance.banksync.BankSyncResult;
+import de.in.mp.finance.banksync.BankSyncService;
 import de.in.mp.finance.exitplan.ExitPlanCalculator;
 import de.in.mp.i18n.DateFormatter;
 import de.in.mp.i18n.MoneyFormatter;
@@ -87,10 +95,12 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
     private final AppSettingService appSettingService;
     private final HouseholdService householdService;
     private final PortfolioPositionService positionService;
+    private final BankSyncService bankSyncService;
     private final AccountEditorDialog editorDialog;
     private final BalanceEntryDialog balanceDialog;
     private final StatementImportDialog statementDialog;
     private final PortfolioPositionsDialog positionsDialog;
+    private final BankConnectionDialog connectionDialog;
     private final ComboBox<Household> householdSelector = new ComboBox<>();
     private UUID selectedHouseholdId;
 
@@ -118,13 +128,14 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
     private List<Account> displayedBalanceColumns = List.of();
     private Map<UUID, BigDecimal> balancesByAccount = Map.of();
     private Map<UUID, BigDecimal> institutionTotals = Map.of();
+    private Map<UUID, BankConnection> connectionsById = Map.of();
     private List<Account> currentAccounts = List.of();
 
     public FinanceView(AccountService accountService, AccountSnapshotService snapshotService,
             BankLookupService bankLookupService, StatementImportService statementImportService,
             AppSettingService appSettingService) {
         this(accountService, snapshotService, bankLookupService, statementImportService, appSettingService,
-                null, null, null);
+                null, null, null, null);
     }
 
     public FinanceView(AccountService accountService, AccountSnapshotService snapshotService,
@@ -132,7 +143,7 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
             AppSettingService appSettingService,
             HouseholdService householdService) {
         this(accountService, snapshotService, bankLookupService, statementImportService, appSettingService,
-                householdService, null, null);
+                householdService, null, null, null);
     }
 
     public FinanceView(AccountService accountService, AccountSnapshotService snapshotService,
@@ -141,7 +152,17 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
             HouseholdService householdService,
             PortfolioPositionService positionService) {
         this(accountService, snapshotService, bankLookupService, statementImportService, appSettingService,
-                householdService, positionService, null);
+                householdService, positionService, null, null);
+    }
+
+    public FinanceView(AccountService accountService, AccountSnapshotService snapshotService,
+            BankLookupService bankLookupService, StatementImportService statementImportService,
+            AppSettingService appSettingService,
+            HouseholdService householdService,
+            PortfolioPositionService positionService,
+            PortfolioPositionImportService positionImportService) {
+        this(accountService, snapshotService, bankLookupService, statementImportService, appSettingService,
+                householdService, positionService, positionImportService, null);
     }
 
     @Autowired
@@ -150,13 +171,22 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
             AppSettingService appSettingService,
             @Autowired(required = false) HouseholdService householdService,
             @Autowired(required = false) PortfolioPositionService positionService,
-            @Autowired(required = false) PortfolioPositionImportService positionImportService) {
+            @Autowired(required = false) PortfolioPositionImportService positionImportService,
+            @Autowired(required = false) BankSyncService bankSyncService) {
         this.accountService = accountService;
         this.snapshotService = snapshotService;
         this.appSettingService = appSettingService;
         this.householdService = householdService;
         this.positionService = positionService;
-        this.editorDialog = new AccountEditorDialog(accountService, bankLookupService);
+        this.bankSyncService = bankSyncService;
+        this.connectionDialog = bankSyncService != null
+                ? new BankConnectionDialog(bankSyncService, accountService)
+                : null;
+        this.editorDialog = new AccountEditorDialog(
+                accountService,
+                bankLookupService,
+                bankSyncService,
+                this.connectionDialog != null ? this::openConnectionsFromEditor : null);
         this.balanceDialog = new BalanceEntryDialog(accountService, snapshotService, positionService);
         this.statementDialog = new StatementImportDialog(statementImportService, accountService);
         this.positionsDialog = positionService != null
@@ -247,6 +277,39 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
                 // Ignore malformed query parameter.
             }
         }
+
+        handleOpenBankingCallback(params);
+    }
+
+    private void handleOpenBankingCallback(Map<String, List<String>> params) {
+        if (bankSyncService == null || !canModify()) {
+            return;
+        }
+        List<String> connParam = params.get("bank_connection_id");
+        List<String> codeParam = params.containsKey("code") ? params.get("code") : params.get("ticket");
+        if (connParam == null || connParam.isEmpty() || codeParam == null || codeParam.isEmpty()) {
+            return;
+        }
+        try {
+            UUID connectionId = UUID.fromString(connParam.get(0));
+            var authorized = bankSyncService.completeConnection(connectionId, codeParam.get(0));
+            if (UI.getCurrent() != null) {
+                Notification notification = Notification.show(
+                        getTranslation("finance.banksync.notification.connected", authorized.accounts().size()),
+                        4000,
+                        Notification.Position.BOTTOM_START);
+                notification.addThemeVariants(NotificationVariant.LUMO_SUCCESS);
+            }
+            refresh();
+        } catch (RuntimeException ex) {
+            if (UI.getCurrent() != null) {
+                Notification notification = Notification.show(
+                        getTranslation("finance.banksync.notification.error", ex.getMessage()),
+                        4000,
+                        Notification.Position.MIDDLE);
+                notification.addThemeVariants(NotificationVariant.LUMO_ERROR);
+            }
+        }
     }
 
     void focusAccount(UUID accountId) {
@@ -310,13 +373,28 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
                     getTranslation("finance.view.button.import-statement"),
                     VaadinIcon.FILE_TEXT_O,
                     () -> statementDialog.openForImport(this::refresh));
+            if (bankSyncService != null) {
+                actionMenu.addAction(
+                        getTranslation("finance.banksync.action.sync-all"),
+                        VaadinIcon.REFRESH,
+                        this::syncAllLinkedAccounts);
+            }
 
             if (selected == accountsTab) {
                 actionMenu.addSeparator();
                 actionMenu.addAction(
                         getTranslation("finance.view.button.new-account"),
                         VaadinIcon.PLUS_CIRCLE_O,
-                        () -> editorDialog.openForCreate(this::refresh));
+                        () -> {
+                            editorDialog.openForCreate(this::refresh);
+                            editorDialog.refreshBankConnections(resolveActiveHouseholdId());
+                        });
+                if (bankSyncService != null && connectionDialog != null) {
+                    actionMenu.addAction(
+                            getTranslation("finance.banksync.action.manage-connections"),
+                            VaadinIcon.CONNECT,
+                            () -> connectionDialog.openForHousehold(resolveActiveHouseholdId(), this::refresh));
+                }
                 actionMenu.addAction(
                         getTranslation("finance.view.button.threshold"),
                         VaadinIcon.SLIDERS,
@@ -741,7 +819,7 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
         dialog.open();
     }
 
-    private Span renderStatus(Account account) {
+    private Component renderStatus(Account account) {
         String statusKey = account.isActive()
                 ? "finance.account.status.active"
                 : "finance.account.status.inactive";
@@ -749,6 +827,45 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
         badge.getElement().getThemeList().add("badge");
         badge.getElement().getThemeList().add("pill");
         badge.getElement().getThemeList().add(account.isActive() ? "success" : "contrast");
+        if (bankSyncService == null || !account.isOpenBankingLinked()) {
+            return badge;
+        }
+        Span consentBadge = createConsentBadge(connectionsById.get(account.getBankConnectionId()));
+        if (consentBadge == null) {
+            return badge;
+        }
+        HorizontalLayout statusLayout = new HorizontalLayout(badge, consentBadge);
+        statusLayout.setSpacing(true);
+        statusLayout.setPadding(false);
+        return statusLayout;
+    }
+
+    private Span createConsentBadge(BankConnection connection) {
+        if (connection == null) {
+            return null;
+        }
+        OffsetDateTime now = OffsetDateTime.now();
+        Span badge = new Span();
+        badge.getElement().getThemeList().add("badge");
+        badge.getElement().getThemeList().add("pill");
+        if (connection.isConsentExpired(now)) {
+            badge.setText(getTranslation("finance.banksync.badge.expired"));
+            badge.getElement().getThemeList().add("error");
+            return badge;
+        }
+        OptionalLong remaining = connection.getRemainingConsentDays(now);
+        if (remaining.isPresent()) {
+            long days = remaining.getAsLong();
+            badge.setText(getTranslation("finance.banksync.badge.valid-days", days));
+            boolean expiringSoon = connection.isConsentExpiringSoon(now, BankSyncService.DEFAULT_CONSENT_WARNING_DAYS);
+            badge.getElement().getThemeList().add(expiringSoon ? "warning" : "success");
+            if (expiringSoon) {
+                badge.setTitle(getTranslation("finance.banksync.badge.expiring-hint", days));
+            }
+            return badge;
+        }
+        badge.setText(getTranslation("finance.banksync.badge.linked"));
+        badge.getElement().getThemeList().add("contrast");
         return badge;
     }
 
@@ -763,6 +880,13 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
         }
         if (!canModify()) {
             return actions;
+        }
+        if (bankSyncService != null && account.isOpenBankingLinked()) {
+            Button syncButton = GridActionButton.create(
+                    VaadinIcon.REFRESH,
+                    getTranslation("finance.banksync.action.sync-account"),
+                    event -> syncSingleAccount(account));
+            actions.add(syncButton);
         }
         Button editButton = GridActionButton.create(
                 VaadinIcon.EDIT,
@@ -893,6 +1017,7 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
                 : accountService.findAllByHousehold(selectedHouseholdId);
         this.currentAccounts = accounts;
         this.balancesByAccount = accountService.resolveCurrentBalances(accounts);
+        this.connectionsById = loadConnectionsById();
         List<BalanceDateRow> rows = snapshotService.buildDateRows(selectedHouseholdId);
 
         chartPanel.setData(accounts, rows, resolveLiveDepotValuations(accounts));
@@ -926,6 +1051,83 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
         netWorthValue.setText(formatMoney(accountService.calculateNetWorth()));
         activeAccountsValue.setText(String.valueOf(accountService.countActiveAccounts()));
         latestDateValue.setText(rows.isEmpty() ? "–" : DateFormatter.format(rows.get(0).date(), locale()));
+    }
+
+    private Map<UUID, BankConnection> loadConnectionsById() {
+        if (bankSyncService == null) {
+            return Map.of();
+        }
+        Map<UUID, BankConnection> map = new HashMap<>();
+        for (BankConnection connection : bankSyncService.findConnectionsByHousehold(selectedHouseholdId)) {
+            if (connection.getId() != null) {
+                map.put(connection.getId(), connection);
+            }
+        }
+        return map;
+    }
+
+    private void openConnectionsFromEditor() {
+        if (connectionDialog == null) {
+            return;
+        }
+        connectionDialog.openForHousehold(resolveActiveHouseholdId(), () -> {
+            refresh();
+            editorDialog.refreshBankConnections(resolveActiveHouseholdId());
+        });
+    }
+
+    void syncAllLinkedAccounts() {
+        if (bankSyncService == null) {
+            return;
+        }
+        try {
+            BankSyncResult result = bankSyncService.syncHouseholdAccounts(resolveActiveHouseholdId(), LocalDate.now());
+            if (UI.getCurrent() != null) {
+                Notification notification = Notification.show(
+                        getTranslation("finance.banksync.notification.synced-batch",
+                                result.syncedAccounts(), result.skippedAccounts(), result.failedAccounts()),
+                        4000,
+                        Notification.Position.BOTTOM_START);
+                notification.addThemeVariants(result.failedAccounts() > 0
+                        ? NotificationVariant.LUMO_CONTRAST
+                        : NotificationVariant.LUMO_SUCCESS);
+            }
+            refresh();
+        } catch (RuntimeException ex) {
+            if (UI.getCurrent() != null) {
+                Notification notification = Notification.show(
+                        getTranslation("finance.banksync.notification.error", ex.getMessage()),
+                        4000,
+                        Notification.Position.MIDDLE);
+                notification.addThemeVariants(NotificationVariant.LUMO_ERROR);
+            }
+        }
+    }
+
+    void syncSingleAccount(Account account) {
+        if (bankSyncService == null || account == null) {
+            return;
+        }
+        try {
+            AccountSnapshot snapshot = bankSyncService.syncAccount(account.getId(), LocalDate.now());
+            if (UI.getCurrent() != null) {
+                Notification notification = Notification.show(
+                        getTranslation("finance.banksync.notification.synced-account",
+                                account.getName(), formatMoney(snapshot.getBalance())),
+                        4000,
+                        Notification.Position.BOTTOM_START);
+                notification.addThemeVariants(NotificationVariant.LUMO_SUCCESS);
+            }
+            refresh();
+        } catch (RuntimeException ex) {
+            if (UI.getCurrent() != null) {
+                Notification notification = Notification.show(
+                        getTranslation("finance.banksync.notification.error", ex.getMessage()),
+                        4000,
+                        Notification.Position.MIDDLE);
+                notification.addThemeVariants(NotificationVariant.LUMO_ERROR);
+            }
+        }
     }
 
     private Map<UUID, DepotValuation> resolveLiveDepotValuations(List<Account> accounts) {

@@ -12,6 +12,7 @@ Selbst gehostete Webanwendung für Haushaltsfinanz-Kaskaden, private Familienkre
   * Interaktive Vermögensvisualisierung: Dynamisches Strecken- und Flächendiagramm (Stacked Area) mit Zeitraum-Schiebereglern und Schnellwahl-Filtern (1J, 3J, 5J, 10J, Max).
   * Stichtagsbezogene Kontostands-Matrix und historische Salden.
   * Automatisierter Kontoauszug-Import (PDF für C24, Targobank; OpenDocument Spreadsheet ODS).
+  * Optionaler Read-Only-Bankabruf via Open-Banking (PSD2 / AIS über Enable Banking & YAXI, AES-256-GCM-verschlüsselte Sessions, monatliche Snapshot-Konsolidierung und optionaler Nacht-Sync).
   * Integrierte Bankverzeichnis-Abfrage via OpenIBAN / BIC.
 * **Private-Kredite**: Verwaltung von Kreditverträgen, Ratenplänen, Sondertilgungen und offenen Restforderungen im Familien- und Freundeskreis.
 * **Energie & Amortisation („Black Zero")**:
@@ -31,7 +32,7 @@ Selbst gehostete Webanwendung für Haushaltsfinanz-Kaskaden, private Familienkre
 * **Backend**: Java 25 (OpenJDK / Eclipse Temurin), Spring Boot 4
 * **Frontend**: Vaadin Flow 25 (Full-Stack Java, Lumo Dark/Light-Theme, serverseitiges Event-Handling, SVG-Visualisierung)
 * **Persistenz**: PostgreSQL, Spring Data JPA / Hibernate (`ddl-auto: none`, `open-in-view: false`)
-* **Datenbank-Migrationen**: Flyway (`V1`–`V15`)
+* **Datenbank-Migrationen**: Flyway (`V1`–`V21`)
 * **Sicherheit**: Spring Security (Form-Login mit BCrypt und optionales Google OAuth2/OIDC)
 * **Testing**: JUnit 5, Mockito, Testcontainers (PostgreSQL)
 * **Logging**: Logback mit Logstash-JSON-Streaming über TCP
@@ -71,8 +72,19 @@ Bitte diesen Token zur Freischaltung auf /setup eingeben.
 | `LOGGING_TCP_DESTINATIONS` | `${LOGGING_TCP_HOST}:${LOGGING_TCP_PORT}` | Komma-separierte Liste von Log-Zielen mit Failover (z. B. `192.168.178.110:4560,192.168.178.135:4560` für WLAN + Docking-LAN) |
 | `LOGGING_TCP_HOST` | `127.0.0.1` | Fallback-Host des Log-Receivers (z. B. Chainsaw / Logstash) |
 | `LOGGING_TCP_PORT` | `4560` | Fallback-Port des TCP-Log-Receivers |
+| `MONEYPOLY_CRYPTO_KEY` | *leer* | Master-Key für AES-256-GCM-Verschlüsselung von Open-Banking-Sessions (z. B. `openssl rand -base64 32`) |
+| `MONEYPOLY_ENABLE_BANKING_APP_ID` | *leer* | Enable Banking Application-ID |
+| `MONEYPOLY_ENABLE_BANKING_PRIVATE_KEY_PATH` | *leer* | Pfad zur Enable-Banking-`.pem`-Datei (RSA PKCS#8 Private Key für RS256-JWT-Signatur) |
+| `MONEYPOLY_ENABLE_BANKING_PRIVATE_KEY` | *leer* | Alternativ: Enable-Banking-Private-Key (`.pem`) direkt als String |
+| `MONEYPOLY_ENABLE_BANKING_TOKEN` | *leer* | Alternativ: vorab signiertes Enable-Banking-JWT |
+| `MONEYPOLY_ENABLE_BANKING_CONSENT_DAYS` | `180` | Gültigkeitsdauer angeforderter Enable-Banking-Consents in Tagen |
+| `MONEYPOLY_ENABLE_BANKING_BASE_URL` | `https://api.enablebanking.com` | Basis-URL der Enable-Banking-API |
+| `MONEYPOLY_YAXI_API_KEY` | *leer* | YAXI API-Key (interaktives AIS inkl. Trade Republic) |
+| `MONEYPOLY_YAXI_BASE_URL` | `https://api.yaxi.tech` | Basis-URL der YAXI-API |
+| `MONEYPOLY_BANKSYNC_SCHEDULING_ENABLED` | `true` | Aktiviert/deaktiviert den nächtlichen automatischen Open-Banking-Sync |
+| `MONEYPOLY_BANKSYNC_CRON` | `0 0 3 * * *` | Cron-Ausdruck für den nächtlichen Hintergrund-Sync |
 
-Die Flyway-Migrationen (`V1`–`V15`) werden beim Start automatisch angewendet.
+Die Flyway-Migrationen (`V1`–`V21`) werden beim Start automatisch angewendet.
 
 ## Download & Ausführung
 
@@ -115,3 +127,32 @@ LOGGING_TCP_HOST=192.168.178.110 \
 LOGGING_TCP_PORT=4560 \
 java -jar moneypoly.jar
 ```
+
+## Open-Banking (PSD2 / AIS) einrichten
+
+MoneyPoly unterstützt optional den rein lesenden Abruf von Kontoständen und Monatsumsätzen über **Enable Banking** (hintergrundfähiger Nacht-Sync, 90–180 Tage Consent) und **YAXI** (interaktives Widget/Ticket, u. a. für Trade Republic). Es werden keine Bank-Passwörter oder PINs gespeichert; Session-Tokens liegen AES-256-GCM-verschlüsselt in PostgreSQL.
+
+1. **Master-Key für die Session-Verschlüsselung erzeugen:**
+   ```bash
+   openssl rand -base64 32
+   ```
+   Diesen Wert als `MONEYPOLY_CRYPTO_KEY` hinterlegen. Ohne gesetzten Key startet MoneyPoly weiterhin normal, deaktiviert aber das Anlegen neuer verschlüsselter Bankverbindungen.
+2. **Provider-Zugangsdaten beschaffen:**
+   * **Enable Banking:** Application im Enable-Banking-Dashboard anlegen, Redirect-URL (z. B. `https://<host>/finance?tab=accounts`) freischalten und `MONEYPOLY_ENABLE_BANKING_APP_ID` sowie `MONEYPOLY_ENABLE_BANKING_TOKEN` setzen.
+   * **YAXI:** API-Key (`MONEYPOLY_YAXI_API_KEY`) im YAXI-Portal erstellen und hinterlegen.
+3. **Umgebungsvariablen im systemd-Service hinterlegen** (z. B. in `/etc/systemd/system/moneypoly.service.d/override.conf`):
+   ```ini
+   [Service]
+   Environment="MONEYPOLY_CRYPTO_KEY=<output-von-openssl-rand-base64-32>"
+   Environment="MONEYPOLY_ENABLE_BANKING_APP_ID=<deine-app-id>"
+   Environment="MONEYPOLY_ENABLE_BANKING_TOKEN=<dein-api-token>"
+   Environment="MONEYPOLY_YAXI_API_KEY=<dein-yaxi-api-key>"
+   ```
+   Danach Konfiguration neu laden und Dienst neu starten:
+   ```bash
+   systemctl daemon-reload
+   systemctl restart moneypoly
+   ```
+4. **Bankkonto in MoneyPoly verknüpfen:**
+   * Unter *Finanzen → Konten → Konto bearbeiten → „Bankverbindungen verwalten…“* (oder über das Aktionsmenü) Provider und Bank auswählen und die externe Freigabe abschließen.
+   * Anschließend im Konto die Bankverbindung sowie ggf. den nächtlichen Hintergrund-Sync aktivieren.

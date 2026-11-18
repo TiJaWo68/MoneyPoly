@@ -33,4 +33,5 @@ node_modules/
 /types.d.ts
 /.vaadin-node-tasks.lock
 /build_and_deploy2dev.cmd
+/build_and_deploy2dev.sh
 /.vscode/

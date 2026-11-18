@@ -74,6 +74,18 @@ class AccountSnapshotServiceTest {
                         .max(Comparator.comparing(AccountSnapshot::getSnapshotDate)));
         when(snapshotRepository.findAllByOrderBySnapshotDateDesc()).thenAnswer(invocation ->
                 store.stream().sorted(Comparator.comparing(AccountSnapshot::getSnapshotDate).reversed()).toList());
+        when(snapshotRepository.findByAccountIdAndSnapshotDateBetweenOrderBySnapshotDateDesc(any(), any(), any()))
+                .thenAnswer(invocation -> {
+                    UUID accountId = invocation.getArgument(0);
+                    LocalDate start = invocation.getArgument(1);
+                    LocalDate end = invocation.getArgument(2);
+                    return store.stream()
+                            .filter(s -> s.getAccountId().equals(accountId)
+                                    && !s.getSnapshotDate().isBefore(start)
+                                    && !s.getSnapshotDate().isAfter(end))
+                            .sorted(Comparator.comparing(AccountSnapshot::getSnapshotDate).reversed())
+                            .toList();
+                });
     }
 
     @Test
@@ -220,6 +232,26 @@ class AccountSnapshotServiceTest {
                 .extracting(AccountSnapshot::getBalance)
                 .satisfies(balance -> assertThat(balance).isEqualByComparingTo("900.00"));
         verify(accountRepository, never()).save(any());
+    }
+
+    @Test
+    void recordConsolidatedMonthlySnapshotCollapsesIntraMonthSyncsIntoSingleEntry() {
+        LocalDate nov5 = LocalDate.of(2026, 11, 5);
+        LocalDate nov10 = LocalDate.of(2026, 11, 10);
+        LocalDate nov16 = LocalDate.of(2026, 11, 16);
+
+        service.recordSnapshot(checking.getId(), SnapshotValue.ofBalance(nov5, new BigDecimal("1000.00")));
+        service.recordSnapshot(checking.getId(), SnapshotValue.ofBalance(nov10, new BigDecimal("1200.00")));
+        service.recordConsolidatedMonthlySnapshot(checking.getId(), new SnapshotValue(
+                nov16, new BigDecimal("1450.00"), new BigDecimal("500.00"), new BigDecimal("50.00"),
+                "Open-Banking: C24"));
+
+        assertThat(store).hasSize(1);
+        AccountSnapshot consolidated = store.get(0);
+        assertThat(consolidated.getSnapshotDate()).isEqualTo(nov16);
+        assertThat(consolidated.getBalance()).isEqualByComparingTo("1450.00");
+        assertThat(consolidated.getInflow()).isEqualByComparingTo("500.00");
+        assertThat(consolidated.getOutflow()).isEqualByComparingTo("50.00");
     }
 
     private static Account account(AccountType type) {

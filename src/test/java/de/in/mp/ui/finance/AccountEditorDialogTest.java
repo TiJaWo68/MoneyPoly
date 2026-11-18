@@ -10,6 +10,8 @@ import static org.mockito.Mockito.when;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -22,6 +24,10 @@ import de.in.mp.finance.Account;
 import de.in.mp.finance.AccountService;
 import de.in.mp.finance.AccountType;
 import de.in.mp.finance.BankLookupService;
+import de.in.mp.finance.banksync.BankConnection;
+import de.in.mp.finance.banksync.BankConnectionStatus;
+import de.in.mp.finance.banksync.BankSyncProvider;
+import de.in.mp.finance.banksync.BankSyncService;
 
 class AccountEditorDialogTest {
 
@@ -147,5 +153,50 @@ class AccountEditorDialogTest {
         assertThat(saved.getValue().getPromotionalInterestRate()).isEqualByComparingTo("3.50");
         assertThat(saved.getValue().getPromotionalUntil()).isEqualTo(promoUntil);
         assertThat(saved.getValue().getSubsequentInterestRate()).isEqualByComparingTo("1.50");
+    }
+
+    @Test
+    void showsAndPersistsOpenBankingAccessFieldsWhenBankSyncServicePresent() {
+        BankSyncService bankSyncService = mock(BankSyncService.class);
+        BankSyncProvider provider = mock(BankSyncProvider.class);
+        when(provider.supportsBackgroundSync()).thenReturn(true);
+
+        UUID connId = UUID.randomUUID();
+        BankConnection connection = new BankConnection();
+        connection.setId(connId);
+        connection.setProviderId("ENABLE_BANKING");
+        connection.setInstitutionName("Targobank");
+        connection.setStatus(BankConnectionStatus.ACTIVE);
+
+        when(bankSyncService.findConnectionsForCurrentHousehold()).thenReturn(List.of(connection));
+        when(bankSyncService.findProvider("ENABLE_BANKING")).thenReturn(Optional.of(provider));
+
+        AccountEditorDialog syncDialog = new AccountEditorDialog(
+                accountService, mock(BankLookupService.class), bankSyncService, () -> { });
+        syncDialog.initForCreate(() -> { });
+        syncDialog.accountType.setValue(AccountType.CHECKING);
+
+        assertThat(syncDialog.openBankingHeading.isVisible()).isTrue();
+        assertThat(syncDialog.bankConnection.isVisible()).isTrue();
+        assertThat(syncDialog.manageConnectionsButton.isVisible()).isTrue();
+        assertThat(syncDialog.externalAccountId.isVisible()).isTrue();
+        assertThat(syncDialog.autoSyncEnabled.isVisible()).isTrue();
+        assertThat(syncDialog.bankConnection.getTooltip().getText()).isNotBlank();
+        assertThat(syncDialog.bankConnection.getHelperText()).isNotBlank();
+        assertThat(syncDialog.manageConnectionsButton.getTooltip().getText()).isNotBlank();
+        assertThat(syncDialog.externalAccountId.getTooltip().getText()).isNotBlank();
+        assertThat(syncDialog.externalAccountId.getHelperText()).isNotBlank();
+        assertThat(syncDialog.autoSyncEnabled.getTooltip().getText()).isNotBlank();
+
+        syncDialog.bankConnection.setValue(connection);
+        syncDialog.externalAccountId.setValue("ext-targo-1");
+        syncDialog.autoSyncEnabled.setValue(true);
+        syncDialog.save();
+
+        ArgumentCaptor<Account> saved = ArgumentCaptor.forClass(Account.class);
+        verify(accountService).save(saved.capture());
+        assertThat(saved.getValue().getBankConnectionId()).isEqualTo(connId);
+        assertThat(saved.getValue().getExternalAccountId()).isEqualTo("ext-targo-1");
+        assertThat(saved.getValue().isAutoSyncEnabled()).isTrue();
     }
 }

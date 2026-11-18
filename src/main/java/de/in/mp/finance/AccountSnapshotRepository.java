@@ -23,6 +23,9 @@ public interface AccountSnapshotRepository extends JpaRepository<AccountSnapshot
 
     List<AccountSnapshot> findBySnapshotDate(LocalDate snapshotDate);
 
+    List<AccountSnapshot> findByAccountIdAndSnapshotDateBetweenOrderBySnapshotDateDesc(
+            UUID accountId, LocalDate startDate, LocalDate endDate);
+
     @Query("""
             SELECT s FROM AccountSnapshot s
             WHERE s.accountId IN :accountIds

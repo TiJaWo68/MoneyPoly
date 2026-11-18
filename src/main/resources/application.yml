@@ -2,6 +2,21 @@ moneypoly:
   version: @project.version@
   openiban:
     base-url: ${MONEYPOLY_OPENIBAN_BASE_URL:https://openiban.com}
+  banksync:
+    crypto-key: ${MONEYPOLY_CRYPTO_KEY:}
+    scheduling:
+      enabled: ${MONEYPOLY_BANKSYNC_SCHEDULING_ENABLED:true}
+    cron: ${MONEYPOLY_BANKSYNC_CRON:0 0 3 * * *}
+    enable-banking:
+      base-url: ${MONEYPOLY_ENABLE_BANKING_BASE_URL:https://api.enablebanking.com}
+      app-id: ${MONEYPOLY_ENABLE_BANKING_APP_ID:}
+      token: ${MONEYPOLY_ENABLE_BANKING_TOKEN:}
+      private-key: ${MONEYPOLY_ENABLE_BANKING_PRIVATE_KEY:}
+      private-key-path: ${MONEYPOLY_ENABLE_BANKING_PRIVATE_KEY_PATH:}
+      consent-days: ${MONEYPOLY_ENABLE_BANKING_CONSENT_DAYS:180}
+    yaxi:
+      base-url: ${MONEYPOLY_YAXI_BASE_URL:https://api.yaxi.tech}
+      api-key: ${MONEYPOLY_YAXI_API_KEY:}
   logging:
     tcp:
       enabled: ${LOGGING_TCP_ENABLED:false}
