@@ -279,6 +279,98 @@ class BalanceChartPanelTest {
         assertThat(captured.get(1).netWorthDelta()).isEqualByComparingTo("-4000");
     }
 
+    @Test
+    void supportsMonthPresetsDragZoomWheelZoomPanAndPreservesZoomAcrossDataReloads() {
+        Account checking = account(AccountType.CHECKING, true);
+        Account savings = account(AccountType.SAVINGS, true);
+        Account investment = account(AccountType.INVESTMENT, true);
+        List<Account> accounts = List.of(checking, savings, investment);
+
+        // 10 evenly spaced monthly points across 2025
+        List<BalanceDateRow> rows = new ArrayList<>();
+        for (int m = 1; m <= 10; m++) {
+            rows.add(row(LocalDate.of(2025, m, 15), checking, "2000", savings, "10000", investment, String.valueOf(20000 + m * 1000)));
+        }
+
+        BalanceChartPanel panel = new BalanceChartPanel();
+        panel.setData(accounts, rows);
+        assertThat(panel.visiblePointsForTest()).hasSize(10);
+
+        // Month preset 3M keeps last ~3 months from 2025-10-15 -> >= 2025-07-15 (months 7, 8, 9, 10)
+        panel.selectMonthsPreset(3);
+        assertThat(panel.visiblePointsForTest()).extracting(BalanceChartPoint::date)
+                .containsExactly(
+                        LocalDate.of(2025, 7, 15),
+                        LocalDate.of(2025, 8, 15),
+                        LocalDate.of(2025, 9, 15),
+                        LocalDate.of(2025, 10, 15));
+
+        // Reset to Max, then drag-box zoom over the middle 40%-75%
+        panel.selectMaxPreset();
+        panel.handlePlotRangeZoom(0.40, 0.75);
+        List<BalanceChartPoint> zoomed = panel.visiblePointsForTest();
+        assertThat(zoomed.size()).isBetween(2, 6);
+
+        // Saving a wealth event reloads data via setData(...) - custom zoom must stay intact!
+        LocalDate firstZoomDate = zoomed.get(0).date();
+        LocalDate lastZoomDate = zoomed.get(zoomed.size() - 1).date();
+        panel.setData(accounts, rows, Map.of(), List.of());
+        assertThat(panel.visiblePointsForTest().get(0).date()).isEqualTo(firstZoomDate);
+        assertThat(panel.visiblePointsForTest().get(panel.visiblePointsForTest().size() - 1).date())
+                .isEqualTo(lastZoomDate);
+
+        // Pan left & right shifts range while staying zoomed
+        panel.panLeft();
+        assertThat(panel.visiblePointsForTest().get(0).date()).isBefore(firstZoomDate);
+        panel.panRight();
+        assertThat(panel.visiblePointsForTest().get(0).date()).isEqualTo(firstZoomDate);
+
+        // Wheel zoom out restores wider range
+        int spanBeforeOut = panel.visiblePointsForTest().size();
+        panel.handlePlotWheelZoom(0.5, false);
+        assertThat(panel.visiblePointsForTest().size()).isGreaterThan(spanBeforeOut);
+
+        // Tight drag inside a single segment expands safely to include both segment endpoints
+        panel.selectMaxPreset();
+        panel.handlePlotRangeZoom(0.02, 0.04);
+        assertThat(panel.visiblePointsForTest()).hasSizeGreaterThanOrEqualTo(2);
+    }
+
+    @Test
+    void togglesFocusedYScaleAndEvenXSpacingForReadableDenseRanges() {
+        Account checking = account(AccountType.CHECKING, true);
+        Account savings = account(AccountType.SAVINGS, true);
+        Account investment = account(AccountType.INVESTMENT, true);
+        List<Account> accounts = List.of(checking, savings, investment);
+
+        // Uneven dates (2020 gap, then dense days in 2026) with high base net worth (410k - 430k)
+        List<BalanceDateRow> rows = List.of(
+                row(LocalDate.of(2020, 1, 1), checking, "10000", savings, "50000", investment, "350000"),
+                row(LocalDate.of(2026, 1, 10), checking, "10000", savings, "50000", investment, "365000"),
+                row(LocalDate.of(2026, 1, 12), checking, "10000", savings, "50000", investment, "370000"));
+
+        BalanceChartPanel panel = new BalanceChartPanel();
+        panel.setData(accounts, rows);
+
+        // Default: 0-based Y and TIME X
+        assertThat(panel.svgMarkupForTest())
+                .contains("data-ymin=\"0\"")
+                .contains("data-xmode=\"TIME\"");
+
+        // Enable Y Focus: data-ymin rises significantly above 0
+        panel.setYFocusEnabled(true);
+        assertThat(panel.isYFocusEnabled()).isTrue();
+        assertThat(panel.svgMarkupForTest())
+                .doesNotContain("data-ymin=\"0\"");
+
+        // Enable Even X spacing: switches xmode and places middle point strictly in the center (x=740.0)
+        panel.setEvenPointSpacing(true);
+        assertThat(panel.isEvenPointSpacing()).isTrue();
+        assertThat(panel.svgMarkupForTest())
+                .contains("data-xmode=\"EVEN\"")
+                .contains("cx=\"740.0\"");
+    }
+
     private static Account account(AccountType type, boolean active) {
         Account account = new Account();
         account.setId(UUID.randomUUID());
