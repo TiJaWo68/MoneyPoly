@@ -153,6 +153,56 @@ class StatementImportServiceTest {
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
+    @Test
+    void doesNotAutoMatchCashStatementOntoInvestmentDepotByIban() {
+        Account depot = account("TR Depot", AccountType.INVESTMENT, IBAN, "Max Mustermann");
+        StatementEntry cashEntry = new StatementEntry("Trade Republic", "Cashkonto", AccountType.SAVINGS,
+                IBAN, null, "Max Mustermann", CLOSING, new BigDecimal("113.92"), null, null, "IBAN|" + IBAN);
+
+        StatementMatch match = StatementImportService.resolve("Kontoauszug.pdf", cashEntry, List.of(depot));
+
+        assertThat(match.resolved()).isFalse();
+    }
+
+    @Test
+    void applyRejectsCashOnlyOverwriteOfInvestmentDepot() {
+        Account depot = account("TR Depot", AccountType.INVESTMENT, null, null);
+        when(accountRepository.findById(depot.getId())).thenReturn(Optional.of(depot));
+        StatementEntry cashEntry = new StatementEntry("Trade Republic", "Cashkonto", AccountType.SAVINGS,
+                IBAN, null, "Max Mustermann", CLOSING, new BigDecimal("113.92"), null, null, "IBAN|" + IBAN);
+
+        assertThatThrownBy(() -> service.apply(List.of(
+                new StatementAssignment("Kontoauszug.pdf", cashEntry, depot.getId()))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Brokerage");
+        verify(snapshotService, never()).recordSnapshot(any(), any());
+    }
+
+    @Test
+    void applyCombinesBrokerageAndCashAndDeduplicatesDuplicateTradeRepublicCash() {
+        Account depot = account("TR Depot", AccountType.INVESTMENT, null, null);
+        when(accountRepository.findById(depot.getId())).thenReturn(Optional.of(depot));
+        StatementEntry brokerage = new StatementEntry("Trade Republic", "Brokerage", AccountType.INVESTMENT,
+                null, "0123456789", "Max Mustermann", CLOSING, new BigDecimal("113710.08"),
+                null, null, "TradeRepublic|0123456789|BROKERAGE");
+        StatementEntry overviewCash = new StatementEntry("Trade Republic", "Cashkonto", AccountType.SAVINGS,
+                null, "0123456789", "Max Mustermann", CLOSING, new BigDecimal("113.92"),
+                null, null, "TradeRepublic|0123456789|CASH");
+        StatementEntry statementCash = new StatementEntry("Trade Republic", "Cashkonto", AccountType.SAVINGS,
+                IBAN, null, "Max Mustermann", CLOSING, new BigDecimal("113.92"),
+                null, null, "IBAN|" + IBAN);
+
+        int recorded = service.apply(List.of(
+                new StatementAssignment("Vermögensübersicht.pdf", brokerage, depot.getId()),
+                new StatementAssignment("Vermögensübersicht.pdf", overviewCash, depot.getId()),
+                new StatementAssignment("Kontoauszug.pdf", statementCash, depot.getId())));
+
+        assertThat(recorded).isEqualTo(1);
+        ArgumentCaptor<SnapshotValue> value = ArgumentCaptor.forClass(SnapshotValue.class);
+        verify(snapshotService).recordSnapshot(eq(depot.getId()), value.capture());
+        assertThat(value.getValue().balance()).isEqualByComparingTo("113824.00");
+    }
+
     private static StatementEntry ibanEntry() {
         return entry(IBAN, null, AccountType.CHECKING, "IBAN|" + IBAN);
     }

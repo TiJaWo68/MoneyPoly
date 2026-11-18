@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import org.springframework.stereotype.Service;
@@ -79,23 +80,53 @@ public class StatementImportService {
      */
     @Transactional
     public int apply(List<StatementAssignment> assignments) {
-        Map<SnapshotKey, SnapshotValue> aggregated = new LinkedHashMap<>();
+        Map<UUID, Account> loadedAccounts = new LinkedHashMap<>();
+        Set<SnapshotKey> investmentAssignments = new java.util.HashSet<>();
         for (StatementAssignment assignment : assignments) {
             if (assignment.accountId() == null) {
                 continue;
             }
-            Account account = accountRepository.findById(assignment.accountId())
-                    .orElseThrow(() -> new IllegalArgumentException("Account not found: " + assignment.accountId()));
+            Account account = loadedAccounts.computeIfAbsent(assignment.accountId(), id -> accountRepository.findById(id)
+                    .orElseThrow(() -> new IllegalArgumentException("Account not found: " + id)));
+            if (assignment.entry().suggestedType() == AccountType.INVESTMENT) {
+                investmentAssignments.add(new SnapshotKey(account.getId(), assignment.entry().closingDate()));
+            }
+        }
+
+        Map<SnapshotKey, SnapshotValue> aggregated = new LinkedHashMap<>();
+        Set<SnapshotKey> trCashApplied = new java.util.HashSet<>();
+        for (StatementAssignment assignment : assignments) {
+            if (assignment.accountId() == null) {
+                continue;
+            }
+            Account account = loadedAccounts.get(assignment.accountId());
             StatementEntry entry = assignment.entry();
+            SnapshotKey key = new SnapshotKey(account.getId(), entry.closingDate());
+
+            if (account.getAccountType() == AccountType.INVESTMENT
+                    && entry.suggestedType() != AccountType.INVESTMENT
+                    && !investmentAssignments.contains(key)) {
+                throw new IllegalArgumentException(
+                        "Cannot overwrite investment depot '" + account.getName()
+                                + "' with cash-only statement '" + assignment.fileName()
+                                + "' without a Brokerage entry at " + entry.closingDate());
+            }
+            if (isTradeRepublicCashEntry(entry) && !trCashApplied.add(key)) {
+                continue;
+            }
             rememberAssignment(account, entry);
 
             SnapshotValue value = new SnapshotValue(entry.closingDate(), entry.closingBalance(), entry.inflow(),
                     entry.outflow(), NOTE_PREFIX + assignment.fileName());
-            aggregated.merge(new SnapshotKey(account.getId(), entry.closingDate()), value,
-                    StatementImportService::sum);
+            aggregated.merge(key, value, StatementImportService::sum);
         }
         aggregated.forEach((key, value) -> snapshotService.recordSnapshot(key.accountId(), value));
         return aggregated.size();
+    }
+
+    private static boolean isTradeRepublicCashEntry(StatementEntry entry) {
+        return "Trade Republic".equalsIgnoreCase(entry.bank())
+                && entry.suggestedType() != AccountType.INVESTMENT;
     }
 
     static StatementMatch resolve(String fileName, StatementEntry entry, List<Account> accounts) {
@@ -125,6 +156,9 @@ public class StatementImportService {
     }
 
     static boolean matchesAccountNumber(Account account, StatementEntry entry) {
+        if (!isTypeCompatibleForAutoMatch(account.getAccountType(), entry.suggestedType())) {
+            return false;
+        }
         String stored = normalizeNumber(account.getAccountNumber());
         if (stored == null) {
             return false;
@@ -137,6 +171,10 @@ public class StatementImportService {
             return false;
         }
         return stored.equals(number) || (entry.iban() == null && isIban(stored) && stored.endsWith(number));
+    }
+
+    private static boolean isTypeCompatibleForAutoMatch(AccountType accountType, AccountType entryType) {
+        return (accountType == AccountType.INVESTMENT) == (entryType == AccountType.INVESTMENT);
     }
 
     private static boolean matchesHolder(Account account, StatementEntry entry) {

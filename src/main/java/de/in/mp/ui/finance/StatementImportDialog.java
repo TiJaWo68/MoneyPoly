@@ -175,12 +175,23 @@ public class StatementImportDialog extends Dialog {
         if (row.accountId != null) {
             target.setValue(accountsById.get(row.accountId));
         }
-        target.setHelperText(getTranslation("finance.statement.match." + row.match.source().name()));
+        updateTargetHelper(target, row);
         target.addValueChangeListener(event -> {
             row.accountId = event.getValue() == null ? null : event.getValue().getId();
+            updateTargetHelper(target, row);
             updateImportButton();
         });
         return target;
+    }
+
+    private void updateTargetHelper(ComboBox<Account> target, PreviewRow row) {
+        Account selected = row.accountId == null ? null : accountsById.get(row.accountId);
+        if (selected != null && selected.getAccountType() == AccountType.INVESTMENT
+                && row.entry().suggestedType() != AccountType.INVESTMENT) {
+            target.setHelperText(getTranslation("finance.statement.warn.cash-to-depot"));
+        } else {
+            target.setHelperText(getTranslation("finance.statement.match." + row.match.source().name()));
+        }
     }
 
     private void updateImportButton() {
