@@ -17,8 +17,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import de.in.mp.importer.DepotPositionPdfParser;
 import de.in.mp.importer.ImportedDepotPosition;
 import de.in.mp.importer.PdfTextExtractor;
+import de.in.mp.importer.ScalableFinanzstatusParser;
 import de.in.mp.importer.TradeRepublicStatementParser;
 
 class PortfolioPositionImportServiceTest {
@@ -129,6 +131,36 @@ class PortfolioPositionImportServiceTest {
 
         assertThatThrownBy(() -> importService.importTradeRepublicPdf(depotId, pdfBytes))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void selectsMatchingParserFromMultipleDepotParsersForScalableFinanzstatus() {
+        UUID depotId = UUID.randomUUID();
+        Account depot = investmentAccount(depotId);
+        when(positionService.requireInvestmentAccount(depotId)).thenReturn(depot);
+        when(positionRepository.findByAccountIdOrderByNameAsc(depotId)).thenReturn(List.of());
+
+        List<DepotPositionPdfParser> multiParsers = List.of(
+                new TradeRepublicStatementParser(),
+                new ScalableFinanzstatusParser());
+        PortfolioPositionImportService multiService = new PortfolioPositionImportService(
+                positionRepository, positionService, marketPriceProvider, pdfTextExtractor, multiParsers);
+
+        byte[] pdfBytes = new byte[] { 9, 8, 7 };
+        when(pdfTextExtractor.extract(pdfBytes)).thenReturn("""
+                Scalable Capital Bank GmbH
+                Finanzstatus
+                Aktien
+                Stückzahl Wertpapier Positionswert
+                10.000000 Example Tech Corp 4.609,00 EUR
+                US0000000010
+                Gesamt 4.609,00 EUR
+                """);
+
+        DepotImportResult result = multiService.importDepotPdf(depotId, pdfBytes);
+
+        assertThat(result.created()).isEqualTo(1);
+        assertThat(result.totalImported()).isEqualTo(1);
     }
 
     private static Account investmentAccount(UUID id) {

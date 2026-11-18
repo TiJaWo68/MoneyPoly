@@ -17,15 +17,18 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import de.in.mp.importer.DepotPositionPdfParser;
 import de.in.mp.importer.ImportedDepotPosition;
 import de.in.mp.importer.PdfTextExtractor;
 import de.in.mp.importer.TradeRepublicStatementParser;
 
 /**
- * Imports brokerage positions from a Trade Republic {@code VERMÖGENSÜBERSICHT}
- * PDF into an {@link AccountType#INVESTMENT} depot, matching existing holdings
- * by normalized ISIN, consolidating multi-tranche positions with weighted
- * average buy-in prices and performing a full sync cleanup of sold holdings.
+ * Imports brokerage positions from supported broker portfolio overview PDFs
+ * (e.g. Trade Republic {@code VERMÖGENSÜBERSICHT}, Scalable Capital
+ * {@code Finanzstatus}) into an {@link AccountType#INVESTMENT} depot, matching
+ * existing holdings by normalized ISIN, consolidating multi-tranche positions
+ * with weighted average buy-in prices and performing a full sync cleanup of sold
+ * holdings.
  */
 @Service
 public class PortfolioPositionImportService {
@@ -36,7 +39,17 @@ public class PortfolioPositionImportService {
     private final PortfolioPositionService positionService;
     private final MarketPriceProvider marketPriceProvider;
     private final PdfTextExtractor pdfTextExtractor;
-    private final TradeRepublicStatementParser statementParser;
+    private final List<DepotPositionPdfParser> parsers;
+
+    public PortfolioPositionImportService(
+            PortfolioPositionRepository positionRepository,
+            PortfolioPositionService positionService,
+            MarketPriceProvider marketPriceProvider,
+            PdfTextExtractor pdfTextExtractor,
+            TradeRepublicStatementParser statementParser) {
+        this(positionRepository, positionService, marketPriceProvider, pdfTextExtractor,
+                List.of(statementParser));
+    }
 
     @Autowired
     public PortfolioPositionImportService(
@@ -44,25 +57,31 @@ public class PortfolioPositionImportService {
             PortfolioPositionService positionService,
             MarketPriceProvider marketPriceProvider,
             PdfTextExtractor pdfTextExtractor,
-            TradeRepublicStatementParser statementParser) {
+            List<DepotPositionPdfParser> parsers) {
         this.positionRepository = positionRepository;
         this.positionService = positionService;
         this.marketPriceProvider = marketPriceProvider;
         this.pdfTextExtractor = pdfTextExtractor;
-        this.statementParser = statementParser;
+        this.parsers = parsers != null ? List.copyOf(parsers) : List.of();
     }
 
     @Transactional
     public DepotImportResult importTradeRepublicPdf(UUID accountId, byte[] pdfBytes) {
+        return importDepotPdf(accountId, pdfBytes);
+    }
+
+    @Transactional
+    public DepotImportResult importDepotPdf(UUID accountId, byte[] pdfBytes) {
         if (pdfBytes == null || pdfBytes.length == 0) {
             throw new IllegalArgumentException("PDF payload must not be empty");
         }
         Account depot = positionService.requireInvestmentAccount(accountId);
         String text = pdfTextExtractor.extract(pdfBytes);
-        if (!statementParser.supports(text)) {
-            throw new IllegalArgumentException("Unsupported depot statement PDF format");
-        }
-        List<ImportedDepotPosition> parsed = statementParser.parse(text);
+        DepotPositionPdfParser matchingParser = parsers.stream()
+                .filter(p -> p.supports(text))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Unsupported depot statement PDF format"));
+        List<ImportedDepotPosition> parsed = matchingParser.parse(text);
         Map<String, ImportedDepotPosition> importedByIsin = mergeDuplicatePdfRows(parsed);
 
         List<PortfolioPosition> existing = positionRepository.findByAccountIdOrderByNameAsc(depot.getId());

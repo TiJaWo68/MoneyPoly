@@ -307,7 +307,7 @@ class PortfolioPositionsDialog extends Dialog {
             return false;
         }
         try {
-            DepotImportResult result = importService.importTradeRepublicPdf(currentDepot.getId(), pdfBytes);
+            DepotImportResult result = importService.importDepotPdf(currentDepot.getId(), pdfBytes);
             Notification.show(
                     getTranslation("finance.positions.notification.imported",
                             result.created(), result.updated(), result.consolidated(), result.deleted()),

@@ -16,7 +16,7 @@ import org.springframework.stereotype.Component;
  * breaks.
  */
 @Component
-public class TradeRepublicStatementParser {
+public class TradeRepublicStatementParser implements DepotPositionPdfParser {
 
     private static final String MARKER_TR = "TRADE REPUBLIC";
     private static final String MARKER_OVERVIEW = "VERMÖGENSÜBERSICHT";
@@ -49,6 +49,7 @@ public class TradeRepublicStatementParser {
             "GESCHÄFTSFÜHRER",
             "ERSTELLT AM ");
 
+    @Override
     public boolean supports(String rawText) {
         if (rawText == null || rawText.isBlank()) {
             return false;
@@ -59,6 +60,7 @@ public class TradeRepublicStatementParser {
         return hasTr && hasOverview && upper.contains(SECTION_BROKERAGE);
     }
 
+    @Override
     public List<ImportedDepotPosition> parse(String rawText) {
         if (!supports(rawText)) {
             throw new IllegalArgumentException("Not a supported Trade Republic wealth overview PDF");

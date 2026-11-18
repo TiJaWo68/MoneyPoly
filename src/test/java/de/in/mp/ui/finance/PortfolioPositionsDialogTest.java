@@ -93,7 +93,7 @@ class PortfolioPositionsDialogTest {
         when(positionService.resolveValuation(depot, null)).thenReturn(valuation);
 
         byte[] samplePdf = new byte[] { 1, 2, 3 };
-        when(importService.importTradeRepublicPdf(depot.getId(), samplePdf))
+        when(importService.importDepotPdf(depot.getId(), samplePdf))
                 .thenReturn(new DepotImportResult(1, 0, 0, 0, 1));
 
         AtomicBoolean changed = new AtomicBoolean(false);
@@ -102,7 +102,7 @@ class PortfolioPositionsDialogTest {
         dialog.initForDepot(depot, () -> changed.set(true));
 
         assertThat(dialog.importPdf(samplePdf)).isTrue();
-        verify(importService).importTradeRepublicPdf(depot.getId(), samplePdf);
+        verify(importService).importDepotPdf(depot.getId(), samplePdf);
         assertThat(changed).isTrue();
     }
 }
