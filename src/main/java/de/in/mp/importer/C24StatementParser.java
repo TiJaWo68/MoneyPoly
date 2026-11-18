@@ -29,9 +29,12 @@ public class C24StatementParser implements BankStatementParser {
 
     private static final String BANK_MARKER = "C24 Bank GmbH";
     private static final Pattern PERIOD = Pattern.compile(
-            "Kontoauszug\\s+\\d{2}/\\d{4}\\s+(" + StatementText.DATE + ")\\s*-\\s*(" + StatementText.DATE + ")");
+            "Kontoauszug\\s+\\d{2}/\\d{4}.{0,200}?(" + StatementText.DATE + ")\\s*-\\s*("
+                    + StatementText.DATE + ")",
+            Pattern.DOTALL);
     private static final Pattern HEADER_IBAN = Pattern.compile("IBAN:\\s*(DE\\d{2}(?:\\s?\\d{4}){4}\\s?\\d{2})");
     private static final Pattern POSTAL_CODE_LINE = Pattern.compile("^\\d{5}\\s+\\S.*");
+    private static final Pattern COMBINED_ADDRESS_LINE = Pattern.compile("^.+?,\\s*\\d{5}\\s+\\S.*");
     private static final List<String> SAVINGS_MARKERS = List.of("tagesgeld", "pocket", "spar");
 
     @Override
@@ -64,7 +67,7 @@ public class C24StatementParser implements BankStatementParser {
         String iban = ibanMatcher.find() ? StatementText.stripSpaces(ibanMatcher.group(1)) : null;
 
         List<String> headerLines = StatementText.lines(header).stream().filter(line -> !line.isEmpty()).toList();
-        String holder = headerLines.isEmpty() ? "" : headerLines.get(0);
+        String holder = extractHolder(headerLines, text);
         String product = extractProduct(headerLines);
 
         String importKey = iban != null
@@ -73,6 +76,44 @@ public class C24StatementParser implements BankStatementParser {
 
         return List.of(new StatementEntry(BANK, product, suggestType(product), iban, null, holder,
                 closingDate, balance, inflow, outflow, importKey));
+    }
+
+    static String extractHolder(List<String> headerLines, String fullText) {
+        if (headerLines.isEmpty()) {
+            return "";
+        }
+        String first = headerLines.get(0);
+        if (!isProductOrFooterLine(first)) {
+            return first;
+        }
+        // In some C24 layouts, product/footer lines precede the address block; look up
+        // the name line positioned before the customer's address anywhere in the text.
+        List<String> allLines = StatementText.lines(fullText).stream().filter(line -> !line.isEmpty()).toList();
+        for (int i = 1; i < allLines.size(); i++) {
+            String line = allLines.get(i);
+            if (isBankAddressLine(line)) {
+                continue;
+            }
+            if (COMBINED_ADDRESS_LINE.matcher(line).matches() && !isProductOrFooterLine(allLines.get(i - 1))) {
+                return allLines.get(i - 1);
+            }
+            if (i >= 2 && POSTAL_CODE_LINE.matcher(line).matches() && !isProductOrFooterLine(allLines.get(i - 2))) {
+                return allLines.get(i - 2);
+            }
+        }
+        return first;
+    }
+
+    private static boolean isBankAddressLine(String line) {
+        String lower = line.toLowerCase(Locale.ROOT);
+        return lower.contains("c24 bank") || lower.contains("speicherstraße") || lower.contains("60327 frankfurt");
+    }
+
+    private static boolean isProductOrFooterLine(String line) {
+        String lower = line.toLowerCase(Locale.ROOT);
+        return lower.contains("tagesgeld") || lower.contains("smartkonto")
+                || lower.contains("pocket") || lower.contains("c24 bank")
+                || lower.contains("seite ");
     }
 
     /**
@@ -92,7 +133,17 @@ public class C24StatementParser implements BankStatementParser {
             }
             productLines.add(line);
         }
-        return String.join(" ", productLines).trim();
+        String joined = String.join(" ", productLines).trim();
+        if (!joined.isEmpty()) {
+            return joined;
+        }
+        return headerLines.stream()
+                .filter(l -> {
+                    String lower = l.toLowerCase(Locale.ROOT);
+                    return lower.contains("tagesgeld") || lower.contains("smartkonto") || lower.contains("pocket");
+                })
+                .findFirst()
+                .orElse("");
     }
 
     private static AccountType suggestType(String product) {
