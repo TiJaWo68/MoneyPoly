@@ -4,19 +4,24 @@ import java.io.ByteArrayOutputStream;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.text.NumberFormat;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.UUID;
 
+import com.vaadin.flow.component.ClientCallable;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
+import com.vaadin.flow.component.checkbox.Checkbox;
 import com.vaadin.flow.component.combobox.ComboBox;
+import com.vaadin.flow.component.datepicker.DatePicker;
 import com.vaadin.flow.component.dialog.Dialog;
 import com.vaadin.flow.component.grid.ColumnTextAlign;
 import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.grid.GridVariant;
+import com.vaadin.flow.component.html.Anchor;
 import com.vaadin.flow.component.html.Div;
 import com.vaadin.flow.component.html.Paragraph;
 import com.vaadin.flow.component.html.Span;
@@ -27,8 +32,13 @@ import com.vaadin.flow.component.orderedlayout.FlexComponent.Alignment;
 import com.vaadin.flow.component.orderedlayout.FlexComponent.JustifyContentMode;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
+import com.vaadin.flow.component.textfield.BigDecimalField;
+import com.vaadin.flow.component.textfield.TextArea;
+import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.component.upload.Upload;
 import com.vaadin.flow.data.renderer.ComponentRenderer;
+import com.vaadin.flow.data.value.ValueChangeMode;
+import com.vaadin.flow.dom.Element;
 import com.vaadin.flow.theme.lumo.LumoUtility;
 
 import de.in.mp.energy.Meter;
@@ -40,6 +50,9 @@ import de.in.mp.energy.bill.PeriodComparison;
 import de.in.mp.energy.bill.PeriodMatchQuality;
 import de.in.mp.energy.bill.TariffComparison;
 import de.in.mp.energy.bill.UtilityBill;
+import de.in.mp.energy.bill.UtilityBillComplaintGenerator;
+import de.in.mp.energy.bill.UtilityBillComplaintGenerator.ComplaintDraft;
+import de.in.mp.energy.bill.UtilityBillComplaintGenerator.ComplaintOptions;
 import de.in.mp.energy.bill.UtilityBillReadingSource;
 import de.in.mp.energy.bill.UtilityBillVerificationResult;
 import de.in.mp.energy.bill.UtilityBillVerificationService;
@@ -60,16 +73,28 @@ public class UtilityBillCheckDialog extends Dialog {
     private final Upload upload;
     private final ComboBox<Meter> meterSelector = new ComboBox<>();
     private final Button saveSerialButton = new Button();
+    private final Button toggleComplaintButton = new Button();
 
     private final VerticalLayout resultsContainer = new VerticalLayout();
     private final Div verdictBanner = new Div();
     private final HorizontalLayout summaryRow = new HorizontalLayout();
     private final VerticalLayout checksList = new VerticalLayout();
     private final Grid<PeriodComparison> periodGrid = new Grid<>(PeriodComparison.class, false);
+    private final VerticalLayout complaintSection = new VerticalLayout();
+    private final BigDecimalField currentReadingField = new BigDecimalField();
+    private final DatePicker currentReadingDateField = new DatePicker();
+    private final Checkbox smartMeterCheckbox = new Checkbox();
+    private final TextField senderNameField = new TextField();
+    private final TextField complaintSubjectField = new TextField();
+    private final TextArea complaintBodyArea = new TextArea();
+    private final Span complaintRecipientSpan = new Span();
+    private final Anchor gmailLink = new Anchor();
+    private final Anchor mailtoLink = new Anchor();
 
     private ByteArrayOutputStream pendingBuffer;
     private UUID currentHouseId;
     private UtilityBill currentBill;
+    private UtilityBillVerificationResult lastResult;
     private List<Meter> availableMeters = List.of();
     private boolean updatingMeterSelector;
     private Runnable onMeterUpdated;
@@ -112,11 +137,18 @@ public class UtilityBillCheckDialog extends Dialog {
         saveSerialButton.setVisible(false);
         saveSerialButton.addClickListener(event -> saveSerialToMeter());
 
-        HorizontalLayout meterRow = new HorizontalLayout(meterSelector, saveSerialButton);
+        toggleComplaintButton.setText(getTranslation("energy.bill.complaint.button.open"));
+        toggleComplaintButton.setIcon(VaadinIcon.ENVELOPE_O.create());
+        toggleComplaintButton.addThemeVariants(ButtonVariant.LUMO_SMALL);
+        toggleComplaintButton.setVisible(false);
+        toggleComplaintButton.addClickListener(event -> toggleComplaintSection());
+
+        HorizontalLayout meterRow = new HorizontalLayout(meterSelector, saveSerialButton, toggleComplaintButton);
         meterRow.setWidthFull();
         meterRow.setAlignItems(Alignment.END);
 
         configurePeriodGrid();
+        configureComplaintSection();
 
         verdictBanner.setWidthFull();
         verdictBanner.addClassNames(LumoUtility.Padding.MEDIUM, LumoUtility.BorderRadius.MEDIUM);
@@ -131,7 +163,7 @@ public class UtilityBillCheckDialog extends Dialog {
 
         resultsContainer.setPadding(false);
         resultsContainer.setSpacing(true);
-        resultsContainer.add(verdictBanner, summaryRow, checksList, periodGrid);
+        resultsContainer.add(verdictBanner, summaryRow, checksList, periodGrid, complaintSection);
         resultsContainer.setVisible(false);
 
         Button closeButton = new Button(getTranslation("energy.bill.button.close"), event -> close());
@@ -155,6 +187,7 @@ public class UtilityBillCheckDialog extends Dialog {
         this.currentHouseId = houseId;
         this.onMeterUpdated = onMeterUpdated;
         this.currentBill = null;
+        this.lastResult = null;
         this.pendingBuffer = null;
 
         availableMeters = houseId != null ? meterService.findByHouse(houseId) : meterService.findAll();
@@ -165,6 +198,11 @@ public class UtilityBillCheckDialog extends Dialog {
         updatingMeterSelector = false;
 
         saveSerialButton.setVisible(false);
+        toggleComplaintButton.setVisible(false);
+        complaintSection.setVisible(false);
+        currentReadingField.clear();
+        currentReadingDateField.setValue(LocalDate.now());
+        smartMeterCheckbox.setValue(false);
         resultsContainer.setVisible(false);
         periodGrid.setItems(List.of());
         upload.clearFileList();
@@ -244,12 +282,14 @@ public class UtilityBillCheckDialog extends Dialog {
     }
 
     private void renderResult(UtilityBillVerificationResult result) {
+        this.lastResult = result;
         UtilityBill bill = result.bill();
         Meter selectedMeter = meterSelector.getValue();
         boolean canSaveSerial = selectedMeter != null
                 && bill.meterSerialNumber() != null && !bill.meterSerialNumber().isBlank()
                 && !Objects.equals(selectedMeter.getSerialNumber(), bill.meterSerialNumber());
         saveSerialButton.setVisible(canSaveSerial);
+        toggleComplaintButton.setVisible(true);
 
         if (selectedMeter == null && bill.meterSerialNumber() != null && !bill.meterSerialNumber().isBlank()) {
             meterSelector.setHelperText(getTranslation("energy.bill.meter.unmatched-helper", bill.meterSerialNumber()));
@@ -261,6 +301,9 @@ public class UtilityBillCheckDialog extends Dialog {
         renderSummaryCards(result);
         renderCheckLines(result);
         periodGrid.setItems(result.periodComparisons());
+        if (complaintSection.isVisible()) {
+            refreshComplaintDraft();
+        }
         resultsContainer.setVisible(true);
     }
 
@@ -560,6 +603,183 @@ public class UtilityBillCheckDialog extends Dialog {
 
     private String formatDate(java.time.LocalDate date) {
         return date == null ? "-" : DateFormatter.format(date, locale());
+    }
+
+    private void configureComplaintSection() {
+        complaintSection.setPadding(true);
+        complaintSection.setSpacing(true);
+        complaintSection.setWidthFull();
+        complaintSection.addClassNames(LumoUtility.Background.CONTRAST_5, LumoUtility.BorderRadius.MEDIUM);
+        complaintSection.setVisible(false);
+
+        currentReadingField.setLabel(getTranslation("energy.bill.complaint.field.current-reading"));
+        currentReadingField.setPlaceholder("kWh");
+        currentReadingField.setWidth("170px");
+        currentReadingField.addValueChangeListener(e -> refreshComplaintDraft());
+
+        currentReadingDateField.setLabel(getTranslation("energy.bill.complaint.field.current-date"));
+        currentReadingDateField.setValue(LocalDate.now());
+        currentReadingDateField.setWidth("160px");
+        currentReadingDateField.addValueChangeListener(e -> refreshComplaintDraft());
+
+        senderNameField.setLabel(getTranslation("energy.bill.complaint.field.sender"));
+        senderNameField.setWidth("220px");
+        senderNameField.addValueChangeListener(e -> refreshComplaintDraft());
+
+        smartMeterCheckbox.setLabel(getTranslation("energy.bill.complaint.field.imsys"));
+        smartMeterCheckbox.addValueChangeListener(e -> refreshComplaintDraft());
+
+        HorizontalLayout optionsRow = new HorizontalLayout(
+                currentReadingField, currentReadingDateField, senderNameField, smartMeterCheckbox);
+        optionsRow.setWidthFull();
+        optionsRow.setAlignItems(Alignment.END);
+        optionsRow.getStyle().set("flex-wrap", "wrap");
+
+        complaintSubjectField.setLabel(getTranslation("energy.bill.complaint.field.subject"));
+        complaintSubjectField.setWidthFull();
+        complaintSubjectField.setValueChangeMode(ValueChangeMode.LAZY);
+        complaintSubjectField.addValueChangeListener(e -> updateMailLinks());
+
+        Button copySubjectButton = new Button(
+                getTranslation("energy.bill.complaint.button.copy-subject"),
+                VaadinIcon.COPY.create());
+        copySubjectButton.addThemeVariants(ButtonVariant.LUMO_SMALL);
+        bindClipboardCopy(copySubjectButton, complaintSubjectField.getElement());
+
+        HorizontalLayout subjectRow = new HorizontalLayout(complaintSubjectField, copySubjectButton);
+        subjectRow.setWidthFull();
+        subjectRow.setAlignItems(Alignment.END);
+        subjectRow.expand(complaintSubjectField);
+
+        complaintBodyArea.setLabel(getTranslation("energy.bill.complaint.field.body"));
+        complaintBodyArea.setWidthFull();
+        complaintBodyArea.setMinHeight("240px");
+        complaintBodyArea.setValueChangeMode(ValueChangeMode.LAZY);
+        complaintBodyArea.addValueChangeListener(e -> updateMailLinks());
+
+        Button copyBodyButton = new Button(
+                getTranslation("energy.bill.complaint.button.copy-body"),
+                VaadinIcon.COPY.create());
+        copyBodyButton.addThemeVariants(ButtonVariant.LUMO_SMALL);
+        bindClipboardCopy(copyBodyButton, complaintBodyArea.getElement());
+
+        Button gmailButton = new Button(
+                getTranslation("energy.bill.complaint.button.gmail"),
+                VaadinIcon.EXTERNAL_LINK.create());
+        gmailButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY, ButtonVariant.LUMO_SMALL);
+        gmailLink.add(gmailButton);
+        gmailLink.setTarget("_blank");
+        gmailLink.getElement().setAttribute("rel", "noopener noreferrer");
+        gmailLink.getStyle().set("text-decoration", "none");
+
+        Button mailtoButton = new Button(
+                getTranslation("energy.bill.complaint.button.mailto"),
+                VaadinIcon.ENVELOPE_O.create());
+        mailtoButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY, ButtonVariant.LUMO_SMALL);
+        mailtoLink.add(mailtoButton);
+        mailtoLink.getStyle().set("text-decoration", "none");
+
+        complaintRecipientSpan.addClassNames(LumoUtility.FontSize.SMALL, LumoUtility.TextColor.SECONDARY);
+
+        HorizontalLayout linkButtons = new HorizontalLayout(copyBodyButton, mailtoLink, gmailLink);
+        linkButtons.setAlignItems(Alignment.CENTER);
+        linkButtons.getStyle().set("flex-wrap", "wrap");
+
+        HorizontalLayout bodyActions = new HorizontalLayout(complaintRecipientSpan, linkButtons);
+        bodyActions.setWidthFull();
+        bodyActions.setAlignItems(Alignment.CENTER);
+        bodyActions.setJustifyContentMode(JustifyContentMode.BETWEEN);
+        bodyActions.getStyle().set("flex-wrap", "wrap");
+
+        complaintSection.add(optionsRow, subjectRow, complaintBodyArea, bodyActions);
+    }
+
+    private void toggleComplaintSection() {
+        boolean show = !complaintSection.isVisible();
+        complaintSection.setVisible(show);
+        if (show) {
+            refreshComplaintDraft();
+        }
+    }
+
+    private void refreshComplaintDraft() {
+        if (lastResult == null) {
+            return;
+        }
+        ComplaintOptions options = new ComplaintOptions(
+                currentReadingField.getValue(),
+                currentReadingDateField.getValue(),
+                Boolean.TRUE.equals(smartMeterCheckbox.getValue()),
+                senderNameField.getValue());
+        ComplaintDraft draft = UtilityBillComplaintGenerator.generate(lastResult, options, locale());
+        complaintSubjectField.setValue(draft.subject());
+        complaintBodyArea.setValue(draft.body());
+        String recipient = lastResult.bill() != null ? lastResult.bill().providerEmail() : null;
+        complaintRecipientSpan.setText(recipient != null && !recipient.isBlank()
+                ? getTranslation("energy.bill.complaint.recipient", recipient)
+                : "");
+        updateMailLinks();
+    }
+
+    private void updateMailLinks() {
+        String recipient = lastResult != null && lastResult.bill() != null
+                ? lastResult.bill().providerEmail()
+                : null;
+        ComplaintDraft currentDraft = new ComplaintDraft(
+                complaintSubjectField.getValue(),
+                complaintBodyArea.getValue());
+        gmailLink.setHref(UtilityBillComplaintGenerator.buildGmailComposeUrl(recipient, currentDraft));
+        mailtoLink.setHref(UtilityBillComplaintGenerator.buildMailtoUrl(recipient, currentDraft));
+    }
+
+    private void bindClipboardCopy(Button button, Element sourceFieldElement) {
+        button.getElement().executeJs(
+                """
+                this.addEventListener('click', () => {
+                  const dialog = $0;
+                  const field = $1;
+                  const text = (field ? (field.value ?? (field.inputElement ? field.inputElement.value : '')) : '') || '';
+                  const fallbackCopy = () => {
+                    const ta = document.createElement('textarea');
+                    ta.value = text;
+                    ta.setAttribute('readonly', '');
+                    ta.style.position = 'fixed';
+                    ta.style.top = '0';
+                    ta.style.left = '0';
+                    ta.style.opacity = '0';
+                    const host = (field && field.parentElement) ? field.parentElement : this.parentElement;
+                    host.appendChild(ta);
+                    ta.focus();
+                    ta.select();
+                    ta.setSelectionRange(0, text.length);
+                    let ok = false;
+                    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+                    ta.remove();
+                    return ok;
+                  };
+                  if (navigator.clipboard && window.isSecureContext) {
+                    navigator.clipboard.writeText(text).then(
+                      () => dialog.$server.onClipboardCopyResult(true),
+                      () => dialog.$server.onClipboardCopyResult(fallbackCopy())
+                    );
+                  } else {
+                    dialog.$server.onClipboardCopyResult(fallbackCopy());
+                  }
+                });
+                """,
+                getElement(),
+                sourceFieldElement);
+    }
+
+    @ClientCallable
+    private void onClipboardCopyResult(boolean success) {
+        if (success) {
+            Notification.show(getTranslation("energy.bill.complaint.copied"), 3000, Notification.Position.BOTTOM_END)
+                    .addThemeVariants(NotificationVariant.LUMO_SUCCESS);
+        } else {
+            Notification.show(getTranslation("energy.bill.complaint.copy-failed"), 5000, Notification.Position.BOTTOM_END)
+                    .addThemeVariants(NotificationVariant.LUMO_WARNING);
+        }
     }
 
     private static String nullSafe(String s) {
