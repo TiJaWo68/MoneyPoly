@@ -133,10 +133,15 @@ public class AccountService {
 
     @Transactional(readOnly = true)
     public long countActiveAccounts() {
-        UUID householdId = resolveCurrentHouseholdId();
-        return householdId == null
+        return countActiveAccounts(null);
+    }
+
+    @Transactional(readOnly = true)
+    public long countActiveAccounts(UUID householdId) {
+        UUID effectiveId = resolveEffectiveHouseholdId(householdId);
+        return effectiveId == null
                 ? accountRepository.countByActiveTrue()
-                : accountRepository.countByHouseholdIdAndActiveTrue(householdId);
+                : accountRepository.countByHouseholdIdAndActiveTrue(effectiveId);
     }
 
     /**
@@ -146,7 +151,12 @@ public class AccountService {
      */
     @Transactional(readOnly = true)
     public BigDecimal calculateNetWorth() {
-        return calculateTotalAssets().subtract(calculateTotalLiabilities());
+        return calculateNetWorth(null);
+    }
+
+    @Transactional(readOnly = true)
+    public BigDecimal calculateNetWorth(UUID householdId) {
+        return calculateTotalAssets(householdId).subtract(calculateTotalLiabilities(householdId));
     }
 
     @Transactional(readOnly = true)

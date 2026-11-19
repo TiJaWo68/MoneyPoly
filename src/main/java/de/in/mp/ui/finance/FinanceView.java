@@ -1082,8 +1082,14 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
         treeGrid.expand(treeData.getRootItems());
         institutionTotals = accountService.calculateInstitutionTotals();
 
-        netWorthValue.setText(formatMoney(accountService.calculateNetWorth()));
-        activeAccountsValue.setText(String.valueOf(accountService.countActiveAccounts()));
+        BigDecimal netWorth = selectedHouseholdId == null
+                ? accountService.calculateNetWorth()
+                : accountService.calculateNetWorth(selectedHouseholdId);
+        long activeCount = selectedHouseholdId == null
+                ? accountService.countActiveAccounts()
+                : accountService.countActiveAccounts(selectedHouseholdId);
+        netWorthValue.setText(formatMoney(netWorth));
+        activeAccountsValue.setText(String.valueOf(activeCount));
         latestDateValue.setText(rows.isEmpty() ? "–" : DateFormatter.format(rows.get(0).date(), locale()));
     }
 
