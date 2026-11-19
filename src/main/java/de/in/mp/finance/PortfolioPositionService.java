@@ -158,7 +158,18 @@ public class PortfolioPositionService {
 
     @Transactional
     public int refreshAllPrices() {
-        List<Account> depots = accountRepository.findByAccountTypeAndActiveTrue(AccountType.INVESTMENT);
+        UUID householdId = householdService == null ? null : householdService.resolveEffectiveHouseholdId(null);
+        return refreshAllPrices(householdId);
+    }
+
+    @Transactional
+    public int refreshAllPrices(UUID householdId) {
+        UUID effectiveId = householdService == null ? householdId : householdService.resolveEffectiveHouseholdId(householdId);
+        List<Account> depots = effectiveId == null
+                ? accountRepository.findByAccountTypeAndActiveTrue(AccountType.INVESTMENT)
+                : accountRepository.findByHouseholdIdAndActiveTrueOrderByAccountTypeAscNameAsc(effectiveId).stream()
+                        .filter(a -> a.getAccountType() == AccountType.INVESTMENT)
+                        .toList();
         int totalUpdated = 0;
         for (Account depot : depots) {
             List<PortfolioPosition> positions = positionRepository.findByAccountIdOrderByNameAsc(depot.getId());

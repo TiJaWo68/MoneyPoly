@@ -17,6 +17,8 @@ import com.vaadin.flow.component.AttachEvent;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.DetachEvent;
 import com.vaadin.flow.component.UI;
+import com.vaadin.flow.component.button.Button;
+import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.grid.ColumnTextAlign;
 import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.grid.GridSortOrder;
@@ -24,6 +26,8 @@ import com.vaadin.flow.component.grid.GridVariant;
 import com.vaadin.flow.component.html.H2;
 import com.vaadin.flow.component.html.H3;
 import com.vaadin.flow.component.html.Span;
+import com.vaadin.flow.component.icon.VaadinIcon;
+import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.orderedlayout.FlexComponent.Alignment;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
@@ -82,6 +86,7 @@ public class DashboardView extends VerticalLayout implements HasDynamicTitle {
     private static final String EMPTY_PLACEHOLDER = "-";
     private static final String WARNING_TEXT_COLOR = "var(--lumo-warning-text-color, #e65100)";
     private static final BigDecimal HUNDRED = new BigDecimal("100");
+    private static final int QUOTE_NOTIFICATION_DURATION_MS = 3000;
 
     private final DashboardService dashboardService;
     private final AccountService accountService;
@@ -105,6 +110,7 @@ public class DashboardView extends VerticalLayout implements HasDynamicTitle {
     private VerticalLayout liquidityBlock;
     private VerticalLayout investmentsBlock;
     private VerticalLayout loansBlock;
+    private Button refreshQuotesButton;
 
     private final Span liquiditySum = createHeaderSum();
     private final Span investedSum = createHeaderSum();
@@ -239,7 +245,46 @@ public class DashboardView extends VerticalLayout implements HasDynamicTitle {
     private HorizontalLayout createHeader() {
         H2 title = new H2(getTranslation("dashboard.view.title"));
         title.addClassName(LumoUtility.Margin.NONE);
-        return new HorizontalLayout(title);
+        refreshQuotesButton = new Button(
+                getTranslation("finance.positions.button.refresh"),
+                VaadinIcon.REFRESH.create(),
+                event -> refreshAllQuotes());
+        refreshQuotesButton.addThemeVariants(ButtonVariant.LUMO_SMALL);
+        refreshQuotesButton.setTooltipText(getTranslation("dashboard.button.refresh-quotes"));
+        refreshQuotesButton.setDisableOnClick(true);
+        refreshQuotesButton.setVisible(false);
+
+        HorizontalLayout header = new HorizontalLayout(title, refreshQuotesButton);
+        header.setWidthFull();
+        header.setDefaultVerticalComponentAlignment(Alignment.CENTER);
+        header.expand(title);
+        return header;
+    }
+
+    Button refreshQuotesButtonForTest() {
+        return refreshQuotesButton;
+    }
+
+    void refreshAllQuotes() {
+        if (portfolioPositionService == null || !canModify()) {
+            return;
+        }
+        try {
+            int updated = portfolioPositionService.refreshAllPrices();
+            Notification.show(
+                    getTranslation("finance.positions.notification.refreshed", updated),
+                    QUOTE_NOTIFICATION_DURATION_MS,
+                    Notification.Position.BOTTOM_START);
+            refresh();
+        } finally {
+            if (refreshQuotesButton != null) {
+                refreshQuotesButton.setEnabled(true);
+            }
+        }
+    }
+
+    private boolean canModify() {
+        return householdService == null || householdService.canModifyCurrentHousehold();
     }
 
     private HorizontalLayout createKpiRow() {
@@ -673,7 +718,15 @@ public class DashboardView extends VerticalLayout implements HasDynamicTitle {
             renderBlockHeader(investedSum, investedHeaderProgress, investedTotal);
             updateInvestmentsPerformanceTooltip(investments);
             renderBlockHeader(loanSum, loanHeaderProgress, loanContractService.calculateActiveOutstanding());
+            if (refreshQuotesButton != null) {
+                boolean hasPositionDepots = depotValuationsByAccount.values().stream()
+                        .anyMatch(DepotValuation::positionBased);
+                refreshQuotesButton.setVisible(portfolioPositionService != null && canModify() && hasPositionDepots);
+            }
         } else if (hasBorrowerLoans) {
+            if (refreshQuotesButton != null) {
+                refreshQuotesButton.setVisible(false);
+            }
             UUID personId = householdService.getCurrentPersonId().orElse(null);
             List<LoanContract> borrowerContracts = loanContractService.findByBorrower(personId).stream()
                     .filter(LoanContract::isActive)

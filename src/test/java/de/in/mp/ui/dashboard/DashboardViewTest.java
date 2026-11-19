@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Test;
 
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.ComponentUtil;
+import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.grid.GridSortOrder;
 import com.vaadin.flow.component.html.Span;
@@ -393,6 +394,52 @@ class DashboardViewTest {
         assertThat(liquidityGrid.getColumnByKey(DashboardSortColumn.INFO.key()).getWidth()).isEqualTo("76px");
         assertThat(loansGrid.getColumnByKey(DashboardSortColumn.INFO.key()).getWidth()).isEqualTo("76px");
         assertThat(investmentsGrid.getColumnByKey(DashboardSortColumn.INFO.key()).getWidth()).isEqualTo("102px");
+    }
+
+    @Test
+    void showsRefreshQuotesButtonForPositionManagedDepotsAndRefreshesAllPrices() {
+        Account depot = new Account();
+        depot.setId(UUID.randomUUID());
+        depot.setName("Demo Depot");
+        depot.setAccountType(AccountType.INVESTMENT);
+        depot.setActive(true);
+
+        PortfolioPositionService positionService = mock(PortfolioPositionService.class);
+        DepotValuation valuation = new DepotValuation(
+                depot.getId(), true,
+                new BigDecimal("50326.50"), new BigDecimal("33415.00"),
+                new BigDecimal("50326.50"), true, 4);
+
+        when(accountService.findAll()).thenReturn(List.of(depot));
+        when(snapshotService.findLatestSnapshots(org.mockito.ArgumentMatchers.anyCollection())).thenReturn(Map.of());
+        when(positionService.resolveValuations(org.mockito.ArgumentMatchers.anyCollection(),
+                org.mockito.ArgumentMatchers.anyMap())).thenReturn(Map.of(depot.getId(), valuation));
+        when(positionService.refreshAllPrices()).thenReturn(4);
+
+        UI.setCurrent(new UI());
+        try {
+            DashboardView dashboardWithPositions = new DashboardView(
+                    mockDashboardService(), accountService, snapshotService,
+                    loanContractService, personService, appSettingService, null, positionService);
+
+            assertThat(dashboardWithPositions.refreshQuotesButtonForTest().isVisible()).isTrue();
+            dashboardWithPositions.refreshAllQuotes();
+            org.mockito.Mockito.verify(positionService).refreshAllPrices();
+
+            // Read-only demo household hides the refresh button
+            de.in.mp.finance.HouseholdService readOnlyHouseholdService = mock(de.in.mp.finance.HouseholdService.class);
+            when(readOnlyHouseholdService.hasFinanceAccessForCurrentUser()).thenReturn(true);
+            when(readOnlyHouseholdService.hasLenderLoanAccessForCurrentUser()).thenReturn(true);
+            when(readOnlyHouseholdService.canModifyCurrentHousehold()).thenReturn(false);
+
+            DashboardView readOnlyDashboard = new DashboardView(
+                    mockDashboardService(), accountService, snapshotService,
+                    loanContractService, personService, appSettingService,
+                    readOnlyHouseholdService, positionService);
+            assertThat(readOnlyDashboard.refreshQuotesButtonForTest().isVisible()).isFalse();
+        } finally {
+            UI.setCurrent(null);
+        }
     }
 
     @Test
