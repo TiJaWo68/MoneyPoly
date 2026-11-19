@@ -295,6 +295,48 @@ class BankSyncServiceTest {
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
+    @Test
+    void completesAndRecordsErrorForPendingConnectionMatchedByOAuthState() {
+        UUID connId = UUID.randomUUID();
+        BankConnection pending = new BankConnection();
+        pending.setId(connId);
+        pending.setHouseholdId(householdId);
+        pending.setProviderId("ENABLE_BANKING");
+        pending.setInstitutionName("Trade Republic");
+        pending.setStatus(BankConnectionStatus.PENDING);
+        pending.setEncryptedSessionPayload(
+                cryptoService.encrypt("{\"authorization_id\":\"auth-tr\",\"state\":\"state-tr-1\"}"));
+
+        when(connectionRepository.findByStatus(BankConnectionStatus.PENDING)).thenReturn(List.of(pending));
+        when(connectionRepository.findById(connId)).thenReturn(Optional.of(pending));
+        when(accountRepository.findByHouseholdIdAndActiveTrueOrderByAccountTypeAscNameAsc(householdId))
+                .thenReturn(List.of());
+        when(enableBankingProvider.completeAuthorization(
+                "code-tr", "{\"authorization_id\":\"auth-tr\",\"state\":\"state-tr-1\"}"))
+                .thenReturn(new AuthorizedSession(
+                        "{\"session_id\":\"sess-tr\"}",
+                        OffsetDateTime.now().plusDays(90),
+                        List.of()));
+
+        AuthorizedSession completed = service.completeConnectionByState(householdId, "state-tr-1", "code-tr");
+        assertThat(completed.sessionPayload()).contains("sess-tr");
+        assertThat(pending.getStatus()).isEqualTo(BankConnectionStatus.ACTIVE);
+
+        BankConnection pendingError = new BankConnection();
+        pendingError.setId(UUID.randomUUID());
+        pendingError.setHouseholdId(householdId);
+        pendingError.setProviderId("ENABLE_BANKING");
+        pendingError.setInstitutionName("Trade Republic");
+        pendingError.setStatus(BankConnectionStatus.PENDING);
+        pendingError.setEncryptedSessionPayload(
+                cryptoService.encrypt("{\"authorization_id\":\"auth-err\",\"state\":\"state-tr-2\"}"));
+        when(connectionRepository.findByStatus(BankConnectionStatus.PENDING)).thenReturn(List.of(pendingError));
+
+        service.recordAuthorizationErrorByState(householdId, "state-tr-2", "access_denied: Cancelled in app");
+        assertThat(pendingError.getStatus()).isEqualTo(BankConnectionStatus.ERROR);
+        assertThat(pendingError.getLastError()).isEqualTo("access_denied: Cancelled in app");
+    }
+
     private Account account(String name, String iban) {
         Account account = new Account();
         account.setId(UUID.randomUUID());

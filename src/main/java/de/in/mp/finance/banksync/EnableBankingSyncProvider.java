@@ -13,12 +13,15 @@ import java.security.spec.PKCS8EncodedKeySpec;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -41,11 +44,12 @@ public class EnableBankingSyncProvider implements BankSyncProvider {
     public static final String PROVIDER_ID = "ENABLE_BANKING";
     private static final String DEFAULT_BASE_URL = "https://api.enablebanking.com";
     private static final int DEFAULT_CONSENT_DAYS = 180;
+    private static final long CONSENT_SAFETY_MARGIN_SECONDS = 60L;
 
     private static final List<BankInstitution> DEFAULT_INSTITUTIONS = List.of(
-            new BankInstitution("C24 Bank", "C24 Bank", "C24BDEFF", "DE"),
-            new BankInstitution("Targobank", "Targobank", "CMCIDEDD", "DE"),
-            new BankInstitution("Trade Republic", "Trade Republic", "TRBKDEBB", "DE"),
+            new BankInstitution("C24 Bank", "C24 Bank", "C24BDEFF", "DE", 15_552_000L),
+            new BankInstitution("Targobank", "Targobank", "CMCIDEDD", "DE", 15_552_000L),
+            new BankInstitution("Trade Republic", "Trade Republic", "TRBKDEBB", "DE", 7_776_000L),
             new BankInstitution("DKB", "DKB", "BYLADEM1001", "DE"),
             new BankInstitution("ING", "ING", "INGDDEFF", "DE"),
             new BankInstitution("Scalable Capital", "Scalable Capital", "", "DE"));
@@ -57,6 +61,7 @@ public class EnableBankingSyncProvider implements BankSyncProvider {
     private final String token;
     private final PrivateKey privateKey;
     private final int consentDays;
+    private final Map<String, Long> maxConsentValidityByAspsp = new ConcurrentHashMap<>();
 
     @Autowired
     public EnableBankingSyncProvider(
@@ -139,11 +144,17 @@ public class EnableBankingSyncProvider implements BankSyncProvider {
             String id = OpenBankingHttpSupport.textOrNull(item, "id");
             String bic = OpenBankingHttpSupport.textOrNull(item, "bic");
             String itemCountry = OpenBankingHttpSupport.textOrNull(item, "country");
+            String instCountry = itemCountry != null ? itemCountry : effectiveCountry;
+            Long maxConsentSeconds = positiveLongOrNull(item.path("maximum_consent_validity"));
+            if (maxConsentSeconds != null) {
+                maxConsentValidityByAspsp.put(aspspKey(instCountry, name), maxConsentSeconds);
+            }
             result.add(new BankInstitution(
                     id != null ? id : name,
                     name,
                     bic == null ? "" : bic,
-                    itemCountry != null ? itemCountry : effectiveCountry));
+                    instCountry,
+                    maxConsentSeconds));
         }
         return result.isEmpty() ? DEFAULT_INSTITUTIONS : result;
     }
@@ -157,12 +168,22 @@ public class EnableBankingSyncProvider implements BankSyncProvider {
         if (institution == null || institution.name() == null || institution.name().isBlank()) {
             throw new IllegalArgumentException("Institution is required");
         }
-        OffsetDateTime validUntil = OffsetDateTime.now().plusDays(consentDays);
+        String country = institution.country() != null && !institution.country().isBlank()
+                ? institution.country()
+                : "DE";
+        long requestedSeconds = Math.max(60L, (long) consentDays * 86_400L);
+        Long maxConsentSeconds = institution.maxConsentValiditySeconds() != null
+                ? institution.maxConsentValiditySeconds()
+                : maxConsentValidityByAspsp.get(aspspKey(country, institution.name()));
+        long effectiveSeconds = (maxConsentSeconds != null && maxConsentSeconds > 0)
+                ? Math.min(requestedSeconds, Math.max(60L, maxConsentSeconds - CONSENT_SAFETY_MARGIN_SECONDS))
+                : requestedSeconds;
+        OffsetDateTime validUntil = OffsetDateTime.now(ZoneOffset.UTC)
+                .plusSeconds(effectiveSeconds)
+                .truncatedTo(ChronoUnit.SECONDS);
         Map<String, Object> aspsp = new LinkedHashMap<>();
         aspsp.put("name", institution.name());
-        aspsp.put("country", institution.country() != null && !institution.country().isBlank()
-                ? institution.country()
-                : "DE");
+        aspsp.put("country", country);
 
         Map<String, Object> access = new LinkedHashMap<>();
         access.put("valid_until", validUntil.toString());
@@ -184,7 +205,8 @@ public class EnableBankingSyncProvider implements BankSyncProvider {
         String pendingPayload = writePayload(Map.of(
                 "authorization_id", authorizationId == null ? "" : authorizationId,
                 "institution_id", institution.id() == null ? institution.name() : institution.id(),
-                "institution_name", institution.name()));
+                "institution_name", institution.name(),
+                "state", state == null ? "" : state));
         return new AuthorizationInitiation(redirectUrl, state, pendingPayload, validUntil);
     }
 
@@ -258,6 +280,20 @@ public class EnableBankingSyncProvider implements BankSyncProvider {
                 null,
                 null,
                 transactions);
+    }
+
+    private static String aspspKey(String country, String name) {
+        String normCountry = country == null ? "DE" : country.trim().toUpperCase(Locale.ROOT);
+        String normName = name == null ? "" : name.trim().toLowerCase(Locale.ROOT);
+        return normCountry + "|" + normName;
+    }
+
+    private static Long positiveLongOrNull(JsonNode node) {
+        if (node == null || node.isNull() || node.isMissingNode()) {
+            return null;
+        }
+        long val = node.asLong(-1L);
+        return val > 0L ? val : null;
     }
 
     private void requireConfigured() {

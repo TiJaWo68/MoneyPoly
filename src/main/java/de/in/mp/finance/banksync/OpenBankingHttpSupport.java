@@ -15,6 +15,9 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -25,6 +28,7 @@ import de.in.mp.finance.AccountType;
  */
 final class OpenBankingHttpSupport {
 
+    private static final Logger LOG = LoggerFactory.getLogger(OpenBankingHttpSupport.class);
     static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(10);
     static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(20);
     private static final String USER_AGENT = "MoneyPoly/1.0 (OpenBanking AIS ReadOnly)";
@@ -96,8 +100,12 @@ final class OpenBankingHttpSupport {
         try {
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                String detail = extractErrorDetail(objectMapper, response.body());
+                LOG.warn("Open-Banking request failed with HTTP {} for {}: {}",
+                        response.statusCode(), url, detail.isEmpty() ? "<empty body>" : detail);
                 throw new IllegalStateException("Open-Banking request failed with HTTP "
-                        + response.statusCode() + " for " + url);
+                        + response.statusCode() + " for " + url
+                        + (detail.isEmpty() ? "" : ": " + detail));
             }
             String responseBody = response.body();
             if (responseBody == null || responseBody.isBlank()) {
@@ -110,6 +118,29 @@ final class OpenBankingHttpSupport {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("Open-Banking HTTP call interrupted for " + url, ex);
         }
+    }
+
+    private static String extractErrorDetail(ObjectMapper objectMapper, String body) {
+        if (body == null || body.isBlank()) {
+            return "";
+        }
+        try {
+            JsonNode node = objectMapper.readTree(body);
+            String message = textOrNull(node, "message");
+            String error = textOrNull(node, "error");
+            String detail = textOrNull(node, "detail");
+            String combined = message != null ? message : (detail != null ? detail : error);
+            if (combined != null) {
+                if (error != null && !combined.contains(error)) {
+                    combined = combined + " (" + error + ")";
+                }
+                return combined.length() > 300 ? combined.substring(0, 300) : combined;
+            }
+        } catch (Exception ignored) {
+            // Fall back to sanitized raw text snippet below.
+        }
+        String singleLine = body.replaceAll("\\s+", " ").trim();
+        return singleLine.length() > 300 ? singleLine.substring(0, 300) : singleLine;
     }
 
     static String encode(String value) {

@@ -26,6 +26,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import de.in.mp.finance.Account;
 import de.in.mp.finance.AccountRepository;
 import de.in.mp.finance.AccountSnapshot;
@@ -60,6 +63,7 @@ public class BankSyncService {
     private final SessionCryptoService sessionCryptoService;
     private final Map<String, BankSyncProvider> providersById;
     private final HouseholdService householdService;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     public BankSyncService(
             BankConnectionRepository connectionRepository,
@@ -165,6 +169,92 @@ public class BankSyncService {
 
         autoMatchAccounts(connection, authorized.accounts());
         return authorized;
+    }
+
+    /**
+     * Completes a {@link BankConnectionStatus#PENDING} connection matched via the
+     * OAuth2 {@code state} parameter returned by the Open-Banking provider redirect.
+     *
+     * @param householdId  optional household scope filter
+     * @param state        OAuth2 state parameter
+     * @param codeOrTicket authorization code/ticket from callback
+     * @return authorized session
+     */
+    @Transactional
+    public AuthorizedSession completeConnectionByState(UUID householdId, String state, String codeOrTicket) {
+        requireEncryptionConfigured();
+        BankConnection matching = findPendingConnectionByState(householdId, state)
+                .orElseThrow(() -> new IllegalArgumentException("No pending bank connection matched callback state"));
+        return completeConnection(matching.getId(), codeOrTicket);
+    }
+
+    /**
+     * Records an authorization failure reported on an OAuth2 callback redirect
+     * when a {@link BankConnectionStatus#PENDING} connection matches {@code state}.
+     *
+     * @param householdId  optional household scope filter
+     * @param state        optional OAuth2 state parameter
+     * @param errorMessage error description
+     */
+    @Transactional
+    public void recordAuthorizationErrorByState(UUID householdId, String state, String errorMessage) {
+        if (!sessionCryptoService.isConfigured() || state == null || state.isBlank()) {
+            return;
+        }
+        findPendingConnectionByState(householdId, state).ifPresent(connection -> {
+            connection.setStatus(BankConnectionStatus.ERROR);
+            String msg = errorMessage == null || errorMessage.isBlank() ? "Authorization failed" : errorMessage.trim();
+            connection.setLastError(msg.length() > ERROR_MAX_LENGTH ? msg.substring(0, ERROR_MAX_LENGTH) : msg);
+            connectionRepository.save(connection);
+        });
+    }
+
+    private Optional<BankConnection> findPendingConnectionByState(UUID householdId, String state) {
+        if (state == null || state.isBlank()) {
+            return Optional.empty();
+        }
+        String targetState = state.trim();
+        Set<UUID> allowedHouseholds = resolveAllowedHouseholdIds(householdId);
+        for (BankConnection candidate : connectionRepository.findByStatus(BankConnectionStatus.PENDING)) {
+            if (allowedHouseholds != null && !allowedHouseholds.contains(candidate.getHouseholdId())) {
+                continue;
+            }
+            if (targetState.equals(extractPendingState(candidate))) {
+                return Optional.of(candidate);
+            }
+        }
+        return Optional.empty();
+    }
+
+    private Set<UUID> resolveAllowedHouseholdIds(UUID householdId) {
+        if (householdId != null) {
+            return Set.of(householdId);
+        }
+        if (householdService == null) {
+            return null;
+        }
+        Set<UUID> ids = new HashSet<>();
+        for (Household household : householdService.getAccessibleHouseholdsForCurrentUser()) {
+            if (household != null && household.getId() != null) {
+                ids.add(household.getId());
+            }
+        }
+        return ids;
+    }
+
+    private String extractPendingState(BankConnection connection) {
+        if (connection.getEncryptedSessionPayload() == null || connection.getEncryptedSessionPayload().isBlank()) {
+            return null;
+        }
+        try {
+            String decrypted = sessionCryptoService.decrypt(connection.getEncryptedSessionPayload());
+            JsonNode node = objectMapper.readTree(decrypted);
+            return OpenBankingHttpSupport.textOrNull(node, "state");
+        } catch (Exception ex) {
+            LOG.debug("Ignoring unreadable pending payload while matching state for connection {}: {}",
+                    connection.getId(), ex.getMessage());
+            return null;
+        }
     }
 
     @Transactional(readOnly = true)

@@ -10,6 +10,9 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -91,7 +94,7 @@ class EnableBankingSyncProviderTest {
         AuthorizationInitiation init = provider.initiateAuthorization(
                 institutions.get(0), "https://localhost/callback", "state-1");
         assertThat(init.redirectUrl()).isEqualTo("https://enablebanking.com/auth/step1");
-        assertThat(init.sessionPayload()).contains("auth-1");
+        assertThat(init.sessionPayload()).contains("auth-1").contains("state-1");
 
         AuthorizedSession session = provider.completeAuthorization("auth-code-xyz", init.sessionPayload());
         assertThat(session.sessionPayload()).contains("sess-999");
@@ -166,7 +169,40 @@ class EnableBankingSyncProviderTest {
 
         assertThatThrownBy(() -> provider.fetchAccounts("{\"session_id\":\"sess-999\"}"))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("HTTP 401");
+                .hasMessageContaining("HTTP 401")
+                .hasMessageContaining("unauthorized");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void clampsConsentValidityToAspspMaximum() throws Exception {
+        HttpResponse<String> aspspsResponse = mockResponse(200, """
+                {
+                  "aspsps": [
+                    { "name": "Trade Republic", "bic": "TREBDED1XXX", "country": "DE", "maximum_consent_validity": 7776000 }
+                  ]
+                }
+                """);
+        HttpResponse<String> authResponse = mockResponse(200, """
+                {
+                  "url": "https://tilisy.enablebanking.com/ais/start?sessionid=tr-1",
+                  "authorization_id": "tr-1"
+                }
+                """);
+        when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
+                .thenReturn(aspspsResponse, authResponse);
+
+        List<BankInstitution> institutions = provider.listInstitutions("DE");
+        assertThat(institutions).hasSize(1);
+        assertThat(institutions.get(0).maxConsentValiditySeconds()).isEqualTo(7_776_000L);
+
+        OffsetDateTime before = OffsetDateTime.now(ZoneOffset.UTC);
+        AuthorizationInitiation init = provider.initiateAuthorization(
+                institutions.get(0), "https://moneypoly-dev:8080/finance", "state-tr");
+
+        long actualSeconds = ChronoUnit.SECONDS.between(before, init.consentExpiresAt());
+        assertThat(actualSeconds).isLessThanOrEqualTo(7_776_000L);
+        assertThat(actualSeconds).isGreaterThanOrEqualTo(7_775_800L);
     }
 
     @Test

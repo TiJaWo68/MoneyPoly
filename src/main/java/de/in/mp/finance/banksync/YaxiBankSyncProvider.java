@@ -140,7 +140,9 @@ public class YaxiBankSyncProvider implements BankSyncProvider {
         OffsetDateTime expiresAt = OpenBankingHttpSupport.parseOffsetDateTime(
                 OpenBankingHttpSupport.textOrNull(response, "expiresAt"),
                 OffsetDateTime.now().plusHours(DEFAULT_SESSION_HOURS));
-        String pendingPayload = writePayload(Map.of("sessionId", sessionId));
+        String pendingPayload = writePayload(Map.of(
+                "sessionId", sessionId,
+                "state", state == null ? "" : state));
         return new AuthorizationInitiation(redirectUrl, state, pendingPayload, expiresAt);
     }
 
