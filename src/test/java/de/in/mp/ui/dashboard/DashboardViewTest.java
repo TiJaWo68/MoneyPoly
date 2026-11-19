@@ -416,7 +416,8 @@ class DashboardViewTest {
                 org.mockito.ArgumentMatchers.anyMap())).thenReturn(Map.of(depot.getId(), valuation));
         when(positionService.refreshAllPrices()).thenReturn(4);
 
-        UI.setCurrent(new UI());
+        UI ui = new UI();
+        UI.setCurrent(ui);
         try {
             DashboardView dashboardWithPositions = new DashboardView(
                     mockDashboardService(), accountService, snapshotService,
@@ -438,6 +439,7 @@ class DashboardViewTest {
                     readOnlyHouseholdService, positionService);
             assertThat(readOnlyDashboard.refreshQuotesButtonForTest().isVisible()).isFalse();
         } finally {
+            java.lang.ref.Reference.reachabilityFence(ui);
             UI.setCurrent(null);
         }
     }

@@ -33,10 +33,12 @@ class AccountEditorDialogTest {
 
     private AccountService accountService;
     private AccountEditorDialog dialog;
+    private UI ui;
 
     @BeforeEach
     void setUp() {
-        UI.setCurrent(new UI());
+        ui = new UI();
+        UI.setCurrent(ui);
         accountService = mock(AccountService.class);
         when(accountService.findAll()).thenReturn(List.of());
         dialog = new AccountEditorDialog(accountService, mock(BankLookupService.class));
@@ -45,6 +47,7 @@ class AccountEditorDialogTest {
     @AfterEach
     void tearDown() {
         UI.setCurrent(null);
+        ui = null;
     }
 
     @Test
@@ -198,5 +201,41 @@ class AccountEditorDialogTest {
         assertThat(saved.getValue().getBankConnectionId()).isEqualTo(connId);
         assertThat(saved.getValue().getExternalAccountId()).isEqualTo("ext-targo-1");
         assertThat(saved.getValue().isAutoSyncEnabled()).isTrue();
+    }
+
+    @Test
+    void forwardsParentInstitutionHintWhenOpeningManageConnections() {
+        BankSyncService bankSyncService = mock(BankSyncService.class);
+        Account parentInst = new Account();
+        parentInst.setId(UUID.randomUUID());
+        parentInst.setName("Trade Republic");
+        parentInst.setAccountType(AccountType.INSTITUTION);
+        parentInst.setActive(true);
+
+        Account depot = new Account();
+        depot.setId(UUID.randomUUID());
+        depot.setName("Depot");
+        depot.setAccountType(AccountType.INVESTMENT);
+        depot.setParentId(parentInst.getId());
+        depot.setActive(true);
+
+        when(accountService.findAll()).thenReturn(List.of(parentInst, depot));
+        when(bankSyncService.findConnectionsForCurrentHousehold()).thenReturn(List.of());
+
+        String[] capturedHint = new String[1];
+        UUID[] capturedAccountId = new UUID[1];
+        AccountEditorDialog syncDialog = new AccountEditorDialog(
+                accountService,
+                mock(BankLookupService.class),
+                bankSyncService,
+                (hint, accId) -> {
+                    capturedHint[0] = hint;
+                    capturedAccountId[0] = accId;
+                });
+        syncDialog.openForEdit(depot, () -> { });
+        syncDialog.manageConnectionsButton.click();
+
+        assertThat(capturedHint[0]).isEqualTo("Trade Republic");
+        assertThat(capturedAccountId[0]).isEqualTo(depot.getId());
     }
 }

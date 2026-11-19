@@ -9,6 +9,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.BiConsumer;
 import java.util.stream.Collectors;
 
 import com.vaadin.flow.component.UI;
@@ -63,7 +64,7 @@ public class AccountEditorDialog extends Dialog {
     private final AccountService accountService;
     private final BankLookupService bankLookupService;
     private final BankSyncService bankSyncService;
-    private final Runnable onManageConnections;
+    private final BiConsumer<String, UUID> onManageConnections;
 
     private final Binder<Account> binder = new Binder<>(Account.class);
 
@@ -94,7 +95,7 @@ public class AccountEditorDialog extends Dialog {
     private List<BankConnection> selectableConnections = List.of();
 
     public AccountEditorDialog(AccountService accountService, BankLookupService bankLookupService) {
-        this(accountService, bankLookupService, null, null);
+        this(accountService, bankLookupService, null, (BiConsumer<String, UUID>) null);
     }
 
     public AccountEditorDialog(
@@ -102,6 +103,15 @@ public class AccountEditorDialog extends Dialog {
             BankLookupService bankLookupService,
             BankSyncService bankSyncService,
             Runnable onManageConnections) {
+        this(accountService, bankLookupService, bankSyncService,
+                onManageConnections == null ? null : (bankHint, accountId) -> onManageConnections.run());
+    }
+
+    public AccountEditorDialog(
+            AccountService accountService,
+            BankLookupService bankLookupService,
+            BankSyncService bankSyncService,
+            BiConsumer<String, UUID> onManageConnections) {
         this.accountService = accountService;
         this.bankLookupService = bankLookupService;
         this.bankSyncService = bankSyncService;
@@ -203,7 +213,8 @@ public class AccountEditorDialog extends Dialog {
         manageConnectionsButton.setIcon(VaadinIcon.CONNECT.create());
         manageConnectionsButton.addClickListener(event -> {
             if (onManageConnections != null) {
-                onManageConnections.run();
+                UUID accountId = currentAccount != null ? currentAccount.getId() : null;
+                onManageConnections.accept(resolveBankHint(), accountId);
             }
         });
         externalAccountId.setLabel(translateBankSync("finance.banksync.field.external-account-id"));
@@ -511,5 +522,39 @@ public class AccountEditorDialog extends Dialog {
                     NOTIFICATION_DURATION_MS,
                     Notification.Position.MIDDLE);
         }
+    }
+
+    String resolveBankHint() {
+        String directBank = bankName.getValue();
+        if (directBank != null && !directBank.isBlank()) {
+            return directBank.trim();
+        }
+        Account selectedParent = parent.getValue();
+        if (selectedParent != null) {
+            Map<UUID, Account> parentsById = selectableParents.stream()
+                    .filter(a -> a != null && a.getId() != null)
+                    .collect(Collectors.toMap(Account::getId, a -> a, (a, b) -> a));
+            Set<UUID> visited = new HashSet<>();
+            Account cursor = selectedParent;
+            while (cursor != null) {
+                if (cursor.getAccountType() == AccountType.INSTITUTION
+                        && cursor.getName() != null && !cursor.getName().isBlank()) {
+                    return cursor.getName().trim();
+                }
+                UUID parentId = cursor.getParentId();
+                if (parentId == null || !visited.add(parentId)) {
+                    break;
+                }
+                cursor = parentsById.get(parentId);
+            }
+            if (selectedParent.getName() != null && !selectedParent.getName().isBlank()) {
+                return selectedParent.getName().trim();
+            }
+        }
+        if (AccountType.INSTITUTION.equals(accountType.getValue())
+                && name.getValue() != null && !name.getValue().isBlank()) {
+            return name.getValue().trim();
+        }
+        return null;
     }
 }

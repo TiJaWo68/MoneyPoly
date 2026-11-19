@@ -1,13 +1,25 @@
 package de.in.mp.ui.finance;
 
+import java.net.URL;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.OptionalLong;
+import java.util.Set;
 import java.util.UUID;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
@@ -18,9 +30,11 @@ import com.vaadin.flow.component.formlayout.FormLayout;
 import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.grid.GridVariant;
 import com.vaadin.flow.component.html.Anchor;
+import com.vaadin.flow.component.html.Div;
 import com.vaadin.flow.component.html.H4;
 import com.vaadin.flow.component.html.Paragraph;
 import com.vaadin.flow.component.html.Span;
+import com.vaadin.flow.component.icon.Icon;
 import com.vaadin.flow.component.icon.VaadinIcon;
 import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.notification.NotificationVariant;
@@ -54,10 +68,14 @@ import de.in.mp.ui.GridActionButton;
  */
 class BankConnectionDialog extends Dialog {
 
+    private static final Logger LOG = LoggerFactory.getLogger(BankConnectionDialog.class);
     private static final String DIALOG_WIDTH = "960px";
     private static final String DIALOG_HEIGHT = "720px";
     private static final int NOTIFICATION_DURATION_MS = 4000;
     private static final DateTimeFormatter TIMESTAMP_FORMAT = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm");
+    static final BankInstitution INSTITUTION_SEPARATOR = new BankInstitution("__SEPARATOR__", "", "", "");
+    private static final Set<String> LEGAL_SUFFIXES = Set.of(
+            "ag", "gmbh", "se", "eg", "kg", "ohg", "mbh", "co", "sarl", "sa", "nv", "plc");
 
     private final BankSyncService bankSyncService;
     private final AccountService accountService;
@@ -85,6 +103,10 @@ class BankConnectionDialog extends Dialog {
 
     private UUID householdId;
     private UUID pendingConnectionId;
+    private Set<String> favoriteBankNames = Set.of();
+    private String preferredBankName;
+    private UUID preferredAccountId;
+    private boolean callbackUrlEditedByUser;
     private Runnable onChanged;
 
     BankConnectionDialog(BankSyncService bankSyncService, AccountService accountService) {
@@ -105,12 +127,25 @@ class BankConnectionDialog extends Dialog {
     }
 
     void openForHousehold(UUID householdId, Runnable onChanged) {
-        initForHousehold(householdId, onChanged);
+        openForHousehold(householdId, null, null, onChanged);
+    }
+
+    void openForHousehold(UUID householdId, String preferredBankName, UUID preferredAccountId, Runnable onChanged) {
+        initForHousehold(householdId, preferredBankName, preferredAccountId, onChanged);
+        resolveDefaultCallbackUrl();
         open();
     }
 
     void initForHousehold(UUID householdId, Runnable onChanged) {
+        initForHousehold(householdId, null, null, onChanged);
+    }
+
+    void initForHousehold(UUID householdId, String preferredBankName, UUID preferredAccountId, Runnable onChanged) {
         this.householdId = householdId;
+        this.preferredBankName = (preferredBankName == null || preferredBankName.isBlank())
+                ? null
+                : preferredBankName.trim();
+        this.preferredAccountId = preferredAccountId;
         this.onChanged = onChanged;
         this.pendingConnectionId = null;
         this.pendingAuthPanel.setVisible(false);
@@ -135,11 +170,23 @@ class BankConnectionDialog extends Dialog {
 
         institutionBox.setLabel(getTranslation("finance.banksync.field.institution"));
         institutionBox.setTooltipText(getTranslation("finance.banksync.dialog.institution.tooltip"));
-        institutionBox.setItemLabelGenerator(BankInstitution::name);
+        institutionBox.setItemLabelGenerator(inst -> isSeparator(inst) ? "" : inst.name());
+        institutionBox.setRenderer(new ComponentRenderer<>(this::renderInstitutionItem));
+        institutionBox.addValueChangeListener(e -> {
+            if (isSeparator(e.getValue())) {
+                institutionBox.setValue(e.getOldValue());
+            }
+        });
 
         callbackUrlField.setLabel(getTranslation("finance.banksync.field.callback-url"));
         callbackUrlField.setTooltipText(getTranslation("finance.banksync.dialog.callback-url.tooltip"));
         callbackUrlField.setValue("http://localhost:8080/finance");
+        callbackUrlField.addValueChangeListener(e -> {
+            if (e.isFromClient()) {
+                callbackUrlEditedByUser = true;
+            }
+        });
+        resolveDefaultCallbackUrl();
 
         connectButton.setText(getTranslation("finance.banksync.button.connect"));
         connectButton.setTooltipText(getTranslation("finance.banksync.dialog.connect.tooltip"));
@@ -302,6 +349,12 @@ class BankConnectionDialog extends Dialog {
         cryptoWarning.setVisible(!cryptoReady);
         connectButton.setEnabled(cryptoReady);
 
+        List<Account> allAccounts = householdId == null
+                ? accountService.findAll()
+                : accountService.findAllByHousehold(householdId);
+        List<Account> activeLeafAccounts = filterEffectivelyActiveLeafAccounts(allAccounts);
+        this.favoriteBankNames = extractHouseholdBankNames(allAccounts);
+
         if (providerBox.getValue() == null && !bankSyncService.getProviders().isEmpty()) {
             providerBox.setValue(bankSyncService.getProviders().get(0));
         } else {
@@ -312,13 +365,13 @@ class BankConnectionDialog extends Dialog {
         connectionGrid.setItems(connections);
         linkConnectionBox.setItems(connections);
 
-        List<Account> accounts = (householdId == null
-                ? accountService.findActiveAccounts()
-                : accountService.findActiveAccountsByHousehold(householdId))
-                .stream()
-                .filter(a -> a.getAccountType() != AccountType.INSTITUTION)
-                .toList();
-        accountBox.setItems(accounts);
+        accountBox.setItems(activeLeafAccounts);
+        if (preferredAccountId != null) {
+            activeLeafAccounts.stream()
+                    .filter(a -> preferredAccountId.equals(a.getId()))
+                    .findFirst()
+                    .ifPresent(accountBox::setValue);
+        }
     }
 
     private void loadInstitutions(BankSyncProvider provider) {
@@ -327,10 +380,28 @@ class BankConnectionDialog extends Dialog {
             return;
         }
         try {
-            List<BankInstitution> institutions = provider.listInstitutions("DE");
-            institutionBox.setItems(institutions);
-            if (!institutions.isEmpty()) {
-                institutionBox.setValue(institutions.get(0));
+            List<BankInstitution> ordered = orderInstitutionsWithFavorites(
+                    provider.listInstitutions("DE"), favoriteBankNames);
+            ComboBox.ItemFilter<BankInstitution> filter = (item, filterText) -> {
+                if (isSeparator(item)) {
+                    return filterText == null || filterText.isBlank();
+                }
+                if (filterText == null || filterText.isBlank()) {
+                    return true;
+                }
+                String needle = filterText.trim().toLowerCase(Locale.ROOT);
+                return (item.name() != null && item.name().toLowerCase(Locale.ROOT).contains(needle))
+                        || (item.bic() != null && item.bic().toLowerCase(Locale.ROOT).contains(needle));
+            };
+            institutionBox.setItems(filter, ordered);
+            BankInstitution preselected = findPreferredInstitution(ordered, preferredBankName);
+            if (preselected != null) {
+                institutionBox.setValue(preselected);
+            } else {
+                ordered.stream()
+                        .filter(inst -> !isSeparator(inst))
+                        .findFirst()
+                        .ifPresent(institutionBox::setValue);
             }
         } catch (RuntimeException ex) {
             institutionBox.setItems(List.of());
@@ -338,10 +409,243 @@ class BankConnectionDialog extends Dialog {
         }
     }
 
+    private Component renderInstitutionItem(BankInstitution institution) {
+        if (isSeparator(institution)) {
+            Div divider = new Div();
+            divider.getStyle()
+                    .set("width", "100%")
+                    .set("border-top", "1px solid var(--lumo-contrast-20pct)")
+                    .set("margin", "2px 0");
+            divider.getElement().executeJs(
+                    "const item = this.closest('vaadin-combo-box-item');"
+                            + "if (item) { item.style.pointerEvents = 'none';"
+                            + "item.style.minHeight = '9px'; item.style.padding = '2px 8px'; }");
+            return divider;
+        }
+        boolean favorite = matchesAccountBank(institution.name(), favoriteBankNames);
+        if (!favorite) {
+            return new Span(institution.name());
+        }
+        Icon star = VaadinIcon.STAR.create();
+        star.setSize("14px");
+        star.getStyle().set("color", "#f59e0b").set("flex-shrink", "0");
+        Span label = new Span(institution.name());
+        label.addClassName(LumoUtility.FontWeight.SEMIBOLD);
+        HorizontalLayout row = new HorizontalLayout(star, label);
+        row.setSpacing(false);
+        row.getStyle().set("gap", "6px");
+        row.setDefaultVerticalComponentAlignment(Alignment.CENTER);
+        return row;
+    }
+
+    static List<BankInstitution> orderInstitutionsWithFavorites(
+            List<BankInstitution> institutions, Set<String> householdBankNames) {
+        if (institutions == null || institutions.isEmpty()) {
+            return List.of();
+        }
+        Comparator<BankInstitution> alphabetical = Comparator
+                .comparing(BankInstitution::name, String.CASE_INSENSITIVE_ORDER)
+                .thenComparing(BankInstitution::name);
+
+        List<BankInstitution> favorites = new ArrayList<>();
+        List<BankInstitution> others = new ArrayList<>();
+        for (BankInstitution inst : institutions) {
+            if (inst == null || isSeparator(inst) || inst.name() == null || inst.name().isBlank()) {
+                continue;
+            }
+            if (matchesAccountBank(inst.name(), householdBankNames)) {
+                favorites.add(inst);
+            } else {
+                others.add(inst);
+            }
+        }
+        favorites.sort(alphabetical);
+        others.sort(alphabetical);
+
+        List<BankInstitution> result = new ArrayList<>(favorites.size() + others.size() + 1);
+        result.addAll(favorites);
+        if (!favorites.isEmpty() && !others.isEmpty()) {
+            result.add(INSTITUTION_SEPARATOR);
+        }
+        result.addAll(others);
+        return result;
+    }
+
+    static Set<String> extractHouseholdBankNames(List<Account> accounts) {
+        if (accounts == null || accounts.isEmpty()) {
+            return Set.of();
+        }
+        Map<UUID, Account> byId = indexAccountsById(accounts);
+        Set<String> names = new LinkedHashSet<>();
+        for (Account account : filterEffectivelyActiveLeafAccounts(accounts, byId)) {
+            if (account.getBankName() != null && !account.getBankName().isBlank()) {
+                names.add(account.getBankName().trim());
+                continue;
+            }
+            String institutionName = findAncestorInstitutionName(account, byId);
+            if (institutionName != null) {
+                names.add(institutionName);
+            }
+        }
+        return names;
+    }
+
+    static List<Account> filterEffectivelyActiveLeafAccounts(List<Account> accounts) {
+        return filterEffectivelyActiveLeafAccounts(accounts, indexAccountsById(accounts));
+    }
+
+    private static List<Account> filterEffectivelyActiveLeafAccounts(
+            List<Account> accounts, Map<UUID, Account> byId) {
+        if (accounts == null || accounts.isEmpty()) {
+            return List.of();
+        }
+        List<Account> result = new ArrayList<>();
+        for (Account account : accounts) {
+            if (account != null
+                    && account.getAccountType() != AccountType.INSTITUTION
+                    && isEffectivelyActive(account, byId)) {
+                result.add(account);
+            }
+        }
+        return result;
+    }
+
+    private static Map<UUID, Account> indexAccountsById(List<Account> accounts) {
+        Map<UUID, Account> byId = new HashMap<>();
+        if (accounts != null) {
+            for (Account account : accounts) {
+                if (account != null && account.getId() != null) {
+                    byId.put(account.getId(), account);
+                }
+            }
+        }
+        return byId;
+    }
+
+    private static boolean isEffectivelyActive(Account account, Map<UUID, Account> byId) {
+        Set<UUID> visited = new HashSet<>();
+        Account current = account;
+        while (current != null) {
+            if (!current.isActive()) {
+                return false;
+            }
+            UUID parentId = current.getParentId();
+            if (parentId == null || !visited.add(parentId)) {
+                return true;
+            }
+            current = byId.get(parentId);
+        }
+        return true;
+    }
+
+    private static String findAncestorInstitutionName(Account account, Map<UUID, Account> byId) {
+        Set<UUID> visited = new HashSet<>();
+        UUID parentId = account.getParentId();
+        while (parentId != null && visited.add(parentId)) {
+            Account ancestor = byId.get(parentId);
+            if (ancestor == null) {
+                return null;
+            }
+            if (ancestor.getAccountType() == AccountType.INSTITUTION) {
+                return ancestor.getName() == null || ancestor.getName().isBlank()
+                        ? null
+                        : ancestor.getName().trim();
+            }
+            parentId = ancestor.getParentId();
+        }
+        return null;
+    }
+
+    private void resolveDefaultCallbackUrl() {
+        UI ui = UI.getCurrent();
+        if (ui == null || callbackUrlEditedByUser) {
+            return;
+        }
+        ui.getPage().fetchCurrentURL(currentUrl -> {
+            if (!callbackUrlEditedByUser) {
+                callbackUrlField.setValue(buildFinanceCallbackUrl(currentUrl));
+            }
+        });
+    }
+
+    static String buildFinanceCallbackUrl(URL currentUrl) {
+        if (currentUrl == null || currentUrl.getAuthority() == null || currentUrl.getAuthority().isBlank()) {
+            return "http://localhost:8080/finance";
+        }
+        return currentUrl.getProtocol() + "://" + currentUrl.getAuthority() + "/finance";
+    }
+
+    static boolean matchesAccountBank(String institutionName, Set<String> accountBankNames) {
+        if (institutionName == null || institutionName.isBlank()
+                || accountBankNames == null || accountBankNames.isEmpty()) {
+            return false;
+        }
+        String instNorm = normalizeBankText(institutionName);
+        String instCore = stripLegalSuffixes(instNorm);
+        String paddedInstCore = " " + instCore + " ";
+
+        for (String accountBank : accountBankNames) {
+            if (accountBank == null || accountBank.isBlank()) {
+                continue;
+            }
+            String accNorm = normalizeBankText(accountBank);
+            String accCore = stripLegalSuffixes(accNorm);
+            if (accCore.isEmpty()) {
+                continue;
+            }
+            if (instNorm.equals(accNorm) || instCore.equals(accCore)) {
+                return true;
+            }
+            if (accCore.length() >= 3 && !"bank".equals(accCore)
+                    && paddedInstCore.contains(" " + accCore + " ")) {
+                return true;
+            }
+            if (instCore.length() >= 3 && !"bank".equals(instCore)
+                    && (" " + accCore + " ").contains(" " + instCore + " ")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String normalizeBankText(String raw) {
+        return raw.toLowerCase(Locale.ROOT)
+                .replaceAll("[-/_.(),]+", " ")
+                .replaceAll("\\s+", " ")
+                .trim();
+    }
+
+    private static String stripLegalSuffixes(String normalized) {
+        String[] tokens = normalized.split(" ");
+        List<String> kept = new ArrayList<>(tokens.length);
+        for (String token : tokens) {
+            if (!token.isEmpty() && !LEGAL_SUFFIXES.contains(token)) {
+                kept.add(token);
+            }
+        }
+        return kept.isEmpty() ? normalized : String.join(" ", kept);
+    }
+
+    static boolean isSeparator(BankInstitution institution) {
+        return institution != null && INSTITUTION_SEPARATOR.id().equals(institution.id());
+    }
+
+    private static BankInstitution findPreferredInstitution(
+            List<BankInstitution> ordered, String preferredBankName) {
+        if (ordered == null || ordered.isEmpty() || preferredBankName == null || preferredBankName.isBlank()) {
+            return null;
+        }
+        Set<String> target = Set.of(preferredBankName);
+        return ordered.stream()
+                .filter(inst -> !isSeparator(inst) && matchesAccountBank(inst.name(), target))
+                .findFirst()
+                .orElse(null);
+    }
+
     private void startAuthorization() {
         BankSyncProvider provider = providerBox.getValue();
         BankInstitution institution = institutionBox.getValue();
-        if (provider == null || institution == null) {
+        if (provider == null || institution == null || isSeparator(institution)) {
             return;
         }
         try {
@@ -357,6 +661,8 @@ class BankConnectionDialog extends Dialog {
             authCodeField.clear();
             refresh();
         } catch (RuntimeException ex) {
+            LOG.warn("Failed to start Open-Banking authorization for household {} and institution {}",
+                    householdId, institution.name(), ex);
             showError(ex.getMessage());
         }
     }
@@ -375,6 +681,8 @@ class BankConnectionDialog extends Dialog {
             refresh();
             notifyChanged();
         } catch (RuntimeException ex) {
+            LOG.warn("Failed to complete Open-Banking authorization for connection {}",
+                    pendingConnectionId, ex);
             showError(ex.getMessage());
         }
     }
@@ -580,6 +888,10 @@ class BankConnectionDialog extends Dialog {
 
     Span cryptoWarningForTest() {
         return cryptoWarning;
+    }
+
+    ComboBox<BankInstitution> institutionBoxForTest() {
+        return institutionBox;
     }
 
     private static String formatAccountLabel(Account account) {

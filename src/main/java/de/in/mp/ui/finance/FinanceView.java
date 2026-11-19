@@ -319,14 +319,36 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
         if (bankSyncService == null || !canModify()) {
             return;
         }
+        List<String> errorParam = params.get("error");
+        List<String> stateParam = params.get("state");
+        String state = (stateParam != null && !stateParam.isEmpty()) ? stateParam.get(0) : null;
+        if (errorParam != null && !errorParam.isEmpty()) {
+            String error = errorParam.get(0);
+            List<String> descParam = params.get("error_description");
+            String desc = (descParam != null && !descParam.isEmpty() && !descParam.get(0).isBlank())
+                    ? error + ": " + descParam.get(0)
+                    : error;
+            bankSyncService.recordAuthorizationErrorByState(resolveActiveHouseholdId(), state, desc);
+            showOpenBankingErrorNotification(desc);
+            refresh();
+            return;
+        }
+
         List<String> connParam = params.get("bank_connection_id");
         List<String> codeParam = params.containsKey("code") ? params.get("code") : params.get("ticket");
-        if (connParam == null || connParam.isEmpty() || codeParam == null || codeParam.isEmpty()) {
+        if (codeParam == null || codeParam.isEmpty()) {
             return;
         }
         try {
-            UUID connectionId = UUID.fromString(connParam.get(0));
-            var authorized = bankSyncService.completeConnection(connectionId, codeParam.get(0));
+            var authorized = (connParam != null && !connParam.isEmpty())
+                    ? bankSyncService.completeConnection(UUID.fromString(connParam.get(0)), codeParam.get(0))
+                    : (state != null && !state.isBlank()
+                            ? bankSyncService.completeConnectionByState(
+                                    resolveActiveHouseholdId(), state, codeParam.get(0))
+                            : null);
+            if (authorized == null) {
+                return;
+            }
             if (UI.getCurrent() != null) {
                 Notification notification = Notification.show(
                         getTranslation("finance.banksync.notification.connected", authorized.accounts().size()),
@@ -336,13 +358,17 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
             }
             refresh();
         } catch (RuntimeException ex) {
-            if (UI.getCurrent() != null) {
-                Notification notification = Notification.show(
-                        getTranslation("finance.banksync.notification.error", ex.getMessage()),
-                        4000,
-                        Notification.Position.MIDDLE);
-                notification.addThemeVariants(NotificationVariant.LUMO_ERROR);
-            }
+            showOpenBankingErrorNotification(ex.getMessage());
+        }
+    }
+
+    private void showOpenBankingErrorNotification(String message) {
+        if (UI.getCurrent() != null) {
+            Notification notification = Notification.show(
+                    getTranslation("finance.banksync.notification.error", message),
+                    4000,
+                    Notification.Position.MIDDLE);
+            notification.addThemeVariants(NotificationVariant.LUMO_ERROR);
         }
     }
 
@@ -1106,11 +1132,11 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
         return map;
     }
 
-    private void openConnectionsFromEditor() {
+    private void openConnectionsFromEditor(String bankHint, UUID accountId) {
         if (connectionDialog == null) {
             return;
         }
-        connectionDialog.openForHousehold(resolveActiveHouseholdId(), () -> {
+        connectionDialog.openForHousehold(resolveActiveHouseholdId(), bankHint, accountId, () -> {
             refresh();
             editorDialog.refreshBankConnections(resolveActiveHouseholdId());
         });

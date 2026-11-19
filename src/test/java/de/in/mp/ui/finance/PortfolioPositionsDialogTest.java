@@ -29,14 +29,18 @@ import de.in.mp.finance.PortfolioPositionService;
 
 class PortfolioPositionsDialogTest {
 
+    private UI ui;
+
     @BeforeEach
     void setUp() {
-        UI.setCurrent(new UI());
+        ui = new UI();
+        UI.setCurrent(ui);
     }
 
     @AfterEach
     void tearDown() {
         UI.setCurrent(null);
+        ui = null;
     }
 
     @Test

@@ -26,14 +26,18 @@ import de.in.mp.importer.OdsAccountColumn;
 
 class DataMigrationTabTest {
 
+    private UI ui;
+
     @BeforeEach
     void setUp() {
-        UI.setCurrent(new UI());
+        ui = new UI();
+        UI.setCurrent(ui);
     }
 
     @AfterEach
     void tearDown() {
         UI.setCurrent(null);
+        ui = null;
     }
 
     @Test
