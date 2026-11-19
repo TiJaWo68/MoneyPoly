@@ -43,6 +43,7 @@ spring:
 
 server:
   port: 8080
+  forward-headers-strategy: ${SERVER_FORWARD_HEADERS_STRATEGY:framework}
 
 vaadin:
   # Kein automatisches Öffnen des Browsers (Headless/Server-Betrieb)
