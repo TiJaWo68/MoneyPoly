@@ -371,6 +371,102 @@ class BalanceChartPanelTest {
                 .contains("cx=\"740.0\"");
     }
 
+    @Test
+    void rendersLoanLiabilitiesSeriesAndIncludesLoanDeductionInTooltips() {
+        Account savings = account(AccountType.SAVINGS, true);
+        Account loan = account(AccountType.LOAN, true);
+        LocalDate d1 = LocalDate.of(2025, 1, 1);
+        LocalDate d2 = LocalDate.of(2025, 6, 1);
+
+        List<BalanceDateRow> rows = List.of(
+                new BalanceDateRow(d2, Map.of(
+                        savings.getId(), snapshot(savings.getId(), d2, "60000.00"),
+                        loan.getId(), snapshot(loan.getId(), d2, "18000.00"))),
+                new BalanceDateRow(d1, Map.of(
+                        savings.getId(), snapshot(savings.getId(), d1, "50000.00"),
+                        loan.getId(), snapshot(loan.getId(), d1, "20000.00"))));
+
+        BalanceChartPanel panel = new BalanceChartPanel();
+        panel.setData(List.of(savings, loan), rows);
+
+        assertThat(panel.visiblePointsForTest()).hasSize(2);
+        assertThat(panel.visiblePointsForTest().get(0).loans()).isEqualByComparingTo("20000.00");
+        assertThat(panel.visiblePointsForTest().get(0).total()).isEqualByComparingTo("30000.00");
+        assertThat(panel.svgMarkupForTest())
+                .contains("data-series=\"LOAN\"")
+                .contains("-20.000,00");
+    }
+
+    @Test
+    void skipsZeroInvestedCapitalIntervalsAndRendersSynchronousDeltaBarsSubchart() {
+        Account checking = account(AccountType.CHECKING, true);
+        Account investment = account(AccountType.INVESTMENT, true);
+
+        LocalDate d1 = LocalDate.of(2024, 1, 1);
+        LocalDate d2 = LocalDate.of(2025, 1, 1);
+        LocalDate d3 = LocalDate.of(2026, 1, 1);
+        LocalDate liveToday = LocalDate.of(2026, 11, 19);
+
+        // Historical rows have no investedCapital (0), only live depot valuation carries buy-in basis
+        BalanceDateRow r1 = new BalanceDateRow(d1, Map.of(
+                checking.getId(), snapshot(checking.getId(), d1, "5000.00"),
+                investment.getId(), snapshot(investment.getId(), d1, "30000.00")));
+        BalanceDateRow r2 = new BalanceDateRow(d2, Map.of(
+                checking.getId(), snapshot(checking.getId(), d2, "6000.00"),
+                investment.getId(), snapshot(investment.getId(), d2, "18000.00"))); // -11000 drop
+        BalanceDateRow r3 = new BalanceDateRow(d3, Map.of(
+                checking.getId(), snapshot(checking.getId(), d3, "7000.00"),
+                investment.getId(), snapshot(investment.getId(), d3, "45000.00")));
+
+        DepotValuation liveDepot = new DepotValuation(
+                investment.getId(), true,
+                new BigDecimal("52000.00"), new BigDecimal("40000.00"),
+                new BigDecimal("52000.00"), true, 4);
+
+        WealthEvent ev = new WealthEvent();
+        ev.setId(UUID.randomUUID());
+        ev.setEventDate(LocalDate.of(2024, 9, 15));
+        ev.setAmount(new BigDecimal("-12000.00"));
+        ev.setDescription("Major purchase");
+
+        BalanceChartPanel panel = new BalanceChartPanel();
+        panel.setData(List.of(checking, investment), List.of(r3, r2, r1),
+                Map.of(investment.getId(), liveDepot), List.of(ev));
+
+        String svg = panel.svgMarkupForTest();
+        // Invested capital has no historical path spiking up from 0; isolated today point renders marker circle
+        assertThat(svg).doesNotContain("<path data-series=\"INVESTED_CAPITAL\"");
+        assertThat(svg).contains("<circle data-series=\"INVESTED_CAPITAL\"");
+        // Synchronous delta bar subchart renders bars for monthly/period changes and highlights annotated drop
+        assertThat(svg)
+                .contains("data-series=\"DELTA_BARS\"")
+                .contains("class=\"mp-delta\"")
+                .contains("stroke=\"#f59e0b\"");
+        // Invested capital color (#c084fc) is distinct from wealth event amber (#f59e0b)
+        assertThat(svg).contains("fill=\"#c084fc\"");
+        assertThat(liveToday).isAfter(d3);
+    }
+
+    @Test
+    void tightensZeroBasedYScaleMaxToHighPlotUtilization() {
+        Account checking = account(AccountType.CHECKING, true);
+        Account savings = account(AccountType.SAVINGS, true);
+        Account investment = account(AccountType.INVESTMENT, true);
+
+        LocalDate d1 = LocalDate.of(2024, 1, 1);
+        LocalDate d2 = LocalDate.of(2026, 1, 1);
+
+        // Peak 565,000 must scale tightly to 600,000 instead of jumping to 800,000
+        List<BalanceDateRow> rows = List.of(
+                row(d2, checking, "15000", savings, "250000", investment, "300000"),
+                row(d1, checking, "10000", savings, "100000", investment, "100000"));
+
+        BalanceChartPanel panel = new BalanceChartPanel();
+        panel.setData(List.of(checking, savings, investment), rows);
+
+        assertThat(panel.svgMarkupForTest()).contains("data-ymax=\"600000\"");
+    }
+
     private static Account account(AccountType type, boolean active) {
         Account account = new Account();
         account.setId(UUID.randomUUID());

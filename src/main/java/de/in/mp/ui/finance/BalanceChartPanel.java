@@ -42,13 +42,16 @@ import de.in.mp.i18n.MoneyFormatter;
 class BalanceChartPanel extends VerticalLayout {
 
     private static final int VIEWBOX_WIDTH = 1400;
-    private static final int VIEWBOX_HEIGHT = 500;
+    private static final int VIEWBOX_HEIGHT = 590;
     private static final double PLOT_LEFT = 115.0;
     private static final double PLOT_RIGHT = 1365.0;
-    private static final double PLOT_TOP = 24.0;
-    private static final double PLOT_BOTTOM = 440.0;
+    private static final double PLOT_TOP = 22.0;
+    private static final double PLOT_BOTTOM = 382.0;
     private static final double PLOT_WIDTH = PLOT_RIGHT - PLOT_LEFT;
     private static final double PLOT_HEIGHT = PLOT_BOTTOM - PLOT_TOP;
+    private static final double DELTA_TOP = 406.0;
+    private static final double DELTA_BOTTOM = 532.0;
+    private static final double DELTA_HEIGHT = DELTA_BOTTOM - DELTA_TOP;
     private static final int MAX_X_TICKS = 9;
     private static final int MIN_VISIBLE_POINTS = 2;
     private static final double ZOOM_STEP_FACTOR = 0.65;
@@ -58,15 +61,20 @@ class BalanceChartPanel extends VerticalLayout {
     private static final String COLOR_SAVINGS = "#10b981";
     private static final String COLOR_INVESTMENT = "#8b5cf6";
     private static final String COLOR_TOTAL = "#38bdf8";
-    private static final String COLOR_INVESTED_CAPITAL = "#f59e0b";
+    private static final String COLOR_INVESTED_CAPITAL = "#c084fc";
     private static final String COLOR_WEALTH_EVENT = "#f59e0b";
+    private static final String COLOR_LOAN = "#f43f5e";
+    private static final String COLOR_DELTA_POS = "#10b981";
+    private static final String COLOR_DELTA_NEG = "#f43f5e";
 
     record ChartInterval(LocalDate previousDate, LocalDate targetDate, BigDecimal netWorthDelta) {
     }
 
     private static final List<Integer> MONTH_PRESETS = List.of(3, 6);
     private static final List<Integer> YEAR_PRESETS = List.of(1, 3, 5, 10);
-    private static final double[] NICE_STEPS = { 1.0, 2.0, 2.5, 5.0, 10.0 };
+    private static final double[] NICE_STEPS = { 1.0, 1.5, 2.0, 2.5, 5.0, 10.0 };
+    private static final int MIN_Y_TICKS = 4;
+    private static final int MAX_Y_TICKS = 7;
 
     private final Map<Integer, Button> monthPresetButtons = new LinkedHashMap<>();
     private final Map<Integer, Button> yearPresetButtons = new LinkedHashMap<>();
@@ -80,6 +88,7 @@ class BalanceChartPanel extends VerticalLayout {
     private final Span endDateLabel = new Span();
     private final HorizontalLayout sliderRow = new HorizontalLayout();
     private HorizontalLayout investedLegendItem;
+    private HorizontalLayout loansLegendItem;
     private HorizontalLayout eventsLegendItem;
     private Button manageEventsButton;
     private Button yScaleButton;
@@ -132,8 +141,8 @@ class BalanceChartPanel extends VerticalLayout {
                 const host = $0;
                 const PLOT_LEFT = 115.0;
                 const PLOT_RIGHT = 1365.0;
-                const PLOT_TOP = 24.0;
-                const PLOT_HEIGHT = 416.0;
+                const PLOT_TOP = 22.0;
+                const PLOT_HEIGHT = 510.0;
                 const PLOT_WIDTH = PLOT_RIGHT - PLOT_LEFT;
                 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -248,7 +257,7 @@ class BalanceChartPanel extends VerticalLayout {
 
                 this.addEventListener('dblclick', (e) => {
                   if (Date.now() - lastDragAt < 250) return;
-                  const target = e.target && e.target.closest ? e.target.closest('.mp-pt, .mp-seg') : null;
+                  const target = e.target && e.target.closest ? e.target.closest('.mp-pt, .mp-seg, .mp-delta') : null;
                   if (!target) return;
                   const raw = target.getAttribute('data-idx');
                   if (raw === null) return;
@@ -542,6 +551,10 @@ class BalanceChartPanel extends VerticalLayout {
                 COLOR_INVESTED_CAPITAL, getTranslation("finance.chart.legend.invested-capital"), true);
         investedLegendItem.setVisible(false);
 
+        loansLegendItem = createLegendItem(
+                COLOR_LOAN, getTranslation("finance.chart.legend.loans"), true);
+        loansLegendItem.setVisible(false);
+
         eventsLegendItem = createLegendItem(
                 COLOR_WEALTH_EVENT, getTranslation("finance.chart.legend.events"), false);
         eventsLegendItem.setVisible(false);
@@ -549,6 +562,7 @@ class BalanceChartPanel extends VerticalLayout {
         HorizontalLayout legend = new HorizontalLayout(
                 createLegendItem(COLOR_TOTAL, getTranslation("finance.view.kpi.net-worth"), true),
                 investedLegendItem,
+                loansLegendItem,
                 eventsLegendItem,
                 createLegendItem(COLOR_INVESTMENT, getTranslation("finance.account.type.INVESTMENT"), false),
                 createLegendItem(COLOR_SAVINGS, getTranslation("finance.account.type.SAVINGS"), false),
@@ -860,6 +874,9 @@ class BalanceChartPanel extends VerticalLayout {
         if (investedLegendItem != null) {
             investedLegendItem.setVisible(hasInvestedCapital(visible));
         }
+        if (loansLegendItem != null) {
+            loansLegendItem.setVisible(hasLoans(visible));
+        }
         if (eventsLegendItem != null) {
             eventsLegendItem.setVisible(hasVisibleEvents(visible));
         }
@@ -907,9 +924,12 @@ class BalanceChartPanel extends VerticalLayout {
                 .append("data-xmode=\"").append(evenPointSpacing ? "EVEN" : "TIME").append("\" ")
                 .append("style=\"flex:1 1 auto;width:100%;height:100%;display:block;font-family:var(--lumo-font-family);\">");
 
+        boolean showDeltaBand = points.size() > 1;
+        double xAxisBottom = showDeltaBand ? DELTA_BOTTOM : PLOT_BOTTOM;
+
         appendDefs(svg);
         appendYGridAndLabels(svg, scale);
-        appendXGridAndLabels(svg, points, xs);
+        appendXGridAndLabels(svg, points, xs, xAxisBottom);
 
         svg.append("<g clip-path=\"url(#mp-plot-clip)\">");
         appendStackedArea(svg, "CHECKING", "url(#mp-grad-checking)", COLOR_CHECKING, points, xs,
@@ -921,10 +941,20 @@ class BalanceChartPanel extends VerticalLayout {
         svg.append("</g>");
 
         appendAxesLines(svg);
+        svg.append("<g clip-path=\"url(#mp-plot-clip)\">");
         if (hasInvestedCapital(points)) {
-            appendInvestedCapitalLine(svg, points, xs, minDouble, maxDouble);
+            appendDashedSeriesLine(svg, "INVESTED_CAPITAL", COLOR_INVESTED_CAPITAL, "6 4",
+                    points, xs, minDouble, maxDouble, BalanceChartPoint::investedCapital);
         }
+        if (hasLoans(points)) {
+            appendDashedSeriesLine(svg, "LOAN", COLOR_LOAN, "4 4",
+                    points, xs, minDouble, maxDouble, BalanceChartPoint::loans);
+        }
+        svg.append("</g>");
         appendTotalLineAndMarkers(svg, points, xs, minDouble, maxDouble);
+        if (showDeltaBand) {
+            appendDeltaSubchart(svg, points, xs);
+        }
 
         svg.append("</svg>");
         return svg.toString();
@@ -983,6 +1013,8 @@ class BalanceChartPanel extends VerticalLayout {
                 .append(".mp-pt:hover{r:7.5px;stroke-width:2.5px;}")
                 .append(".mp-seg{cursor:pointer;transition:stroke 0.12s ease;}")
                 .append(".mp-seg:hover{stroke:rgba(245,158,11,0.45);}")
+                .append(".mp-delta{cursor:pointer;transition:opacity 0.12s ease;}")
+                .append(".mp-delta:hover{opacity:1 !important;}")
                 .append("</style>");
     }
 
@@ -1012,7 +1044,8 @@ class BalanceChartPanel extends VerticalLayout {
         }
     }
 
-    private void appendXGridAndLabels(StringBuilder svg, List<BalanceChartPoint> points, double[] xs) {
+    private void appendXGridAndLabels(StringBuilder svg, List<BalanceChartPoint> points, double[] xs,
+            double xAxisBottom) {
         List<Integer> tickIndices = selectTickIndices(points.size(), MAX_X_TICKS);
         for (int idx : tickIndices) {
             double x = xs[idx];
@@ -1020,15 +1053,15 @@ class BalanceChartPanel extends VerticalLayout {
             svg.append("<line x1=\"").append(fmt(x))
                     .append("\" y1=\"").append(fmt(PLOT_TOP))
                     .append("\" x2=\"").append(fmt(x))
-                    .append("\" y2=\"").append(fmt(PLOT_BOTTOM))
+                    .append("\" y2=\"").append(fmt(xAxisBottom))
                     .append("\" stroke=\"var(--lumo-contrast-10pct)\" stroke-dasharray=\"3 3\" stroke-width=\"1\"/>");
             svg.append("<line x1=\"").append(fmt(x))
-                    .append("\" y1=\"").append(fmt(PLOT_BOTTOM))
+                    .append("\" y1=\"").append(fmt(xAxisBottom))
                     .append("\" x2=\"").append(fmt(x))
-                    .append("\" y2=\"").append(fmt(PLOT_BOTTOM + 6))
+                    .append("\" y2=\"").append(fmt(xAxisBottom + 6))
                     .append("\" stroke=\"var(--lumo-contrast-30pct)\" stroke-width=\"1.5\"/>");
             svg.append("<text x=\"").append(fmt(x))
-                    .append("\" y=\"").append(fmt(PLOT_BOTTOM + 24))
+                    .append("\" y=\"").append(fmt(xAxisBottom + 24))
                     .append("\" text-anchor=\"middle\" fill=\"var(--lumo-secondary-text-color)\" font-size=\"12\" font-weight=\"500\">")
                     .append(escapeXml(label))
                     .append("</text>");
@@ -1163,25 +1196,168 @@ class BalanceChartPanel extends VerticalLayout {
         return points.stream().anyMatch(point -> point.investedCapital().signum() > 0);
     }
 
-    private void appendInvestedCapitalLine(
-            StringBuilder svg, List<BalanceChartPoint> points, double[] xs, double minDouble, double maxDouble) {
-        if (points.size() == 1) {
-            double x = xs[0];
-            double y = yFor(points.get(0).investedCapital().doubleValue(), minDouble, maxDouble);
-            svg.append("<circle data-series=\"INVESTED_CAPITAL\" cx=\"").append(fmt(x))
-                    .append("\" cy=\"").append(fmt(y))
-                    .append("\" r=\"4\" fill=\"").append(COLOR_INVESTED_CAPITAL).append("\"/>");
-            return;
+    private static boolean hasLoans(List<BalanceChartPoint> points) {
+        return points.stream().anyMatch(point -> point.loans().signum() > 0);
+    }
+
+    private void appendDashedSeriesLine(
+            StringBuilder svg,
+            String seriesKey,
+            String color,
+            String dashArray,
+            List<BalanceChartPoint> points,
+            double[] xs,
+            double minDouble,
+            double maxDouble,
+            Function<BalanceChartPoint, BigDecimal> extractor) {
+        int i = 0;
+        while (i < points.size()) {
+            if (extractor.apply(points.get(i)).signum() <= 0) {
+                i++;
+                continue;
+            }
+            int runStart = i;
+            while (i + 1 < points.size() && extractor.apply(points.get(i + 1)).signum() > 0) {
+                i++;
+            }
+            int runEnd = i;
+            if (runStart == runEnd) {
+                double x = xs[runStart];
+                double y = yFor(extractor.apply(points.get(runStart)).doubleValue(), minDouble, maxDouble);
+                svg.append("<circle data-series=\"").append(seriesKey).append("\" cx=\"").append(fmt(x))
+                        .append("\" cy=\"").append(fmt(y))
+                        .append("\" r=\"4.5\" fill=\"").append(color)
+                        .append("\" stroke=\"var(--lumo-base-color)\" stroke-width=\"1.5\"/>");
+            } else {
+                StringBuilder path = new StringBuilder();
+                for (int k = runStart; k <= runEnd; k++) {
+                    double x = xs[k];
+                    double y = yFor(extractor.apply(points.get(k)).doubleValue(), minDouble, maxDouble);
+                    path.append(k == runStart ? "M " : " L ").append(fmt(x)).append(' ').append(fmt(y));
+                }
+                svg.append("<path data-series=\"").append(seriesKey).append("\" d=\"").append(path)
+                        .append("\" fill=\"none\" stroke=\"").append(color)
+                        .append("\" stroke-width=\"2.5\" stroke-dasharray=\"").append(dashArray)
+                        .append("\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>");
+            }
+            i++;
         }
-        StringBuilder path = new StringBuilder();
-        for (int i = 0; i < points.size(); i++) {
-            double x = xs[i];
-            double y = yFor(points.get(i).investedCapital().doubleValue(), minDouble, maxDouble);
-            path.append(i == 0 ? "M " : " L ").append(fmt(x)).append(' ').append(fmt(y));
+    }
+
+    private void appendDeltaSubchart(StringBuilder svg, List<BalanceChartPoint> points, double[] xs) {
+        BigDecimal minDelta = BigDecimal.ZERO;
+        BigDecimal maxDelta = BigDecimal.ZERO;
+        BigDecimal[] deltas = new BigDecimal[points.size()];
+        for (int i = 1; i < points.size(); i++) {
+            deltas[i] = points.get(i).total().subtract(points.get(i - 1).total());
+            minDelta = minDelta.min(deltas[i]);
+            maxDelta = maxDelta.max(deltas[i]);
         }
-        svg.append("<path data-series=\"INVESTED_CAPITAL\" d=\"").append(path)
-                .append("\" fill=\"none\" stroke=\"").append(COLOR_INVESTED_CAPITAL)
-                .append("\" stroke-width=\"2.5\" stroke-dasharray=\"6 4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>");
+        DeltaScale scale = computeDeltaScale(minDelta, maxDelta);
+        double dMin = scale.min().doubleValue();
+        double dMax = scale.max().doubleValue();
+        double yZero = deltaYFor(0.0, dMin, dMax);
+
+        svg.append("<line x1=\"").append(fmt(PLOT_LEFT)).append("\" y1=\"").append(fmt(DELTA_TOP))
+                .append("\" x2=\"").append(fmt(PLOT_LEFT)).append("\" y2=\"").append(fmt(DELTA_BOTTOM))
+                .append("\" stroke=\"var(--lumo-contrast-30pct)\" stroke-width=\"1.5\"/>");
+        svg.append("<line x1=\"").append(fmt(PLOT_LEFT)).append("\" y1=\"").append(fmt(DELTA_BOTTOM))
+                .append("\" x2=\"").append(fmt(PLOT_RIGHT)).append("\" y2=\"").append(fmt(DELTA_BOTTOM))
+                .append("\" stroke=\"var(--lumo-contrast-30pct)\" stroke-width=\"1.5\"/>");
+
+        BigDecimal[] yLabels = (dMin < 0 && dMax > 0)
+                ? new BigDecimal[] { scale.max(), BigDecimal.ZERO, scale.min() }
+                : new BigDecimal[] { scale.max(), scale.min() };
+        for (BigDecimal tickVal : yLabels) {
+            double y = deltaYFor(tickVal.doubleValue(), dMin, dMax);
+            boolean isZero = tickVal.signum() == 0;
+            svg.append("<line x1=\"").append(fmt(PLOT_LEFT)).append("\" y1=\"").append(fmt(y))
+                    .append("\" x2=\"").append(fmt(PLOT_RIGHT)).append("\" y2=\"").append(fmt(y))
+                    .append("\" stroke=\"").append(isZero ? "var(--lumo-contrast-30pct)" : "var(--lumo-contrast-10pct)")
+                    .append(isZero ? "\" stroke-width=\"1.2\"/>" : "\" stroke-dasharray=\"4 4\" stroke-width=\"1\"/>");
+            svg.append("<text x=\"").append(fmt(PLOT_LEFT - 12)).append("\" y=\"").append(fmt(y + 4))
+                    .append("\" text-anchor=\"end\" fill=\"var(--lumo-secondary-text-color)\" font-size=\"11\" font-weight=\"500\">")
+                    .append(escapeXml(formatAxisMoney(tickVal)))
+                    .append("</text>");
+        }
+        svg.append("<text x=\"").append(fmt(PLOT_LEFT + 6)).append("\" y=\"").append(fmt(DELTA_TOP + 12))
+                .append("\" fill=\"var(--lumo-secondary-text-color)\" font-size=\"11\" font-weight=\"600\">")
+                .append(escapeXml(getTranslation("finance.chart.delta.axis-label")))
+                .append("</text>");
+
+        double minDx = PLOT_WIDTH;
+        for (int i = 1; i < xs.length; i++) {
+            double dx = xs[i] - xs[i - 1];
+            if (dx > 0.5 && dx < minDx) {
+                minDx = dx;
+            }
+        }
+        double barW = Math.max(3.0, Math.min(24.0, minDx * 0.65));
+
+        svg.append("<g data-series=\"DELTA_BARS\">");
+        for (int i = 1; i < points.size(); i++) {
+            double val = deltas[i].doubleValue();
+            double yVal = deltaYFor(val, dMin, dMax);
+            double rectY = Math.min(yZero, yVal);
+            double rectH = Math.abs(yVal - yZero);
+            if (deltas[i].signum() != 0 && rectH < 2.5) {
+                rectH = 2.5;
+                if (val < 0) {
+                    rectY = Math.min(DELTA_BOTTOM - rectH, yZero);
+                } else {
+                    rectY = Math.max(DELTA_TOP, yZero - rectH);
+                }
+            } else if (rectH < 1.5) {
+                rectH = 1.5;
+                rectY = yZero - 0.75;
+            }
+            double barX = Math.max(PLOT_LEFT + 1.0, Math.min(PLOT_RIGHT - barW, xs[i] - barW / 2.0));
+            List<WealthEvent> segEvents = eventsForVisibleIndex(i, points);
+            boolean hasEvents = !segEvents.isEmpty();
+            String fill = val >= 0 ? COLOR_DELTA_POS : COLOR_DELTA_NEG;
+            svg.append("<rect class=\"mp-delta\" data-idx=\"").append(i)
+                    .append("\" x=\"").append(fmt(barX))
+                    .append("\" y=\"").append(fmt(rectY))
+                    .append("\" width=\"").append(fmt(barW))
+                    .append("\" height=\"").append(fmt(rectH))
+                    .append("\" rx=\"1.5\" fill=\"").append(fill)
+                    .append("\" opacity=\"").append(hasEvents ? "0.92" : "0.70").append("\"");
+            if (hasEvents) {
+                svg.append(" stroke=\"").append(COLOR_WEALTH_EVENT).append("\" stroke-width=\"1.8\"");
+            }
+            svg.append("><title>").append(escapeXml(buildSegmentTooltip(points.get(i - 1), points.get(i), segEvents)))
+                    .append("</title></rect>");
+        }
+        svg.append("</g>");
+    }
+
+    private static DeltaScale computeDeltaScale(BigDecimal minDelta, BigDecimal maxDelta) {
+        double rawMin = Math.min(0.0, minDelta.doubleValue());
+        double rawMax = Math.max(0.0, maxDelta.doubleValue());
+        double span = rawMax - rawMin;
+        if (span <= 0.0) {
+            return new DeltaScale(new BigDecimal("-1000"), new BigDecimal("1000"));
+        }
+        BigDecimal step = niceStep(span / 2.5);
+        double stepVal = step.doubleValue();
+        BigDecimal niceMin = rawMin < 0.0
+                ? step.multiply(BigDecimal.valueOf((long) Math.floor((rawMin * 1.08) / stepVal)))
+                : BigDecimal.ZERO;
+        BigDecimal niceMax = rawMax > 0.0
+                ? step.multiply(BigDecimal.valueOf((long) Math.ceil((rawMax * 1.08) / stepVal)))
+                : BigDecimal.ZERO;
+        return new DeltaScale(niceMin, niceMax);
+    }
+
+    private record DeltaScale(BigDecimal min, BigDecimal max) {
+    }
+
+    private static double deltaYFor(double value, double minDouble, double maxDouble) {
+        if (maxDouble <= minDouble) {
+            return DELTA_BOTTOM;
+        }
+        double clamped = Math.max(minDouble, Math.min(value, maxDouble));
+        return DELTA_BOTTOM - ((clamped - minDouble) / (maxDouble - minDouble)) * DELTA_HEIGHT;
     }
 
     private String buildPointTooltip(
@@ -1192,6 +1368,10 @@ class BalanceChartPanel extends VerticalLayout {
                 + getTranslation("finance.account.type.INVESTMENT") + ": " + MoneyFormatter.format(point.investment(), loc) + "\n"
                 + getTranslation("finance.account.type.SAVINGS") + ": " + MoneyFormatter.format(point.savings(), loc) + "\n"
                 + getTranslation("finance.account.type.CHECKING") + ": " + MoneyFormatter.format(point.checking(), loc);
+        if (point.loans().signum() > 0) {
+            base += "\n" + getTranslation("finance.chart.legend.loans") + ": -"
+                    + MoneyFormatter.format(point.loans(), loc);
+        }
         if (point.investedCapital().signum() > 0) {
             base += "\n" + getTranslation("finance.chart.legend.invested-capital") + ": "
                     + MoneyFormatter.format(point.investedCapital(), loc);
@@ -1306,10 +1486,7 @@ class BalanceChartPanel extends VerticalLayout {
         }
 
         if (!focusY || min == null) {
-            double targetMax = max.doubleValue() * 1.05;
-            BigDecimal step = niceStep(targetMax / 5.0);
-            int ticks = Math.max(4, (int) Math.ceil(targetMax / step.doubleValue()));
-            return new YScale(BigDecimal.ZERO, step, ticks, step.multiply(BigDecimal.valueOf(ticks)));
+            return selectTightestYScale(BigDecimal.ZERO, max.doubleValue() * 1.03);
         }
 
         double rawMin = min.doubleValue();
@@ -1318,19 +1495,58 @@ class BalanceChartPanel extends VerticalLayout {
         if (rawSpan <= 0.0) {
             rawSpan = Math.max(1000.0, rawMax * 0.1);
         }
-        double pad = Math.max(100.0, rawSpan * 0.10);
+        double pad = Math.max(100.0, rawSpan * 0.05);
         double targetMin = rawMin >= 0.0 ? Math.max(0.0, rawMin - pad) : rawMin - pad;
         double targetMax = rawMax + pad;
+        return selectTightestFocusedYScale(targetMin, targetMax, rawMin >= 0.0);
+    }
 
-        BigDecimal step = niceStep((targetMax - targetMin) / 5.0);
-        double stepVal = step.doubleValue();
-        BigDecimal niceMin = step.multiply(BigDecimal.valueOf((long) Math.floor(targetMin / stepVal)));
-        if (rawMin >= 0.0 && niceMin.signum() < 0) {
-            niceMin = BigDecimal.ZERO;
+    private static YScale selectTightestYScale(BigDecimal fixedMin, double targetMax) {
+        YScale best = null;
+        for (int candidateTicks = MIN_Y_TICKS; candidateTicks <= MAX_Y_TICKS; candidateTicks++) {
+            BigDecimal step = niceStep(targetMax / candidateTicks);
+            int actualTicks = Math.max(MIN_Y_TICKS, (int) Math.ceil(targetMax / step.doubleValue()));
+            BigDecimal candidateMax = fixedMin.add(step.multiply(BigDecimal.valueOf(actualTicks)));
+            if (isBetterYScale(best, candidateMax, actualTicks)) {
+                best = new YScale(fixedMin, step, actualTicks, candidateMax);
+            }
         }
-        int ticks = Math.max(4, (int) Math.ceil((targetMax - niceMin.doubleValue()) / stepVal));
-        BigDecimal niceMax = niceMin.add(step.multiply(BigDecimal.valueOf(ticks)));
-        return new YScale(niceMin, step, ticks, niceMax);
+        return best;
+    }
+
+    private static YScale selectTightestFocusedYScale(double targetMin, double targetMax, boolean clampMinZero) {
+        YScale best = null;
+        for (int candidateTicks = MIN_Y_TICKS; candidateTicks <= MAX_Y_TICKS; candidateTicks++) {
+            BigDecimal step = niceStep((targetMax - targetMin) / candidateTicks);
+            double stepVal = step.doubleValue();
+            BigDecimal niceMin = step.multiply(BigDecimal.valueOf((long) Math.floor(targetMin / stepVal)));
+            if (clampMinZero && niceMin.signum() < 0) {
+                niceMin = BigDecimal.ZERO;
+            }
+            int actualTicks = Math.max(MIN_Y_TICKS, (int) Math.ceil((targetMax - niceMin.doubleValue()) / stepVal));
+            BigDecimal niceMax = niceMin.add(step.multiply(BigDecimal.valueOf(actualTicks)));
+            BigDecimal span = niceMax.subtract(niceMin);
+            if (best == null) {
+                best = new YScale(niceMin, step, actualTicks, niceMax);
+                continue;
+            }
+            int spanCmp = span.compareTo(best.max().subtract(best.min()));
+            if (spanCmp < 0 || (spanCmp == 0 && Math.abs(actualTicks - 5.5) < Math.abs(best.tickCount() - 5.5))) {
+                best = new YScale(niceMin, step, actualTicks, niceMax);
+            }
+        }
+        return best;
+    }
+
+    private static boolean isBetterYScale(YScale currentBest, BigDecimal candidateMax, int actualTicks) {
+        if (currentBest == null) {
+            return true;
+        }
+        int maxCmp = candidateMax.compareTo(currentBest.max());
+        if (maxCmp != 0) {
+            return maxCmp < 0;
+        }
+        return Math.abs(actualTicks - 5.5) < Math.abs(currentBest.tickCount() - 5.5);
     }
 
     private static BigDecimal niceStep(double rawStep) {

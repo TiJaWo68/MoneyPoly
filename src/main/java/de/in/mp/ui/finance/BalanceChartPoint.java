@@ -33,7 +33,8 @@ record BalanceChartPoint(
         BigDecimal savings,
         BigDecimal investment,
         BigDecimal total,
-        BigDecimal investedCapital) {
+        BigDecimal investedCapital,
+        BigDecimal loans) {
 
     BalanceChartPoint(
             LocalDate date,
@@ -41,7 +42,17 @@ record BalanceChartPoint(
             BigDecimal savings,
             BigDecimal investment,
             BigDecimal total) {
-        this(date, checking, savings, investment, total, BigDecimal.ZERO);
+        this(date, checking, savings, investment, total, BigDecimal.ZERO, BigDecimal.ZERO);
+    }
+
+    BalanceChartPoint(
+            LocalDate date,
+            BigDecimal checking,
+            BigDecimal savings,
+            BigDecimal investment,
+            BigDecimal total,
+            BigDecimal investedCapital) {
+        this(date, checking, savings, investment, total, investedCapital, BigDecimal.ZERO);
     }
 
     BigDecimal stackedSavings() {
@@ -165,6 +176,7 @@ record BalanceChartPoint(
         BigDecimal investment = BigDecimal.ZERO;
         BigDecimal total = BigDecimal.ZERO;
         BigDecimal investedCapital = BigDecimal.ZERO;
+        BigDecimal loans = BigDecimal.ZERO;
 
         for (Account account : accounts) {
             UUID id = account.getId();
@@ -189,9 +201,10 @@ record BalanceChartPoint(
                 total = total.add(balance);
                 investedCapital = investedCapital.add(lastKnownInvestedCapital.getOrDefault(id, BigDecimal.ZERO));
             } else if (type == AccountType.LOAN) {
+                loans = loans.add(balance);
                 total = total.subtract(balance);
             }
         }
-        return new BalanceChartPoint(date, checking, savings, investment, total, investedCapital);
+        return new BalanceChartPoint(date, checking, savings, investment, total, investedCapital, loans);
     }
 }
