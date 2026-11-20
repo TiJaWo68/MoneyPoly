@@ -36,6 +36,7 @@ import de.in.mp.energy.EnergyHouseService;
 import de.in.mp.finance.Household;
 import de.in.mp.finance.HouseholdService;
 import de.in.mp.ui.ResponsiveStyles;
+import de.in.mp.worktime.WorkTimeService;
 
 /**
  * Application shell for all protected views: responsive navigation drawer,
@@ -51,30 +52,41 @@ public class MainLayout extends AppLayout {
     private static final String FINANCE_PATH = "finance";
     private static final String LOANS_PATH = "loans";
     private static final String ENERGY_PATH = "energy";
+    private static final String WORK_TIME_PATH = "work-time";
 
     private final AuthenticationContext authenticationContext;
     private final EnergyHouseService energyHouseService;
     private final HouseholdService householdService;
+    private final WorkTimeService workTimeService;
     private SideNav sideNav;
 
     public MainLayout(AuthenticationContext authenticationContext) {
-        this(authenticationContext, null, null);
+        this(authenticationContext, null, null, null);
     }
 
     public MainLayout(
             AuthenticationContext authenticationContext,
             EnergyHouseService energyHouseService) {
-        this(authenticationContext, energyHouseService, null);
+        this(authenticationContext, energyHouseService, null, null);
+    }
+
+    public MainLayout(
+            AuthenticationContext authenticationContext,
+            EnergyHouseService energyHouseService,
+            HouseholdService householdService) {
+        this(authenticationContext, energyHouseService, householdService, null);
     }
 
     @Autowired
     public MainLayout(
             AuthenticationContext authenticationContext,
             @Autowired(required = false) EnergyHouseService energyHouseService,
-            @Autowired(required = false) HouseholdService householdService) {
+            @Autowired(required = false) HouseholdService householdService,
+            @Autowired(required = false) WorkTimeService workTimeService) {
         this.authenticationContext = authenticationContext;
         this.energyHouseService = energyHouseService;
         this.householdService = householdService;
+        this.workTimeService = workTimeService;
         addToNavbar(createHeader());
         addToDrawer(createDrawer());
     }
@@ -136,8 +148,10 @@ public class MainLayout extends AppLayout {
         boolean hasFinanceAccess = householdService == null || householdService.hasFinanceAccessForCurrentUser();
         boolean hasLoansAccess = householdService == null || householdService.hasAnyLoanAccessForCurrentUser();
         boolean hasEnergyAccess = energyHouseService == null || energyHouseService.hasAccessibleHouseForCurrentUser();
+        boolean hasWorkTimeAccess = workTimeService != null && workTimeService.canCurrentUserAccessWorkTime();
         navigationItems().stream()
-                .filter(item -> isItemVisible(item, grantedAuthorities, hasFinanceAccess, hasLoansAccess, hasEnergyAccess))
+                .filter(item -> isItemVisible(
+                        item, grantedAuthorities, hasFinanceAccess, hasLoansAccess, hasEnergyAccess, hasWorkTimeAccess))
                 .forEach(item -> targetNav.addItem(toSideNavItem(item)));
     }
 
@@ -250,6 +264,7 @@ public class MainLayout extends AppLayout {
                 new NavigationItem("ui.nav.finance", "finance", VaadinIcon.WALLET, Set.of()),
                 new NavigationItem("ui.nav.loans", "loans", VaadinIcon.FAMILY, Set.of()),
                 new NavigationItem("ui.nav.energy", "energy", VaadinIcon.BOLT, Set.of()),
+                new NavigationItem("ui.nav.work-time", WORK_TIME_PATH, VaadinIcon.CLOCK, Set.of()),
                 new NavigationItem("ui.nav.admin", "admin", VaadinIcon.COG, Set.of(ROLE_ADMIN)));
     }
 
@@ -268,6 +283,16 @@ public class MainLayout extends AppLayout {
             boolean hasFinanceAccess,
             boolean hasLoansAccess,
             boolean hasEnergyAccess) {
+        return isItemVisible(item, grantedAuthorities, hasFinanceAccess, hasLoansAccess, hasEnergyAccess, false);
+    }
+
+    static boolean isItemVisible(
+            NavigationItem item,
+            Collection<String> grantedAuthorities,
+            boolean hasFinanceAccess,
+            boolean hasLoansAccess,
+            boolean hasEnergyAccess,
+            boolean hasWorkTimeAccess) {
         if (FINANCE_PATH.equals(item.path()) && !hasFinanceAccess) {
             return false;
         }
@@ -275,6 +300,9 @@ public class MainLayout extends AppLayout {
             return false;
         }
         if (ENERGY_PATH.equals(item.path()) && !hasEnergyAccess) {
+            return false;
+        }
+        if (WORK_TIME_PATH.equals(item.path()) && !hasWorkTimeAccess) {
             return false;
         }
         return item.requiredRoles().isEmpty()

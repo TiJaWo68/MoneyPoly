@@ -35,6 +35,8 @@ import de.in.mp.security.AppRole;
 import de.in.mp.security.AppUser;
 import de.in.mp.security.AuthProvider;
 import de.in.mp.ui.GridActionButton;
+import de.in.mp.ui.layout.MainLayout;
+import de.in.mp.worktime.WorkTimeService;
 
 /**
  * Tab 1: user accounts, roles and access management.
@@ -45,6 +47,7 @@ public class UsersTab extends VerticalLayout implements AdminTab {
     private final PersonService personService;
     private final AuthenticationContext authenticationContext;
     private final HouseholdService householdService;
+    private final WorkTimeService workTimeService;
     private final UserEditorDialog editorDialog;
     private final HouseholdDialog householdDialog;
 
@@ -55,22 +58,30 @@ public class UsersTab extends VerticalLayout implements AdminTab {
 
     public UsersTab(UserService userService, PersonService personService,
             AuthenticationContext authenticationContext) {
-        this(userService, personService, authenticationContext, null, null);
+        this(userService, personService, authenticationContext, null, null, null);
     }
 
     public UsersTab(UserService userService, PersonService personService,
             AuthenticationContext authenticationContext, EnergyHouseService houseService) {
-        this(userService, personService, authenticationContext, houseService, null);
+        this(userService, personService, authenticationContext, houseService, null, null);
     }
 
     public UsersTab(UserService userService, PersonService personService,
             AuthenticationContext authenticationContext, EnergyHouseService houseService,
             HouseholdService householdService) {
+        this(userService, personService, authenticationContext, houseService, householdService, null);
+    }
+
+    public UsersTab(UserService userService, PersonService personService,
+            AuthenticationContext authenticationContext, EnergyHouseService houseService,
+            HouseholdService householdService, WorkTimeService workTimeService) {
         this.userService = userService;
         this.personService = personService;
         this.authenticationContext = authenticationContext;
         this.householdService = householdService;
-        this.editorDialog = new UserEditorDialog(userService, personService, houseService, householdService);
+        this.workTimeService = workTimeService;
+        this.editorDialog = new UserEditorDialog(
+                userService, personService, houseService, householdService, workTimeService);
         this.householdDialog = householdService != null ? new HouseholdDialog(householdService) : null;
 
         setSizeFull();
@@ -107,7 +118,7 @@ public class UsersTab extends VerticalLayout implements AdminTab {
                 VaadinIcon.PLUS.create());
         newUserButton.setTooltipText(getTranslation("admin.users.button.new-user"));
         newUserButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
-        newUserButton.addClickListener(event -> editorDialog.openForCreate(this::refresh));
+        newUserButton.addClickListener(event -> editorDialog.openForCreate(this::refreshAfterUserSaved));
 
         HorizontalLayout header = new HorizontalLayout(title);
         if (householdDialog != null) {
@@ -184,13 +195,22 @@ public class UsersTab extends VerticalLayout implements AdminTab {
         return badge;
     }
 
-    private Span renderStatus(AppUser user) {
+    private Component renderStatus(AppUser user) {
         String key = user.isEnabled() ? "admin.user.status.enabled" : "admin.user.status.disabled";
         Span badge = new Span(getTranslation(key));
         badge.getElement().getThemeList().add("badge");
         badge.getElement().getThemeList().add("pill");
         badge.getElement().getThemeList().add(user.isEnabled() ? "success" : "error");
-        return badge;
+        if (workTimeService == null || user.getId() == null || !workTimeService.isEnabledForUser(user.getId())) {
+            return badge;
+        }
+        Span workTimeBadge = new Span(getTranslation("admin.user.status.worktime"));
+        workTimeBadge.getElement().getThemeList().add("badge");
+        workTimeBadge.getElement().getThemeList().add("pill");
+        HorizontalLayout wrapper = new HorizontalLayout(badge, workTimeBadge);
+        wrapper.setSpacing(false);
+        wrapper.getStyle().set("gap", "var(--lumo-space-xs)");
+        return wrapper;
     }
 
     private HorizontalLayout renderActions(AppUser user) {
@@ -199,7 +219,7 @@ public class UsersTab extends VerticalLayout implements AdminTab {
         Button editButton = GridActionButton.create(
                 VaadinIcon.EDIT,
                 getTranslation("admin.action.edit"),
-                event -> editorDialog.openForEdit(user, this::refresh));
+                event -> editorDialog.openForEdit(user, this::refreshAfterUserSaved));
 
         Button resetButton = GridActionButton.create(
                 VaadinIcon.KEY,
@@ -294,6 +314,18 @@ public class UsersTab extends VerticalLayout implements AdminTab {
 
         dialog.add(newPassword, actions);
         dialog.open();
+    }
+
+    private void refreshAfterUserSaved() {
+        refresh();
+        UI currentUi = UI.getCurrent();
+        if (currentUi != null) {
+            currentUi.getChildren()
+                    .filter(MainLayout.class::isInstance)
+                    .map(MainLayout.class::cast)
+                    .findFirst()
+                    .ifPresent(MainLayout::refreshNavigation);
+        }
     }
 
     private UUID resolveCurrentUserId() {

@@ -26,7 +26,7 @@ class MainLayoutTest {
     @Test
     void rendersCommonNavigationEntriesForEveryRole() {
         for (MainLayout.NavigationItem item : MainLayout.navigationItems()) {
-            if (item.labelKey().equals("ui.nav.admin")) {
+            if (item.labelKey().equals("ui.nav.admin") || item.labelKey().equals("ui.nav.work-time")) {
                 continue;
             }
             assertThat(MainLayout.isItemVisible(item, Set.of("ROLE_USER")))
@@ -47,7 +47,26 @@ class MainLayoutTest {
     void exposesAllExpectedNavigationEntriesInOrder() {
         assertThat(MainLayout.navigationItems())
                 .extracting(MainLayout.NavigationItem::labelKey)
-                .containsExactly("ui.nav.dashboard", "ui.nav.finance", "ui.nav.loans", "ui.nav.energy", "ui.nav.admin");
+                .containsExactly(
+                        "ui.nav.dashboard",
+                        "ui.nav.finance",
+                        "ui.nav.loans",
+                        "ui.nav.energy",
+                        "ui.nav.work-time",
+                        "ui.nav.admin");
+    }
+
+    @Test
+    void hidesWorkTimeEntryUntilConfigured() {
+        MainLayout.NavigationItem workTime = MainLayout.navigationItems().stream()
+                .filter(item -> "work-time".equals(item.path()))
+                .findFirst()
+                .orElseThrow();
+
+        assertThat(MainLayout.isItemVisible(workTime, Set.of("ROLE_USER"), true, true, true, false)).isFalse();
+        assertThat(MainLayout.isItemVisible(workTime, Set.of("ROLE_ADMIN"), true, true, true, false)).isFalse();
+        assertThat(MainLayout.isItemVisible(workTime, Set.of("ROLE_USER"), true, true, true, true)).isTrue();
+        assertThat(MainLayout.isItemVisible(workTime, Set.of("ROLE_ADMIN"), true, true, true, true)).isTrue();
     }
 
     @Test

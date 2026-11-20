@@ -24,6 +24,7 @@ import de.in.mp.finance.HouseholdService;
 import de.in.mp.importer.FinanceOdsImportService;
 import de.in.mp.loans.LoanContractRepository;
 import de.in.mp.ui.layout.MainLayout;
+import de.in.mp.worktime.WorkTimeService;
 import jakarta.annotation.security.RolesAllowed;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -73,6 +74,18 @@ public class AdminView extends VerticalLayout implements HasDynamicTitle {
                 databaseResetService, appSettingService, visionMeterClient, houseService, null);
     }
 
+    public AdminView(UserService userService, PersonService personService,
+            CategoryService categoryService, ClassificationRuleService classificationRuleService,
+            SystemHealthService systemHealthService, AuthenticationContext authenticationContext,
+            LoanContractRepository loanContractRepository, FinanceOdsImportService financeOdsImportService,
+            EnergyOdsImportService energyOdsImportService, DatabaseResetService databaseResetService,
+            AppSettingService appSettingService, VisionMeterClient visionMeterClient,
+            EnergyHouseService houseService, HouseholdService householdService) {
+        this(userService, personService, categoryService, classificationRuleService, systemHealthService,
+                authenticationContext, loanContractRepository, financeOdsImportService, energyOdsImportService,
+                databaseResetService, appSettingService, visionMeterClient, houseService, householdService, null);
+    }
+
     @Autowired
     public AdminView(UserService userService, PersonService personService,
             CategoryService categoryService, ClassificationRuleService classificationRuleService,
@@ -81,7 +94,8 @@ public class AdminView extends VerticalLayout implements HasDynamicTitle {
             EnergyOdsImportService energyOdsImportService, DatabaseResetService databaseResetService,
             AppSettingService appSettingService, VisionMeterClient visionMeterClient,
             @Autowired(required = false) EnergyHouseService houseService,
-            @Autowired(required = false) HouseholdService householdService) {
+            @Autowired(required = false) HouseholdService householdService,
+            @Autowired(required = false) WorkTimeService workTimeService) {
         setSizeFull();
         setPadding(true);
         setSpacing(false);
@@ -90,7 +104,8 @@ public class AdminView extends VerticalLayout implements HasDynamicTitle {
         content.setSizeFull();
         content.setPadding(false);
 
-        registerTab(new UsersTab(userService, personService, authenticationContext, houseService, householdService));
+        registerTab(new UsersTab(userService, personService, authenticationContext, houseService, householdService,
+                workTimeService));
         registerTab(new PersonsTab(personService));
         registerTab(new CategoriesTab(categoryService));
         registerTab(new ClassificationRulesTab(classificationRuleService, categoryService, loanContractRepository));
