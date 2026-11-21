@@ -539,6 +539,53 @@ class FinanceViewTest {
         assertThat(dialog.cryptoWarningForTest().isVisible()).isTrue();
     }
 
+    @Test
+    void carriedNetWorthColumnCarriesForwardBalancesAcrossPartialDates() {
+        AccountService accountService = mock(AccountService.class);
+        AccountSnapshotService snapshotService = mock(AccountSnapshotService.class);
+        BankLookupService bankLookupService = mock(BankLookupService.class);
+        StatementImportService statementImportService = mock(StatementImportService.class);
+
+        UUID bankId = UUID.randomUUID();
+        Account bank = institution(bankId, "Bank");
+        Account acc1 = childAccount(UUID.randomUUID(), "Giro", bankId, 1);
+        Account acc2 = childAccount(UUID.randomUUID(), "Tagesgeld", bankId, 2);
+
+        LocalDate earlier = LocalDate.of(2026, 10, 31);
+        LocalDate partial = LocalDate.of(2026, 11, 19);
+
+        de.in.mp.finance.AccountSnapshot s1 = new de.in.mp.finance.AccountSnapshot();
+        s1.setAccountId(acc1.getId());
+        s1.setSnapshotDate(earlier);
+        s1.setBalance(new BigDecimal("1000.00"));
+
+        de.in.mp.finance.AccountSnapshot s2 = new de.in.mp.finance.AccountSnapshot();
+        s2.setAccountId(acc2.getId());
+        s2.setSnapshotDate(earlier);
+        s2.setBalance(new BigDecimal("2000.00"));
+
+        de.in.mp.finance.AccountSnapshot s1New = new de.in.mp.finance.AccountSnapshot();
+        s1New.setAccountId(acc1.getId());
+        s1New.setSnapshotDate(partial);
+        s1New.setBalance(new BigDecimal("1500.00"));
+
+        List<de.in.mp.finance.BalanceDateRow> rows = List.of(
+                new de.in.mp.finance.BalanceDateRow(partial, Map.of(acc1.getId(), s1New)),
+                new de.in.mp.finance.BalanceDateRow(earlier, Map.of(acc1.getId(), s1, acc2.getId(), s2)));
+
+        when(accountService.findAll()).thenReturn(List.of(bank, acc1, acc2));
+        when(accountService.calculateInstitutionTotals()).thenReturn(Map.of());
+        when(accountService.calculateNetWorth()).thenReturn(new BigDecimal("3500.00"));
+        when(accountService.countActiveAccounts()).thenReturn(2L);
+        when(snapshotService.buildDateRows(null)).thenReturn(rows);
+
+        FinanceView view = new FinanceView(accountService, snapshotService, bankLookupService,
+                statementImportService, mockAppSettingService());
+
+        assertThat(view.carriedNetWorthForTest(earlier)).isEqualByComparingTo("3000.00");
+        assertThat(view.carriedNetWorthForTest(partial)).isEqualByComparingTo("3500.00");
+    }
+
     private static AppSettingService mockAppSettingService() {
         AppSettingService service = mock(AppSettingService.class);
         when(service.getSavingsInterestWarningThreshold()).thenReturn(new BigDecimal("2.00"));

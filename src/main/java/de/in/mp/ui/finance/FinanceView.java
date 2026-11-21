@@ -134,6 +134,7 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
     private Map<UUID, BigDecimal> balancesByAccount = Map.of();
     private Map<UUID, BigDecimal> institutionTotals = Map.of();
     private Map<UUID, BankConnection> connectionsById = Map.of();
+    private Map<LocalDate, BigDecimal> carriedNetWorthByDate = Map.of();
     private List<Account> currentAccounts = List.of();
 
     public FinanceView(AccountService accountService, AccountSnapshotService snapshotService,
@@ -577,7 +578,8 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
                 .setFrozen(true)
                 .setAutoWidth(true);
 
-        balanceGrid.addColumn(row -> formatMoney(sumOf(row, displayedBalanceColumns)))
+        balanceGrid.addColumn(row -> formatMoney(
+                        carriedNetWorthByDate.getOrDefault(row.date(), sumOf(row, displayedBalanceColumns))))
                 .setHeader(getTranslation("finance.balance.column.total"))
                 .setTextAlign(ColumnTextAlign.END)
                 .setAutoWidth(true);
@@ -1079,8 +1081,13 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
         this.balancesByAccount = accountService.resolveCurrentBalances(accounts);
         this.connectionsById = loadConnectionsById();
         List<BalanceDateRow> rows = snapshotService.buildDateRows(selectedHouseholdId);
+        Map<UUID, DepotValuation> liveDepots = resolveLiveDepotValuations(accounts);
+        List<BalanceChartPoint> netWorthPoints = BalanceChartPoint.fromRows(
+                accounts, rows, liveDepots, LocalDate.now());
+        this.carriedNetWorthByDate = netWorthPoints.stream()
+                .collect(Collectors.toMap(BalanceChartPoint::date, BalanceChartPoint::total, (a, b) -> b));
 
-        chartPanel.setData(accounts, rows, resolveLiveDepotValuations(accounts), loadWealthEvents());
+        chartPanel.setData(accounts, rows, liveDepots, loadWealthEvents());
         exitPlanPanel.setHouseholdAccounts(accounts, balancesByAccount);
         updateExitPlanTabVisibility();
         Map<UUID, Account> byId = AccountLabels.byId(accounts);
@@ -1221,6 +1228,10 @@ public class FinanceView extends VerticalLayout implements HasDynamicTitle, Befo
 
     Grid<BalanceDateRow> balanceGridForTest() {
         return balanceGrid;
+    }
+
+    BigDecimal carriedNetWorthForTest(LocalDate date) {
+        return carriedNetWorthByDate.get(date);
     }
 
     void selectBalancesTabForTest() {
