@@ -1363,18 +1363,22 @@ class BalanceChartPanel extends VerticalLayout {
     private String buildPointTooltip(
             BalanceChartPoint point, BalanceChartPoint previousPoint, List<WealthEvent> pointEvents) {
         Locale loc = locale();
+        String investmentLine = getTranslation("finance.account.type.INVESTMENT") + ": "
+                + MoneyFormatter.format(point.investment(), loc);
+        if (point.investedCapital().signum() > 0) {
+            BigDecimal gain = point.investment().subtract(point.investedCapital());
+            BigDecimal pct = gain.multiply(BigDecimal.valueOf(100))
+                    .divide(point.investedCapital(), 1, RoundingMode.HALF_UP);
+            investmentLine += " (" + formatSignedPercent(pct, loc) + ")";
+        }
         String base = DateFormatter.format(point.date(), loc) + "\n"
                 + getTranslation("finance.view.kpi.net-worth") + ": " + MoneyFormatter.format(point.total(), loc) + "\n"
-                + getTranslation("finance.account.type.INVESTMENT") + ": " + MoneyFormatter.format(point.investment(), loc) + "\n"
+                + investmentLine + "\n"
                 + getTranslation("finance.account.type.SAVINGS") + ": " + MoneyFormatter.format(point.savings(), loc) + "\n"
                 + getTranslation("finance.account.type.CHECKING") + ": " + MoneyFormatter.format(point.checking(), loc);
         if (point.loans().signum() > 0) {
             base += "\n" + getTranslation("finance.chart.legend.loans") + ": -"
                     + MoneyFormatter.format(point.loans(), loc);
-        }
-        if (point.investedCapital().signum() > 0) {
-            base += "\n" + getTranslation("finance.chart.legend.invested-capital") + ": "
-                    + MoneyFormatter.format(point.investedCapital(), loc);
         }
         if (!pointEvents.isEmpty()) {
             String header = previousPoint != null
@@ -1384,6 +1388,20 @@ class BalanceChartPanel extends VerticalLayout {
             base += "\n" + header + formatEventsLines(pointEvents, loc);
         }
         return base;
+    }
+
+    private static String formatSignedPercent(BigDecimal pct, Locale loc) {
+        NumberFormat fmt = NumberFormat.getNumberInstance(loc);
+        fmt.setMinimumFractionDigits(1);
+        fmt.setMaximumFractionDigits(1);
+        String formatted = fmt.format(pct.abs()) + " %";
+        if (pct.signum() > 0) {
+            return "+" + formatted;
+        }
+        if (pct.signum() < 0) {
+            return "\u2212" + formatted;
+        }
+        return formatted;
     }
 
     private String buildSegmentTooltip(

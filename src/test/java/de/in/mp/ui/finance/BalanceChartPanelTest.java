@@ -467,6 +467,23 @@ class BalanceChartPanelTest {
         assertThat(panel.svgMarkupForTest()).contains("data-ymax=\"600000\"");
     }
 
+    @Test
+    void formatsPointTooltipWithCompactInvestmentPercentageDifference() {
+        Account investment = account(AccountType.INVESTMENT, true);
+        LocalDate today = LocalDate.now();
+        DepotValuation liveDepot = new DepotValuation(
+                investment.getId(), true,
+                new BigDecimal("164739.00"), new BigDecimal("171739.00"),
+                new BigDecimal("164739.00"), true, 3);
+
+        BalanceChartPanel panel = new BalanceChartPanel();
+        panel.setData(List.of(investment), List.of(), Map.of(investment.getId(), liveDepot), List.of());
+
+        String svg = panel.svgMarkupForTest();
+        assertThat(svg).contains("(\u22124,1 %)");
+        assertThat(svg).doesNotContain("finance.chart.legend.invested-capital: 171");
+    }
+
     private static Account account(AccountType type, boolean active) {
         Account account = new Account();
         account.setId(UUID.randomUUID());
