@@ -6,6 +6,7 @@ import java.text.NumberFormat;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -28,8 +29,10 @@ import com.vaadin.flow.component.combobox.ComboBox;
 import com.vaadin.flow.component.dialog.Dialog;
 import com.vaadin.flow.component.grid.ColumnTextAlign;
 import com.vaadin.flow.component.grid.Grid;
+import com.vaadin.flow.component.grid.GridSortOrder;
 import com.vaadin.flow.component.grid.GridVariant;
 import com.vaadin.flow.component.grid.HeaderRow;
+import com.vaadin.flow.data.provider.SortDirection;
 import com.vaadin.flow.component.html.H3;
 import com.vaadin.flow.component.html.Image;
 import com.vaadin.flow.component.html.Paragraph;
@@ -62,6 +65,9 @@ import de.in.mp.energy.EnergyTariffService;
 import de.in.mp.energy.MeterReadingPhoto;
 import de.in.mp.energy.MeterReadingPhotoService;
 import de.in.mp.energy.bill.UtilityBillVerificationService;
+import de.in.mp.energy.sync.EnergyDataSource;
+import de.in.mp.energy.sync.EnergyDeviceModels.EnergySyncSummary;
+import de.in.mp.energy.sync.EnergySyncService;
 import de.in.mp.energy.Meter;
 import de.in.mp.energy.MeterReading;
 import de.in.mp.energy.MeterReadingService;
@@ -115,6 +121,7 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle, Befor
     private final Grid<AssetAmortizationSummary> amortizationGrid = new Grid<>(AssetAmortizationSummary.class, false);
     private final Grid<Meter> metersGrid = new Grid<>(Meter.class, false);
     private final Grid<EnergyTariff> tariffsGrid = new Grid<>(EnergyTariff.class, false);
+    private final Grid<EnergyDataSource> dataSourcesGrid = new Grid<>(EnergyDataSource.class, false);
 
     private final Tabs tabBar = new Tabs();
     private final Tab readingsTab;
@@ -126,6 +133,8 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle, Befor
     private final ComboBox<EnergyHouse> houseSelector = new ComboBox<>();
     private final EnergyHouseService houseService;
     private final EnergyHouseDialog houseDialog;
+    private final EnergySyncService energySyncService;
+    private final EnergyDataSourceDialog dataSourceDialog;
     private final HorizontalLayout kpiRow;
 
     private boolean kpisVisible = true;
@@ -146,7 +155,7 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle, Befor
             EnergyTariffService tariffService,
             EnergyAmortizationService amortizationService) {
         this(assetService, meterService, readingService, tariffService, amortizationService,
-                null, null, null, null, null);
+                null, null, null, null, null, null);
     }
 
     public EnergyView(
@@ -158,7 +167,7 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle, Befor
             AppSettingService appSettingService,
             VisionMeterClient visionMeterClient) {
         this(assetService, meterService, readingService, tariffService, amortizationService,
-                appSettingService, visionMeterClient, null, null, null);
+                appSettingService, visionMeterClient, null, null, null, null);
     }
 
     public EnergyView(
@@ -171,7 +180,7 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle, Befor
             VisionMeterClient visionMeterClient,
             EnergyHouseService houseService) {
         this(assetService, meterService, readingService, tariffService, amortizationService,
-                appSettingService, visionMeterClient, houseService, null, null);
+                appSettingService, visionMeterClient, houseService, null, null, null);
     }
 
     public EnergyView(
@@ -185,7 +194,22 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle, Befor
             EnergyHouseService houseService,
             UtilityBillVerificationService billVerificationService) {
         this(assetService, meterService, readingService, tariffService, amortizationService,
-                appSettingService, visionMeterClient, houseService, billVerificationService, null);
+                appSettingService, visionMeterClient, houseService, billVerificationService, null, null);
+    }
+
+    public EnergyView(
+            EnergyAssetService assetService,
+            MeterService meterService,
+            MeterReadingService readingService,
+            EnergyTariffService tariffService,
+            EnergyAmortizationService amortizationService,
+            AppSettingService appSettingService,
+            VisionMeterClient visionMeterClient,
+            EnergyHouseService houseService,
+            UtilityBillVerificationService billVerificationService,
+            MeterReadingPhotoService photoService) {
+        this(assetService, meterService, readingService, tariffService, amortizationService,
+                appSettingService, visionMeterClient, houseService, billVerificationService, photoService, null);
     }
 
     @Autowired
@@ -199,7 +223,8 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle, Befor
             VisionMeterClient visionMeterClient,
             @Autowired(required = false) EnergyHouseService houseService,
             @Autowired(required = false) UtilityBillVerificationService billVerificationService,
-            @Autowired(required = false) MeterReadingPhotoService photoService) {
+            @Autowired(required = false) MeterReadingPhotoService photoService,
+            @Autowired(required = false) EnergySyncService energySyncService) {
         this.assetService = assetService;
         this.meterService = meterService;
         this.readingService = readingService;
@@ -208,7 +233,9 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle, Befor
         this.appSettingService = appSettingService;
         this.photoService = photoService;
         this.houseService = houseService;
+        this.energySyncService = energySyncService;
         this.houseDialog = houseService != null ? new EnergyHouseDialog(houseService) : null;
+        this.dataSourceDialog = energySyncService != null ? new EnergyDataSourceDialog(energySyncService) : null;
 
         this.batchReadingDialog = new BatchMeterReadingDialog(meterService, readingService);
         this.photoImportDialog = (appSettingService != null && visionMeterClient != null)
@@ -216,7 +243,7 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle, Befor
                         meterService, readingService, appSettingService, visionMeterClient, photoService)
                 : null;
         this.assetEditorDialog = new EnergyAssetEditorDialog(assetService);
-        this.meterEditorDialog = new MeterEditorDialog(meterService, assetService);
+        this.meterEditorDialog = new MeterEditorDialog(meterService, assetService, energySyncService, readingService);
         this.tariffEditorDialog = new EnergyTariffEditorDialog(tariffService);
         this.billCheckDialog = billVerificationService != null
                 ? new UtilityBillCheckDialog(billVerificationService, meterService, photoService)
@@ -241,6 +268,7 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle, Befor
         configureAmortizationGrid();
         configureMetersGrid();
         configureTariffsGrid();
+        configureDataSourcesGrid();
 
         tabBar.add(readingsTab, amortizationTab, masterDataTab);
         tabBar.setWidthFull();
@@ -319,6 +347,12 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle, Befor
                         VaadinIcon.FILE_TEXT_O,
                         () -> billCheckDialog.openForCheck(selectedHouseId, this::refreshAll));
             }
+            if (energySyncService != null) {
+                actionMenu.addAction(
+                        getTranslation("energy.button.sync-devices"),
+                        VaadinIcon.REFRESH,
+                        this::syncCurrentHouseDevices);
+            }
 
             if (selected == amortizationTab) {
                 actionMenu.addSeparator();
@@ -336,6 +370,12 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle, Befor
                         getTranslation("energy.button.new-tariff"),
                         VaadinIcon.PLUS_CIRCLE_O,
                         () -> tariffEditorDialog.openForCreate(this::refreshAll, selectedHouseId));
+                if (dataSourceDialog != null) {
+                    actionMenu.addAction(
+                            getTranslation("energy.button.new-data-source"),
+                            VaadinIcon.PLUG,
+                            () -> dataSourceDialog.openForCreate(selectedHouseId, this::refreshAll));
+                }
             }
             actionMenu.addSeparator();
         }
@@ -514,6 +554,22 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle, Befor
         tariffsGrid.setHeight("260px");
 
         VerticalLayout layout = new VerticalLayout(metersTitle, metersGrid, tariffsHeader, tariffsGrid);
+        if (energySyncService != null) {
+            H3 sourcesTitle = new H3(getTranslation("energy.source.title"));
+            sourcesTitle.addClassName(LumoUtility.Margin.NONE);
+            HorizontalLayout sourcesHeader = new HorizontalLayout(sourcesTitle);
+            sourcesHeader.setAlignItems(Alignment.CENTER);
+            if (canEditCurrentHouse() && dataSourceDialog != null) {
+                Button addSourceBtn = new Button(
+                        getTranslation("energy.button.new-data-source"),
+                        VaadinIcon.PLUS.create(),
+                        e -> dataSourceDialog.openForCreate(selectedHouseId, this::refreshAll));
+                addSourceBtn.addThemeVariants(ButtonVariant.LUMO_SMALL);
+                sourcesHeader.add(addSourceBtn);
+            }
+            dataSourcesGrid.setHeight("220px");
+            layout.add(sourcesHeader, dataSourcesGrid);
+        }
         layout.setSizeFull();
         layout.setPadding(false);
         return layout;
@@ -554,8 +610,11 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle, Befor
         List<Meter> orderedMeters = new ArrayList<>(activeMeters);
         orderedMeters.sort(EnergyView::compareMetersForDisplay);
 
-        readingsGrid.addColumn(row -> DATE_FORMAT.format(row.readingDate()))
+        Grid.Column<EnergyDateRow> dateColumn = readingsGrid
+                .addColumn(row -> DATE_FORMAT.format(row.readingDate()))
                 .setHeader(getTranslation("energy.readings.column.date"))
+                .setComparator(Comparator.comparing(EnergyDateRow::readingDate))
+                .setSortable(true)
                 .setFrozen(true)
                 .setAutoWidth(true);
 
@@ -617,6 +676,7 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle, Befor
                 GridVariant.LUMO_ROW_STRIPES,
                 GridVariant.LUMO_COLUMN_BORDERS,
                 GridVariant.LUMO_COMPACT);
+        readingsGrid.sort(List.of(new GridSortOrder<>(dateColumn, SortDirection.DESCENDING)));
     }
 
     private void applyGroupedHeaders(
@@ -1023,6 +1083,83 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle, Befor
         tariffsGrid.addThemeVariants(GridVariant.LUMO_ROW_STRIPES, GridVariant.LUMO_COLUMN_BORDERS);
     }
 
+    private void configureDataSourcesGrid() {
+        dataSourcesGrid.addColumn(EnergyDataSource::getName)
+                .setHeader(getTranslation("energy.source.column.name"))
+                .setAutoWidth(true);
+
+        dataSourcesGrid.addColumn(s -> getTranslation("energy.source.provider." + s.getProvider().name()))
+                .setHeader(getTranslation("energy.source.column.provider"))
+                .setAutoWidth(true);
+
+        dataSourcesGrid.addColumn(EnergyDataSource::getBaseUrl)
+                .setHeader(getTranslation("energy.source.column.url"))
+                .setAutoWidth(true);
+
+        dataSourcesGrid.addColumn(s -> getTranslation(s.isAutoSyncEnabled()
+                        ? "energy.meter.status.active"
+                        : "energy.meter.status.inactive"))
+                .setHeader(getTranslation("energy.source.column.auto-sync"))
+                .setAutoWidth(true);
+
+        dataSourcesGrid.addColumn(s -> s.getLastSyncStatus() != null ? s.getLastSyncStatus() : "—")
+                .setHeader(getTranslation("energy.source.column.status"))
+                .setFlexGrow(1);
+
+        dataSourcesGrid.addColumn(new ComponentRenderer<>(this::renderDataSourceActions))
+                .setHeader(getTranslation("energy.readings.column.actions"))
+                .setAutoWidth(true);
+
+        dataSourcesGrid.addThemeVariants(GridVariant.LUMO_ROW_STRIPES, GridVariant.LUMO_COLUMN_BORDERS);
+    }
+
+    private HorizontalLayout renderDataSourceActions(EnergyDataSource source) {
+        if (!canEditCurrentHouse() || dataSourceDialog == null) {
+            return new HorizontalLayout();
+        }
+        Button editBtn = GridActionButton.create(
+                VaadinIcon.EDIT,
+                getTranslation("energy.action.edit"),
+                e -> dataSourceDialog.openForEdit(source, this::refreshAll));
+        Button deleteBtn = GridActionButton.createDanger(
+                VaadinIcon.TRASH,
+                getTranslation("energy.action.delete"),
+                e -> {
+                    energySyncService.deleteDataSource(source.getId());
+                    refreshAll();
+                    Notification.show(getTranslation("energy.notification.deleted"),
+                            3000, Notification.Position.BOTTOM_START);
+                });
+        return new HorizontalLayout(editBtn, deleteBtn);
+    }
+
+    private void syncCurrentHouseDevices() {
+        if (energySyncService == null || selectedHouseId == null) {
+            return;
+        }
+        EnergySyncSummary summary = energySyncService.syncHouse(selectedHouseId);
+        refreshAll();
+        if (!summary.errors().isEmpty()) {
+            Notification.show(getTranslation(
+                    "energy.sync.partial-errors",
+                    summary.readingsUpdated(),
+                    summary.errors().size(),
+                    String.join("; ", summary.errors())),
+                    6000, Notification.Position.MIDDLE);
+        } else if (summary.readingsUpdated() > 0) {
+            Notification.show(getTranslation(
+                    "energy.sync.completed",
+                    summary.readingsUpdated(),
+                    summary.sourcesChecked()),
+                    4000, Notification.Position.BOTTOM_START);
+        } else {
+            Notification.show(getTranslation(
+                    "energy.sync.no-updates",
+                    summary.sourcesChecked()),
+                    3500, Notification.Position.BOTTOM_START);
+        }
+    }
+
     private HorizontalLayout renderTariffActions(EnergyTariff tariff) {
         if (!canEditCurrentHouse()) {
             return new HorizontalLayout();
@@ -1119,6 +1256,9 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle, Befor
         amortizationGrid.setItems(amortizationService.calculateAssetAmortizations(selectedHouseId));
         metersGrid.setItems(allMeters);
         tariffsGrid.setItems(visibleTariffs);
+        if (energySyncService != null) {
+            dataSourcesGrid.setItems(energySyncService.findByHouse(selectedHouseId));
+        }
 
         totalInvestmentValue.setText(formatCurrency(amortizationService.calculateTotalInvestmentCost(selectedHouseId)));
         totalAmortizedValue.setText(formatCurrency(amortizationService.calculateTotalAmortized(selectedHouseId)));

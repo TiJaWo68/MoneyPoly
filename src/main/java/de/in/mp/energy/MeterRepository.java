@@ -20,6 +20,8 @@ public interface MeterRepository extends JpaRepository<Meter, UUID> {
 
     List<Meter> findByAssetIdOrderByDisplayOrderAscNameAsc(UUID assetId);
 
+    List<Meter> findByDataSourceId(UUID dataSourceId);
+
     boolean existsByHouseId(UUID houseId);
 }
 

@@ -71,6 +71,18 @@ public class Meter {
     @Column(name = "recognition_hint", length = 255)
     private String recognitionHint;
 
+    @Column(name = "data_source_id")
+    private UUID dataSourceId;
+
+    @Column(name = "source_metric_key", length = 100)
+    private String sourceMetricKey;
+
+    @Column(name = "source_offset", nullable = false, precision = 12, scale = 3)
+    private BigDecimal sourceOffset = BigDecimal.ZERO;
+
+    @Column(name = "last_remote_id")
+    private Long lastRemoteId;
+
     public UUID getId() {
         return id;
     }
@@ -181,6 +193,38 @@ public class Meter {
 
     public void setRecognitionHint(String recognitionHint) {
         this.recognitionHint = recognitionHint;
+    }
+
+    public UUID getDataSourceId() {
+        return dataSourceId;
+    }
+
+    public void setDataSourceId(UUID dataSourceId) {
+        this.dataSourceId = dataSourceId;
+    }
+
+    public String getSourceMetricKey() {
+        return sourceMetricKey;
+    }
+
+    public void setSourceMetricKey(String sourceMetricKey) {
+        this.sourceMetricKey = sourceMetricKey;
+    }
+
+    public BigDecimal getSourceOffset() {
+        return sourceOffset;
+    }
+
+    public void setSourceOffset(BigDecimal sourceOffset) {
+        this.sourceOffset = sourceOffset;
+    }
+
+    public Long getLastRemoteId() {
+        return lastRemoteId;
+    }
+
+    public void setLastRemoteId(Long lastRemoteId) {
+        this.lastRemoteId = lastRemoteId;
     }
 }
 

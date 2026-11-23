@@ -23,6 +23,10 @@ moneypoly:
       host: ${LOGGING_TCP_HOST:127.0.0.1}
       port: ${LOGGING_TCP_PORT:4560}
       destinations: ${LOGGING_TCP_DESTINATIONS:${LOGGING_TCP_HOST:127.0.0.1}:${LOGGING_TCP_PORT:4560}}
+  energysync:
+    scheduling:
+      enabled: ${MONEYPOLY_ENERGY_SYNC_ENABLED:true}
+    cron: ${MONEYPOLY_ENERGY_SYNC_CRON:0 55 23 * * *}
 
 spring:
   application:

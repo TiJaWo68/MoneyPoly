@@ -34,6 +34,7 @@ Der Bereich **Energie** verwaltet beliebig viele Gebäude/Standorte mit Zählern
 ### 3. Stammdaten (`Master Data`)
 
 * **Investitionsobjekte (`EnergyAsset`)**: Anlagekosten, Inbetriebnahmedatum und Zuordnung zu Zählern.
-* **Zähler (`Meter`)**: Typ (`GRID_IMPORT`, `GRID_EXPORT`, `PV_GENERATION`, `WATER`, `GAS`, `WALLBOX_PRIVATE`, `WALLBOX_COMPANY` u. a.), Einheit, Status, Zählerwechsel/Startwert und optionaler KI-Erkennungshinweis.
+* **Zähler (`Meter`)**: Typ (`GRID_IMPORT`, `GRID_EXPORT`, `PV_GENERATION`, `WATER`, `GAS`, `WALLBOX_PRIVATE`, `WALLBOX_COMPANY` u. a.), Einheit, Status, Zählerwechsel/Startwert, optionaler KI-Erkennungshinweis sowie optionale Verknüpfung auf eine automatisierte Datenquelle (inkl. Messwert/RFID-Tag und Start-Offset-Kalibrierung).
+* **Automatisierte Datenquellen (`EnergyDataSource`)**: Direkter, duplikatsicherer Abruf per Button (*„Geräte-Stände abrufen“*) oder täglichem Cron (`23:55` Uhr) für **Shelly Pro 3EM** (`/rpc/EMData.GetStatus?id=0`), **Huawei FusionSolar Kiosk** (`station-kiosk-file`) und **Kathrein easyOperate Wallbox** (inkl. RFID-Tag-Auswertung und AES-256-GCM-verschlüsselten Zugangsdaten).
 * **Tarife (`EnergyTariff`)**: Arbeitspreis, Grundpreis und Gültigkeitszeitraum (`validFrom` – `validTo`), optional Filter zum Anzeigen abgelaufener Tarife.
 * **ODS-Import**: Übernahme historischer Zählerstände aus Tabellenkalkulationen (auch im Admin-Bereich unter Datenmigration verfügbar).

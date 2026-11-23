@@ -275,6 +275,36 @@ class EnergyViewTest {
         assertThat(allProvider.getItems()).containsExactly(active, expired);
     }
 
+    @Test
+    void readingsGridSortsNewestFirstByDefaultAndOnlyDateColumnIsSortable() {
+        de.in.mp.energy.EnergyAssetService assetService = org.mockito.Mockito.mock(de.in.mp.energy.EnergyAssetService.class);
+        de.in.mp.energy.MeterService meterService = org.mockito.Mockito.mock(de.in.mp.energy.MeterService.class);
+        de.in.mp.energy.MeterReadingService readingService = org.mockito.Mockito.mock(de.in.mp.energy.MeterReadingService.class);
+        de.in.mp.energy.EnergyTariffService tariffService = org.mockito.Mockito.mock(de.in.mp.energy.EnergyTariffService.class);
+        de.in.mp.energy.EnergyAmortizationService amortizationService = org.mockito.Mockito.mock(de.in.mp.energy.EnergyAmortizationService.class);
+
+        org.mockito.Mockito.when(assetService.findAll()).thenReturn(java.util.List.of());
+        org.mockito.Mockito.when(meterService.findActive()).thenReturn(java.util.List.of());
+        org.mockito.Mockito.when(meterService.findAll()).thenReturn(java.util.List.of());
+        org.mockito.Mockito.when(tariffService.findAll()).thenReturn(java.util.List.of());
+        org.mockito.Mockito.when(amortizationService.buildDateRows(null)).thenReturn(java.util.List.of());
+        org.mockito.Mockito.when(amortizationService.calculateTotalInvestmentCost(null)).thenReturn(BigDecimal.ZERO);
+        org.mockito.Mockito.when(amortizationService.calculateTotalAmortized(null)).thenReturn(BigDecimal.ZERO);
+        org.mockito.Mockito.when(amortizationService.calculateTotalRemainingCost(null)).thenReturn(BigDecimal.ZERO);
+
+        EnergyView view = new EnergyView(assetService, meterService, readingService, tariffService, amortizationService);
+        com.vaadin.flow.component.grid.Grid<de.in.mp.energy.EnergyDateRow> grid = view.getReadingsGridForTest();
+
+        assertThat(grid.getColumns().get(0).isSortable()).isTrue();
+        for (int i = 1; i < grid.getColumns().size(); i++) {
+            assertThat(grid.getColumns().get(i).isSortable()).isFalse();
+        }
+        assertThat(grid.getSortOrder()).hasSize(1);
+        assertThat(grid.getSortOrder().get(0).getSorted()).isEqualTo(grid.getColumns().get(0));
+        assertThat(grid.getSortOrder().get(0).getDirection())
+                .isEqualTo(com.vaadin.flow.data.provider.SortDirection.DESCENDING);
+    }
+
     private static Meter meter(String name, MeterType type) {
         Meter meter = new Meter();
         meter.setName(name);

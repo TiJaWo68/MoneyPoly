@@ -58,6 +58,8 @@ MoneyPoly verwendet PostgreSQL mit `spring.jpa.hibernate.ddl-auto=none` und `spr
 | `MONEYPOLY_YAXI_API_KEY` | *leer* | YAXI API-Key (interaktives AIS inkl. Trade Republic) |
 | `MONEYPOLY_BANKSYNC_SCHEDULING_ENABLED` | `true` | Aktiviert/deaktiviert den nächtlichen automatischen Open-Banking-Sync |
 | `MONEYPOLY_BANKSYNC_CRON` | `0 0 3 * * *` | Cron-Ausdruck für den nächtlichen Hintergrund-Sync |
+| `MONEYPOLY_ENERGY_SYNC_ENABLED` | `true` | Aktiviert/deaktiviert den täglichen automatischen Energie-Geräte-Sync |
+| `MONEYPOLY_ENERGY_SYNC_CRON` | `0 55 23 * * *` | Cron-Ausdruck für den täglichen Abruf von Shelly / FusionSolar Kiosk / Wallbox |
 
 ## Open-Banking (PSD2 / AIS) einrichten
 
