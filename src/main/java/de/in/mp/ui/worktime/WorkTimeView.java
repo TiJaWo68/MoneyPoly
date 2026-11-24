@@ -25,6 +25,8 @@ import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.checkbox.Checkbox;
 import com.vaadin.flow.component.combobox.ComboBox;
 import com.vaadin.flow.component.datepicker.DatePicker;
+import com.vaadin.flow.component.dialog.Dialog;
+import com.vaadin.flow.component.formlayout.FormLayout;
 import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.grid.GridVariant;
 import com.vaadin.flow.component.html.Anchor;
@@ -35,8 +37,10 @@ import com.vaadin.flow.component.html.Span;
 import com.vaadin.flow.component.icon.VaadinIcon;
 import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.orderedlayout.FlexComponent.Alignment;
+import com.vaadin.flow.component.orderedlayout.FlexComponent.JustifyContentMode;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
+import com.vaadin.flow.component.textfield.TextArea;
 import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.component.timepicker.TimePicker;
 import com.vaadin.flow.data.renderer.ComponentRenderer;
@@ -50,6 +54,8 @@ import com.vaadin.flow.theme.lumo.LumoUtility;
 
 import de.in.mp.ui.GridActionButton;
 import de.in.mp.ui.layout.MainLayout;
+import de.in.mp.worktime.OverloadNoticePdfGenerator;
+import de.in.mp.worktime.OverloadNoticePdfGenerator.OverloadNoticeOptions;
 import de.in.mp.worktime.WorkTimeCategory;
 import de.in.mp.worktime.WorkTimeEntry;
 import de.in.mp.worktime.WorkTimeProfile;
@@ -80,6 +86,7 @@ public class WorkTimeView extends VerticalLayout implements HasDynamicTitle, Bef
     }
 
     private final WorkTimeService workTimeService;
+    private final OverloadNoticePdfGenerator overloadNoticePdfGenerator;
 
     private final Span contractBadge = new Span();
     private final ComboBox<ProfileOption> profileSelector = new ComboBox<>();
@@ -114,9 +121,16 @@ public class WorkTimeView extends VerticalLayout implements HasDynamicTitle, Bef
     private ProfileOption selectedProfile;
     private UUID editingEntryId;
 
-    @Autowired
     public WorkTimeView(WorkTimeService workTimeService) {
+        this(workTimeService, new OverloadNoticePdfGenerator());
+    }
+
+    @Autowired
+    public WorkTimeView(
+            WorkTimeService workTimeService,
+            OverloadNoticePdfGenerator overloadNoticePdfGenerator) {
         this.workTimeService = workTimeService;
+        this.overloadNoticePdfGenerator = overloadNoticePdfGenerator;
 
         setSizeFull();
         setPadding(true);
@@ -171,7 +185,14 @@ public class WorkTimeView extends VerticalLayout implements HasDynamicTitle, Bef
         Anchor exportAnchor = new Anchor(handler, AttachmentType.DOWNLOAD, "");
         exportAnchor.add(exportButton);
 
-        HorizontalLayout controls = new HorizontalLayout(profileSelector, periodSelector, exportAnchor);
+        Button overloadNoticeButton = new Button(
+                getTranslation("worktime.button.overload-pdf"),
+                VaadinIcon.FILE_TEXT_O.create(),
+                event -> openOverloadNoticeDialog());
+        overloadNoticeButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY);
+
+        HorizontalLayout controls = new HorizontalLayout(
+                profileSelector, periodSelector, exportAnchor, overloadNoticeButton);
         controls.setDefaultVerticalComponentAlignment(Alignment.END);
         controls.getStyle().set("flex-wrap", "wrap");
 
@@ -379,7 +400,6 @@ public class WorkTimeView extends VerticalLayout implements HasDynamicTitle, Bef
             case SCHOOL -> "success";
             case HOME_OFFICE -> "primary";
             case MEETING -> "contrast";
-            case COMMUTE -> "warning";
             case OTHER -> "contrast";
         };
         badge.getElement().getThemeList().add(variant);
@@ -428,12 +448,6 @@ public class WorkTimeView extends VerticalLayout implements HasDynamicTitle, Bef
 
         periodDaysGrid.addColumn(new ComponentRenderer<>(this::renderDeltaBadge))
                 .setHeader(getTranslation("worktime.grid.col.delta"))
-                .setAutoWidth(true);
-
-        periodDaysGrid.addColumn(day -> day.commuteMinutes() > 0
-                ? WorkTimeService.formatMinutes(day.commuteMinutes()) + " (" + day.commuteTrips() + ")"
-                : "—")
-                .setHeader(getTranslation("worktime.grid.col.commute"))
                 .setAutoWidth(true);
 
         periodDaysGrid.addColumn(new ComponentRenderer<>(this::renderDayHints))
@@ -558,8 +572,7 @@ public class WorkTimeView extends VerticalLayout implements HasDynamicTitle, Bef
                 "worktime.day.summary",
                 WorkTimeService.formatMinutes(day.workMinutes()),
                 WorkTimeService.formatMinutes(day.targetMinutes()),
-                WorkTimeService.formatSignedMinutes(day.overtimeMinutes()),
-                WorkTimeService.formatMinutes(day.commuteMinutes())));
+                WorkTimeService.formatSignedMinutes(day.overtimeMinutes())));
 
         dayWarningBadges.removeAll();
         if (day.weekend()) {
@@ -610,9 +623,7 @@ public class WorkTimeView extends VerticalLayout implements HasDynamicTitle, Bef
         offHoursSub.setText(getTranslation(
                 "worktime.kpi.offhours.sub",
                 WorkTimeService.formatMinutes(summary.eveningMinutes()),
-                WorkTimeService.formatMinutes(summary.weekendMinutes()),
-                summary.commuteTrips(),
-                WorkTimeService.formatMinutes(summary.commuteMinutes())));
+                WorkTimeService.formatMinutes(summary.weekendMinutes())));
 
         int alerts = summary.daysOverDailyLimit() + summary.shortRestCount();
         healthValue.removeClassNames(LumoUtility.TextColor.ERROR, LumoUtility.TextColor.SUCCESS);
@@ -773,6 +784,69 @@ public class WorkTimeView extends VerticalLayout implements HasDynamicTitle, Bef
                 fileName,
                 "text/csv; charset=utf-8",
                 bytes.length);
+    }
+
+    private void openOverloadNoticeDialog() {
+        if (selectedProfile == null) {
+            return;
+        }
+        Dialog dialog = new Dialog();
+        dialog.setHeaderTitle(getTranslation("worktime.overload.dialog.title"));
+        dialog.setWidth("540px");
+        dialog.setMaxWidth("95vw");
+
+        TextField senderField = new TextField(getTranslation("worktime.overload.field.sender"));
+        String defaultSender = selectedProfile.displayName().replaceAll("\\s*\\([^)]*\\)$", "");
+        senderField.setValue(defaultSender);
+
+        TextField schoolField = new TextField(getTranslation("worktime.overload.field.school"));
+        TextArea recipientField = new TextArea(getTranslation("worktime.overload.field.recipient"));
+        recipientField.setValue(getTranslation("worktime.overload.default.recipient"));
+        recipientField.setMinHeight("70px");
+
+        TextField copyToField = new TextField(getTranslation("worktime.overload.field.copy-to"));
+        copyToField.setValue(getTranslation("worktime.overload.default.copy-to"));
+
+        DatePicker dateField = new DatePicker(getTranslation("worktime.overload.field.date"));
+        dateField.setValue(LocalDate.now());
+
+        TextArea noteArea = new TextArea(getTranslation("worktime.overload.field.custom-note"));
+        noteArea.setPlaceholder(getTranslation("worktime.overload.field.custom-note.placeholder"));
+        noteArea.setMinHeight("90px");
+
+        FormLayout form = new FormLayout(
+                senderField, schoolField, recipientField, copyToField, dateField, noteArea);
+        form.setResponsiveSteps(new FormLayout.ResponsiveStep("0", 1));
+
+        Button downloadBtn = new Button(
+                getTranslation("worktime.overload.button.download"),
+                VaadinIcon.FILE_TEXT_O.create());
+        downloadBtn.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+        DownloadHandler pdfHandler = DownloadHandler.fromInputStream(event -> {
+            WorkTimeProfile profile = selectedProfile.profile();
+            LocalDate[] range = resolveDateRange(periodSelector.getValue(), profile.getId());
+            PeriodSummary summary = workTimeService.summarizePeriod(profile, range[0], range[1]);
+            OverloadNoticeOptions options = new OverloadNoticeOptions(
+                    senderField.getValue(),
+                    schoolField.getValue(),
+                    recipientField.getValue(),
+                    copyToField.getValue(),
+                    noteArea.getValue(),
+                    dateField.getValue());
+            byte[] pdf = overloadNoticePdfGenerator.generate(profile, summary, options);
+            String fileName = "ueberlastungsanzeige-" + range[0] + "-bis-" + range[1] + ".pdf";
+            return new DownloadResponse(new ByteArrayInputStream(pdf), fileName, "application/pdf", pdf.length);
+        });
+        Anchor pdfAnchor = new Anchor(pdfHandler, AttachmentType.DOWNLOAD, "");
+        pdfAnchor.add(downloadBtn);
+
+        Button closeBtn = new Button(getTranslation("worktime.entry.cancel"), e -> dialog.close());
+        HorizontalLayout actions = new HorizontalLayout(closeBtn, pdfAnchor);
+        actions.setWidthFull();
+        actions.setJustifyContentMode(JustifyContentMode.END);
+
+        dialog.add(form, actions);
+        dialog.open();
     }
 
     private String formatWeekday(LocalDate date) {

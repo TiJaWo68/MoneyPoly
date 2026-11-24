@@ -105,7 +105,6 @@ class WorkTimeServiceTest {
                 entry(sat, LocalTime.of(10, 0), LocalTime.of(12, 0), WorkTimeCategory.HOME_OFFICE, true, "Klausuren"),
                 entry(thu, LocalTime.of(7, 30), LocalTime.of(12, 0), WorkTimeCategory.SCHOOL, true, "Unterricht"),
                 entry(wed, LocalTime.of(7, 45), LocalTime.of(13, 15), WorkTimeCategory.SCHOOL, true, "1.-6. Std"),
-                entry(wed, LocalTime.of(13, 15), LocalTime.of(13, 40), WorkTimeCategory.COMMUTE, false, "Rückweg"),
                 entry(wed, LocalTime.of(15, 0), LocalTime.of(17, 30), WorkTimeCategory.HOME_OFFICE, true, "Korrektur"),
                 entry(wed, LocalTime.of(18, 30), LocalTime.of(20, 30), WorkTimeCategory.MEETING, true, "Elternabend"),
                 entry(wed, LocalTime.of(20, 30), LocalTime.of(21, 0), WorkTimeCategory.HOME_OFFICE, true, "Mail"));
@@ -125,8 +124,6 @@ class WorkTimeServiceTest {
         assertThat(summary.schoolMinutes()).isEqualTo(600L);
         assertThat(summary.homeOfficeMinutes()).isEqualTo(300L);
         assertThat(summary.meetingMinutes()).isEqualTo(120L);
-        assertThat(summary.commuteMinutes()).isEqualTo(25L);
-        assertThat(summary.commuteTrips()).isEqualTo(1L);
         // Wed evening >= 18:00: 120 + 30 = 150m
         assertThat(summary.eveningMinutes()).isEqualTo(150L);
         assertThat(summary.weekendMinutes()).isEqualTo(120L);

@@ -8,7 +8,6 @@ public enum WorkTimeCategory {
     SCHOOL(true),
     HOME_OFFICE(true),
     MEETING(true),
-    COMMUTE(false),
     OTHER(true);
 
     private final boolean defaultCountsAsWork;

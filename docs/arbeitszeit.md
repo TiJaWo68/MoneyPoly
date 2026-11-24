@@ -2,7 +2,7 @@
 
 ## Kurzzusammenfassung
 
-Die **Arbeitszeiterfassung** ist ein optionales, pro Benutzer freischaltbares Modul zur lückenlosen Dokumentation mehrteiliger Arbeitstage — speziell zugeschnitten auf Berufe mit getrennten Präsenz-, Heim- und Fahrtzeiten (z. B. Lehrkräfte am Gymnasium). Sie rechnet ein Teilzeit-Deputat (z. B. **20 von 27 Unterrichtsstunden**) auf die entsprechende bezahlte Soll-Arbeitszeit herunter (bei `40h` Vollzeit = `29h 38m`/Woche bzw. `5h 56m`/Tag), zählt unbezahlte Mehr-, Abend- und Wochenendarbeit transparent aus, warnt bei Arbeitszeit- oder Ruhezeitverstößen (`> 10h` am Tag, `< 11h` Pause zwischen zwei Tagen) und bleibt strikt auf die berechtigte Person und Administratoren beschränkt.
+Die **Arbeitszeiterfassung** ist ein optionales, pro Benutzer freischaltbares Modul zur lückenlosen Dokumentation mehrteiliger Arbeitstage — speziell zugeschnitten auf Berufe mit getrennten Präsenz- und Homeoffice-Zeiten (z. B. Lehrkräfte am Gymnasium). Sie rechnet ein Teilzeit-Deputat (z. B. **20 von 27 Unterrichtsstunden**) auf die entsprechende bezahlte Soll-Arbeitszeit herunter (bei `40h` Vollzeit = `29h 38m`/Woche bzw. `5h 56m`/Tag), zählt unbezahlte Mehr-, Abend- und Wochenendarbeit transparent aus, warnt bei Arbeitszeit- oder Ruhezeitverstößen (`> 10h` am Tag, `< 11h` Pause zwischen zwei Tagen), erzeugt bei Bedarf eine druckfertige **Überlastungsanzeige als PDF** (inkl. chronologischer Zeittabelle) und bleibt strikt auf die berechtigte Person und Administratoren beschränkt.
 
 ---
 
@@ -36,14 +36,14 @@ Jedes Profil rechnet ein Unterrichtsdeputat automatisch pro-rata auf Realarbeits
 
 ## Schnellerfassung mehrerer Blöcke pro Tag
 
-Ein Arbeitstag kann aus beliebig vielen getrennten Zeitblöcken bestehen (z. B. morgens Schule, mittags Rückfahrt, nachmittags Korrektur zu Hause, abends Elternabend oder zweite Fahrt zur Schule):
+Ein Arbeitstag kann aus beliebig vielen getrennten Zeitblöcken bestehen (z. B. morgens Schule, nachmittags Korrektur zu Hause, abends Elternabend):
 
 * **Kategorien (`WorkTimeCategory`)**:
   * `Schule (Präsenz)` (`SCHOOL`, zählt als Arbeitszeit)
   * `Homeoffice / Vorbereitung & Korrektur` (`HOME_OFFICE`, zählt als Arbeitszeit)
   * `Konferenz / Elterngespräch` (`MEETING`, zählt als Arbeitszeit)
-  * `Fahrtweg (Pendeln)` (`COMMUTE`, standardmäßig **nicht** als Arbeitszeit gewertet, aber separat als Fahrtanzahl und Pendelzeit ausgewiesen; per Checkbox bei Bedarf überschreibbar)
   * `Sonstiges` (`OTHER`, zählt als Arbeitszeit)
+  *(Hinweis: Fahrzeiten bleiben als private Wegezeit bewusst außerhalb der Erfassung.)*
 * **Smarte Zeit-Vorschläge**:
   * Auf einem leeren Tag schlägt das Formular `07:45 – 13:15` (`Schule – Präsenz`) vor.
   * Sobald bereits Blöcke erfasst sind, springt der Vorschlag automatisch auf `+15 Minuten` nach Ende des letzten Blocks (Standardkategorie `Homeoffice / Vorbereitung & Korrektur`), sodass ein Folgeteil in Sekunden ergänzt werden kann.
@@ -58,6 +58,6 @@ Ein Arbeitstag kann aus beliebig vielen getrennten Zeitblöcken bestehen (z. B. 
 * **4 KPI-Karten**:
   1. Erfasste Arbeitszeit vs. bezahltes Vertragssoll & Überstundensaldo.
   2. Aufteilung nach Schule, Homeoffice, Konferenz und Sonstigem.
-  3. Belastungszeiten außerhalb der Kernzeit: Arbeit ab `18:00` Uhr, Wochenendarbeit sowie Pendelfahrten/-dauer.
+  3. Belastungszeiten außerhalb der Kernzeit: Arbeit ab `18:00` Uhr sowie Wochenendarbeit.
   4. Gesundheits- & Schutzhinweise: Anzahl der Tage über `> 10h` sowie Anzahl unterschrittener Ruhezeiten (`< 11h`) zwischen zwei aufeinanderfolgenden Tagen.
-* **Tagesübersicht & CSV-Export**: Klick auf eine Zeile in der Periodentabelle öffnet direkt den betreffenden Tag im Erfassungsformular. Über **CSV-Export** lässt sich der gewählte Zeitraum als Excel-kompatible, `;`-separierte UTF-8-Datei (mit BOM) herunterladen.
+* **Tagesübersicht, CSV-Export & Überlastungsanzeige (PDF)**: Klick auf eine Zeile in der Periodentabelle öffnet direkt den betreffenden Tag im Erfassungsformular. Über **CSV-Export** lässt sich der gewählte Zeitraum als Excel-kompatible, `;`-separierte UTF-8-Datei herunterladen. Über **Überlastungsanzeige (PDF)** generiert MoneyPoly ein druck- und unterschriftsfertiges Anschreiben samt chronologischer Anlagentabelle für den gewählten Zeitraum.

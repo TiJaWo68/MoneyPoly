@@ -342,8 +342,6 @@ public class WorkTimeService {
         long homeOffice = 0L;
         long meeting = 0L;
         long other = 0L;
-        long commute = 0L;
-        long commuteTrips = 0L;
         long evening = 0L;
         long weekend = 0L;
         int overLimitDays = 0;
@@ -364,18 +362,10 @@ public class WorkTimeService {
             }
 
             long dayWork = 0L;
-            long dayCommute = 0L;
-            long dayCommuteTrips = 0L;
             long dayEvening = 0L;
 
             for (WorkTimeEntry entry : entries) {
                 long dur = entry.getDurationMinutes();
-                if (entry.getCategory() == WorkTimeCategory.COMMUTE) {
-                    commuteTrips++;
-                    dayCommuteTrips++;
-                    commute += dur;
-                    dayCommute += dur;
-                }
                 if (entry.isCountsAsWork()) {
                     dayWork += dur;
                     long ev = entry.getMinutesAfter(EVENING_CUTOFF);
@@ -385,7 +375,7 @@ public class WorkTimeService {
                         case SCHOOL -> school += dur;
                         case HOME_OFFICE -> homeOffice += dur;
                         case MEETING -> meeting += dur;
-                        case COMMUTE, OTHER -> other += dur;
+                        case OTHER -> other += dur;
                     }
                 }
             }
@@ -412,8 +402,6 @@ public class WorkTimeService {
                     dayWork,
                     dayTarget,
                     dayWork - dayTarget,
-                    dayCommute,
-                    dayCommuteTrips,
                     dayEvening,
                     overLimit,
                     shortRest,
@@ -432,8 +420,6 @@ public class WorkTimeService {
                 homeOffice,
                 meeting,
                 other,
-                commute,
-                commuteTrips,
                 evening,
                 weekend,
                 overLimitDays,
@@ -449,7 +435,7 @@ public class WorkTimeService {
         }
         long target = profile.isScheduledWorkDay(date.getDayOfWeek()) ? profile.getPaidDailyMinutes() : 0L;
         return new DaySummary(
-                date, List.of(), 0L, target, -target, 0L, 0L, 0L, false, false, null,
+                date, List.of(), 0L, target, -target, 0L, false, false, null,
                 !profile.isScheduledWorkDay(date.getDayOfWeek()));
     }
 

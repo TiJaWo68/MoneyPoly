@@ -70,7 +70,7 @@ class WorkTimeViewTest {
         when(workTimeService.canCurrentUserAccessWorkTime()).thenReturn(true);
         when(workTimeService.summarizeDay(any(), any())).thenAnswer(inv -> {
             LocalDate date = inv.getArgument(1);
-            return new DaySummary(date, List.of(), 0L, 356L, -356L, 0L, 0L, 0L, false, false, null, false);
+            return new DaySummary(date, List.of(), 0L, 356L, -356L, 0L, false, false, null, false);
         });
         when(workTimeService.summarizePeriod(any(), any(), any())).thenAnswer(inv -> {
             WorkTimeProfile profile = inv.getArgument(0);
@@ -78,7 +78,7 @@ class WorkTimeViewTest {
             LocalDate to = inv.getArgument(2);
             return new PeriodSummary(
                     profile.getId(), from, to, 0L, 356L, -356L,
-                    0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0, 0, List.of());
+                    0L, 0L, 0L, 0L, 0L, 0L, 0, 0, List.of());
         });
     }
 
@@ -130,7 +130,7 @@ class WorkTimeViewTest {
         morning.setNote("Vormittag");
 
         when(workTimeService.summarizeDay(eq(wifeProfile), any())).thenAnswer(inv -> new DaySummary(
-                inv.getArgument(1), List.of(morning), 330L, 356L, -26L, 0L, 0L, 0L, false, false, null, false));
+                inv.getArgument(1), List.of(morning), 330L, 356L, -26L, 0L, false, false, null, false));
 
         view.getStartTimePickerForTest().setValue(LocalTime.of(7, 45));
         view.getEndTimePickerForTest().setValue(LocalTime.of(13, 15));
