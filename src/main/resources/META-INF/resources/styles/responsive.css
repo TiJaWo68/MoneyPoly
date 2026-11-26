@@ -1,3 +1,15 @@
+/* Prevent wide grids or flex children from stretching AppLayout beyond the viewport */
+vaadin-app-layout > * {
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+vaadin-grid {
+    max-width: 100%;
+    min-width: 0;
+}
+
 /*
  * Smartphones in landscape orientation only offer ~300-350px of viewport height.
  * Secondary content (KPI cards, session info) is hidden there so that data grids

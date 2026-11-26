@@ -57,6 +57,11 @@ public class EnergyAmortizationService {
 
     @Transactional(readOnly = true)
     public List<EnergyDateRow> buildDateRows(UUID houseId) {
+        return buildDateRows(houseId, false);
+    }
+
+    @Transactional(readOnly = true)
+    public List<EnergyDateRow> buildDateRows(UUID houseId, boolean monthEndOnly) {
         List<Meter> meters = houseId == null
                 ? meterRepository.findAllByOrderByDisplayOrderAscNameAsc()
                 : meterRepository.findByHouseIdOrderByDisplayOrderAscNameAsc(houseId);
@@ -69,9 +74,15 @@ public class EnergyAmortizationService {
             if (!metersById.containsKey(reading.getMeterId())) {
                 continue;
             }
+            if (monthEndOnly && !isMonthEnd(reading.getReadingDate())) {
+                continue;
+            }
             groupedByDate
                     .computeIfAbsent(reading.getReadingDate(), d -> new LinkedHashMap<>())
                     .put(reading.getMeterId(), reading);
+        }
+        if (monthEndOnly) {
+            recomputeMonthEndDeltas(groupedByDate, metersById);
         }
 
         List<EnergyDateRow> rows = new ArrayList<>();
@@ -383,6 +394,42 @@ public class EnergyAmortizationService {
             }
         }
         return sum.setScale(QUANTITY_SCALE, RoundingMode.HALF_UP);
+    }
+
+    private static boolean isMonthEnd(LocalDate date) {
+        return date != null && date.getDayOfMonth() == date.lengthOfMonth();
+    }
+
+    private void recomputeMonthEndDeltas(
+            Map<LocalDate, Map<UUID, MeterReading>> groupedByDate,
+            Map<UUID, Meter> metersById) {
+        Map<UUID, BigDecimal> prevValueByMeter = new LinkedHashMap<>();
+        for (Map<UUID, MeterReading> readingsAtDate : groupedByDate.values()) {
+            for (Map.Entry<UUID, MeterReading> entry : readingsAtDate.entrySet()) {
+                MeterReading src = entry.getValue();
+                MeterReading copy = new MeterReading();
+                copy.setId(src.getId());
+                copy.setMeterId(src.getMeterId());
+                copy.setReadingDate(src.getReadingDate());
+                copy.setReadingValue(src.getReadingValue());
+                copy.setNotes(src.getNotes());
+
+                BigDecimal prevVal = prevValueByMeter.get(src.getMeterId());
+                if (prevVal != null && src.getReadingValue() != null
+                        && src.getReadingValue().compareTo(prevVal) >= 0) {
+                    Meter meter = metersById.get(src.getMeterId());
+                    BigDecimal factor = meter != null && meter.getConversionFactor() != null
+                            ? meter.getConversionFactor()
+                            : BigDecimal.ONE;
+                    copy.setConsumptionDelta(src.getReadingValue().subtract(prevVal).multiply(factor)
+                            .setScale(QUANTITY_SCALE, RoundingMode.HALF_UP));
+                } else {
+                    copy.setConsumptionDelta(src.getConsumptionDelta());
+                }
+                prevValueByMeter.put(src.getMeterId(), src.getReadingValue());
+                entry.setValue(copy);
+            }
+        }
     }
 
     private BigDecimal percentage(BigDecimal part, BigDecimal total) {

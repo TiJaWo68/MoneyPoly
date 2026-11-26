@@ -177,6 +177,28 @@ class EnergyAmortizationServiceTest {
         assertThat(averages.get(gasId)).isEqualByComparingTo("5.000");
     }
 
+    @Test
+    void buildDateRowsMonthEndOnlyFiltersIntermediateAndRecomputesFullMonthDeltas() {
+        UUID houseId = UUID.randomUUID();
+        UUID pvId = UUID.randomUUID();
+        Meter pv = meter(pvId, "PV Dach", MeterType.PV_GENERATION, UUID.randomUUID());
+
+        MeterReading octEnd = reading(pvId, LocalDate.of(2026, 10, 31), "38509.000", "1505.000");
+        MeterReading midNov = reading(pvId, LocalDate.of(2026, 11, 26), "38826.000", "317.000");
+        MeterReading novEnd = reading(pvId, LocalDate.of(2026, 11, 30), "38909.000", "83.000");
+
+        when(meterRepository.findByHouseIdOrderByDisplayOrderAscNameAsc(houseId)).thenReturn(List.of(pv));
+        when(readingRepository.findAllByOrderByReadingDateAsc()).thenReturn(List.of(octEnd, midNov, novEnd));
+
+        List<EnergyDateRow> monthEndRows = service.buildDateRows(houseId, true);
+
+        assertThat(monthEndRows).extracting(EnergyDateRow::readingDate)
+                .containsExactly(LocalDate.of(2026, 10, 31), LocalDate.of(2026, 11, 30));
+        assertThat(monthEndRows.get(1).readingsByMeter().get(pvId).getConsumptionDelta())
+                .isEqualByComparingTo("400.000");
+        assertThat(midNov.getConsumptionDelta()).isEqualByComparingTo("317.000");
+    }
+
     private Meter meter(UUID id, String name, MeterType type, UUID assetId) {
         Meter meter = new Meter();
         meter.setId(id);

@@ -75,8 +75,8 @@ class EnergyViewTest {
                 .findFirst()
                 .orElseThrow();
 
-        // Tab 0 (Readings): Add reading, Show KPIs
-        assertThat(view.getActionMenuForTest().getSubMenu().getItems()).hasSize(2);
+        // Tab 0 (Readings): Add reading, Month-end only, Show KPIs
+        assertThat(view.getActionMenuForTest().getSubMenu().getItems()).hasSize(3);
 
         // Tab 1 (Amortization): Add reading, New asset, Show KPIs
         tabBar.setSelectedTab((com.vaadin.flow.component.tabs.Tab) tabBar.getChildren().toList().get(1));
@@ -201,8 +201,8 @@ class EnergyViewTest {
                 .orElseThrow();
         assertThat(header.getChildren().toList())
                 .noneMatch(com.vaadin.flow.component.combobox.ComboBox.class::isInstance);
-        // Viewer without admin rights only sees the "Show KPIs" toggle
-        assertThat(view.getActionMenuForTest().getSubMenu().getItems()).hasSize(1);
+        // Viewer without admin rights only sees "Month-end only" and "Show KPIs" toggles
+        assertThat(view.getActionMenuForTest().getSubMenu().getItems()).hasSize(2);
     }
 
     @Test
@@ -227,8 +227,8 @@ class EnergyViewTest {
         EnergyView view = new EnergyView(assetService, meterService, readingService,
                 tariffService, amortizationService, null, null, null, billService);
 
-        // Tab 0 (Readings): Add reading, Check utility bill, Show KPIs
-        assertThat(view.getActionMenuForTest().getSubMenu().getItems()).hasSize(3);
+        // Tab 0 (Readings): Add reading, Check utility bill, Month-end only, Show KPIs
+        assertThat(view.getActionMenuForTest().getSubMenu().getItems()).hasSize(4);
     }
 
     @Test

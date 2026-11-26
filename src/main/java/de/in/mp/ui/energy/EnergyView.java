@@ -138,6 +138,7 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle, Befor
     private final HorizontalLayout kpiRow;
 
     private boolean kpisVisible = true;
+    private boolean monthEndOnly = false;
     private boolean showExpiredTariffs;
     private List<EnergyHouse> accessibleHouses = List.of();
     private UUID selectedHouseId;
@@ -263,7 +264,7 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle, Befor
         setPadding(false);
         addClassNames(LumoUtility.Padding.Horizontal.MEDIUM, LumoUtility.Padding.Vertical.XSMALL);
         setSpacing(false);
-        getStyle().set("overflow-y", "auto");
+        getStyle().set("overflow-y", "auto").set("overflow-x", "hidden").set("min-width", "0");
 
         configureAmortizationGrid();
         configureMetersGrid();
@@ -277,7 +278,7 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle, Befor
 
         tabContent.setSizeFull();
         tabContent.setPadding(false);
-        tabContent.getStyle().set("min-height", "400px");
+        tabContent.getStyle().set("min-height", "400px").set("min-width", "0");
 
         add(headerLayout, kpiRow, tabBar, tabContent);
         expand(tabContent);
@@ -388,10 +389,21 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle, Befor
             actionMenu.addSeparator();
         }
 
+        if (selected == readingsTab) {
+            actionMenu.addToggle(
+                    getTranslation("energy.readings.month-end-only"),
+                    monthEndOnly,
+                    this::setMonthEndOnly);
+        }
         actionMenu.addToggle(
                 getTranslation("ui.action-menu.show-kpis"),
                 kpisVisible,
                 this::setKpisVisible);
+    }
+
+    private void setMonthEndOnly(boolean monthEndOnly) {
+        this.monthEndOnly = monthEndOnly;
+        refreshAll();
     }
 
     private void configureHouseSelector() {
@@ -550,8 +562,12 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle, Befor
         tariffsHeader.setAlignItems(Alignment.CENTER);
         tariffsHeader.addClassNames(LumoUtility.Gap.MEDIUM);
 
+        metersGrid.setWidthFull();
         metersGrid.setHeight("300px");
+        metersGrid.getStyle().set("min-width", "0");
+        tariffsGrid.setWidthFull();
         tariffsGrid.setHeight("260px");
+        tariffsGrid.getStyle().set("min-width", "0");
 
         VerticalLayout layout = new VerticalLayout(metersTitle, metersGrid, tariffsHeader, tariffsGrid);
         if (energySyncService != null) {
@@ -567,11 +583,14 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle, Befor
                 addSourceBtn.addThemeVariants(ButtonVariant.LUMO_SMALL);
                 sourcesHeader.add(addSourceBtn);
             }
+            dataSourcesGrid.setWidthFull();
             dataSourcesGrid.setHeight("220px");
+            dataSourcesGrid.getStyle().set("min-width", "0");
             layout.add(sourcesHeader, dataSourcesGrid);
         }
         layout.setSizeFull();
         layout.setPadding(false);
+        layout.getStyle().set("min-width", "0");
         return layout;
     }
 
@@ -660,12 +679,10 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle, Befor
                 .setTextAlign(ColumnTextAlign.END)
                 .setAutoWidth(true);
 
-        readingsGrid.addColumn(EnergyDateRow::notes)
-                .setHeader(getTranslation("energy.readings.column.notes"))
-                .setAutoWidth(true);
-
         readingsGrid.addColumn(new ComponentRenderer<>(this::renderReadingRowActions))
                 .setHeader(getTranslation("energy.readings.column.actions"))
+                .setFrozenToEnd(true)
+                .setFlexGrow(0)
                 .setAutoWidth(true);
 
         groupHeaderRow = readingsGrid.prependHeaderRow();
@@ -1031,6 +1048,8 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle, Befor
 
         metersGrid.addColumn(new ComponentRenderer<>(this::renderMeterActions))
                 .setHeader(getTranslation("energy.readings.column.actions"))
+                .setFrozenToEnd(true)
+                .setFlexGrow(0)
                 .setAutoWidth(true);
 
         metersGrid.addThemeVariants(GridVariant.LUMO_ROW_STRIPES, GridVariant.LUMO_COLUMN_BORDERS);
@@ -1078,6 +1097,8 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle, Befor
 
         tariffsGrid.addColumn(new ComponentRenderer<>(this::renderTariffActions))
                 .setHeader(getTranslation("energy.readings.column.actions"))
+                .setFrozenToEnd(true)
+                .setFlexGrow(0)
                 .setAutoWidth(true);
 
         tariffsGrid.addThemeVariants(GridVariant.LUMO_ROW_STRIPES, GridVariant.LUMO_COLUMN_BORDERS);
@@ -1108,6 +1129,8 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle, Befor
 
         dataSourcesGrid.addColumn(new ComponentRenderer<>(this::renderDataSourceActions))
                 .setHeader(getTranslation("energy.readings.column.actions"))
+                .setFrozenToEnd(true)
+                .setFlexGrow(0)
                 .setAutoWidth(true);
 
         dataSourcesGrid.addThemeVariants(GridVariant.LUMO_ROW_STRIPES, GridVariant.LUMO_COLUMN_BORDERS);
@@ -1222,7 +1245,7 @@ public class EnergyView extends VerticalLayout implements HasDynamicTitle, Befor
                 .filter(m -> m.getId() != null)
                 .collect(Collectors.toMap(Meter::getId, m -> m, (a, b) -> a));
         List<EnergyTariff> tariffs = tariffService.findByHouse(selectedHouseId);
-        List<EnergyDateRow> dateRows = amortizationService.buildDateRows(selectedHouseId);
+        List<EnergyDateRow> dateRows = amortizationService.buildDateRows(selectedHouseId, monthEndOnly);
         averageDeltasByMeter = amortizationService.calculateAverageDeltasByMeter(dateRows);
         List<UUID> readingIds = dateRows.stream()
                 .flatMap(r -> r.readingsByMeter().values().stream())
