@@ -7,6 +7,7 @@ public enum EnergyDataSourceProvider {
 
     SHELLY_PRO_3EM(false, false, false),
     FUSIONSOLAR_KIOSK(false, true, false),
+    HUAWEI_MODBUS(true, false, false),
     KATHREIN_WALLBOX(true, true, true);
 
     private final boolean supportsUsername;

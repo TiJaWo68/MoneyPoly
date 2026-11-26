@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.IOException;
+import java.time.LocalDate;
 
 import org.junit.jupiter.api.Test;
 
@@ -67,9 +68,9 @@ class EnergyDeviceClientsTest {
                   "status": "ok",
                   "table_pages": "2",
                   "tbl_remote_statistic": [
-                    {"remoteId": 398, "user": "9333A680", "status": "loading_done", "energy": 23376},
-                    {"remoteId": 399, "user": "9333A680", "status": "charging", "energy": 1000},
-                    {"remoteId": 397, "user": "04968ADA551390", "status": "loading_done", "energy": 23570}
+                    {"remoteId": 398, "user": "9333A680", "status": "loading_done", "stop": "2026-11-22 09:09:38", "energy": 23376},
+                    {"remoteId": 399, "user": "9333A680", "status": "charging", "stop": "2026-11-23 11:51:37", "energy": 1000},
+                    {"remoteId": 397, "user": "04968ADA551390", "status": "loading_done", "start": "2026-11-21 10:00:00", "energy": 23570}
                   ]
                 }
                 """;
@@ -80,6 +81,8 @@ class EnergyDeviceClientsTest {
         assertThat(page.sessions().get(0).remoteId()).isEqualTo(398L);
         assertThat(page.sessions().get(0).userTag()).isEqualTo("9333A680");
         assertThat(page.sessions().get(0).energyKwh()).isEqualByComparingTo("23.376");
+        assertThat(page.sessions().get(0).stopDate()).isEqualTo(LocalDate.of(2026, 11, 22));
         assertThat(page.sessions().get(1).energyKwh()).isEqualByComparingTo("23.570");
+        assertThat(page.sessions().get(1).stopDate()).isEqualTo(LocalDate.of(2026, 11, 21));
     }
 }

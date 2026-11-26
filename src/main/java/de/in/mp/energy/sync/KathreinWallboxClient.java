@@ -5,6 +5,9 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -27,6 +30,7 @@ public class KathreinWallboxClient {
 
     private static final BigDecimal WH_PER_KWH = new BigDecimal("1000");
     private static final int MAX_PAGES = 20;
+    private static final DateTimeFormatter WALLBOX_DT_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private final EnergyHttpHelper httpHelper;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -98,7 +102,11 @@ public class KathreinWallboxClient {
                     continue;
                 }
                 BigDecimal kwh = row.get("energy").decimalValue().divide(WH_PER_KWH, 3, RoundingMode.HALF_UP);
-                sessions.add(new ChargingSession(remoteId, userTag, kwh));
+                LocalDate stopDate = parseSessionDate(row.path("stop").asText(""));
+                if (stopDate == null) {
+                    stopDate = parseSessionDate(row.path("start").asText(""));
+                }
+                sessions.add(new ChargingSession(remoteId, userTag, kwh, stopDate));
             }
         }
         return new PageResult(totalPages, sessions);
@@ -124,6 +132,22 @@ public class KathreinWallboxClient {
             return labels;
         } catch (Exception ignored) {
             return Map.of();
+        }
+    }
+
+    private static LocalDate parseSessionDate(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String trimmed = raw.trim();
+        try {
+            return LocalDateTime.parse(trimmed, WALLBOX_DT_FMT).toLocalDate();
+        } catch (Exception ignored) {
+            try {
+                return LocalDate.parse(trimmed.substring(0, Math.min(10, trimmed.length())));
+            } catch (Exception ignoredAgain) {
+                return null;
+            }
         }
     }
 

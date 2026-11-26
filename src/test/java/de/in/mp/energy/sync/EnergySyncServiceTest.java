@@ -34,6 +34,7 @@ class EnergySyncServiceTest {
     private MeterReadingService readingService;
     private ShellyPro3EmClient shellyClient;
     private FusionSolarKioskClient kioskClient;
+    private HuaweiModbusClient modbusClient;
     private KathreinWallboxClient wallboxClient;
     private SessionCryptoService cryptoService;
     private EnergySyncService service;
@@ -45,11 +46,12 @@ class EnergySyncServiceTest {
         readingService = mock(MeterReadingService.class);
         shellyClient = mock(ShellyPro3EmClient.class);
         kioskClient = mock(FusionSolarKioskClient.class);
+        modbusClient = mock(HuaweiModbusClient.class);
         wallboxClient = mock(KathreinWallboxClient.class);
         cryptoService = new SessionCryptoService("dGVzdC1rZXktMzItYnl0ZXMtbG9uZy0xMjM0NTY3ODkw");
         service = new EnergySyncService(
                 dataSourceRepository, meterRepository, readingService,
-                shellyClient, kioskClient, wallboxClient, cryptoService);
+                shellyClient, kioskClient, modbusClient, wallboxClient, cryptoService);
     }
 
     @Test
@@ -166,5 +168,124 @@ class EnergySyncServiceTest {
         assertThat(saved.getBaseUrl()).isEqualTo("https://uni003eu5.fusionsolar.huawei.com");
         assertThat(saved.getSecretEncrypted()).isNotBlank().doesNotContain("kk-secret-123");
         assertThat(cryptoService.decrypt(saved.getSecretEncrypted())).isEqualTo("kk-secret-123");
+    }
+
+    @Test
+    void syncsHuaweiModbusCumulativeEnergy() throws Exception {
+        UUID sourceId = UUID.randomUUID();
+        EnergyDataSource modbus = new EnergyDataSource();
+        modbus.setId(sourceId);
+        modbus.setName("Huawei PV (Modbus)");
+        modbus.setProvider(EnergyDataSourceProvider.HUAWEI_MODBUS);
+        modbus.setBaseUrl("homeassistant.local:502");
+        modbus.setUsername("1,2,16");
+
+        Meter pvMeter = new Meter();
+        pvMeter.setId(UUID.randomUUID());
+        pvMeter.setName("PV Dach");
+        pvMeter.setType(MeterType.PV_GENERATION);
+        pvMeter.setDataSourceId(sourceId);
+        pvMeter.setSourceMetricKey(HuaweiModbusClient.METRIC_CUMULATIVE_ENERGY);
+        pvMeter.setSourceOffset(BigDecimal.ZERO);
+
+        when(meterRepository.findByDataSourceId(sourceId)).thenReturn(List.of(pvMeter));
+        when(modbusClient.fetch(modbus)).thenReturn(DeviceSnapshot.ofMetrics(Map.of(
+                HuaweiModbusClient.METRIC_CUMULATIVE_ENERGY, new BigDecimal("38825.800"),
+                "UNIT_1", new BigDecimal("18239.660"),
+                "UNIT_2", new BigDecimal("1.600"),
+                "UNIT_16", new BigDecimal("20584.540"))));
+
+        LocalDate today = LocalDate.of(2026, 11, 26);
+        EnergySyncSummary summary = service.syncSources(List.of(modbus), today);
+
+        assertThat(summary.readingsUpdated()).isEqualTo(1);
+        assertThat(summary.errors()).isEmpty();
+        verify(readingService).recordReading(
+                pvMeter.getId(), today, new BigDecimal("38825.800"), "Auto-Sync: Huawei PV (Modbus)");
+    }
+
+    @Test
+    void sumsMultipleCommaSeparatedWallboxRfidTags() throws Exception {
+        UUID sourceId = UUID.randomUUID();
+        EnergyDataSource wallbox = new EnergyDataSource();
+        wallbox.setId(sourceId);
+        wallbox.setName("Kathrein Wallbox");
+        wallbox.setProvider(EnergyDataSourceProvider.KATHREIN_WALLBOX);
+
+        Meter privateWallbox = new Meter();
+        privateWallbox.setId(UUID.randomUUID());
+        privateWallbox.setName("Wallbox Privat");
+        privateWallbox.setType(MeterType.WALLBOX_PRIVATE);
+        privateWallbox.setDataSourceId(sourceId);
+        privateWallbox.setSourceMetricKey("7E929E80, 9333A680");
+        privateWallbox.setLastRemoteId(100L);
+
+        MeterReading prev = new MeterReading();
+        prev.setReadingDate(LocalDate.of(2026, 11, 25));
+        prev.setReadingValue(new BigDecimal("500.000"));
+
+        when(meterRepository.findByDataSourceId(sourceId)).thenReturn(List.of(privateWallbox));
+        when(readingService.findByMeter(privateWallbox.getId())).thenReturn(List.of(prev));
+        when(wallboxClient.fetch(wallbox, null)).thenReturn(new DeviceSnapshot(
+                Map.of(),
+                List.of(
+                        new ChargingSession(101L, "7e929e80", new BigDecimal("12.500")),
+                        new ChargingSession(102L, "OTHER", new BigDecimal("99.000")),
+                        new ChargingSession(103L, "9333A680", new BigDecimal("7.250"))),
+                Map.of()));
+
+        LocalDate today = LocalDate.of(2026, 11, 26);
+        EnergySyncSummary summary = service.syncSources(List.of(wallbox), today);
+
+        assertThat(summary.readingsUpdated()).isEqualTo(1);
+        assertThat(privateWallbox.getLastRemoteId()).isEqualTo(103L);
+        verify(readingService).recordReading(
+                privateWallbox.getId(), today, new BigDecimal("519.750"), "Auto-Sync: Kathrein Wallbox");
+    }
+
+    @Test
+    void sumsWallboxSessionsByStopDateWindowIdempotently() throws Exception {
+        UUID sourceId = UUID.randomUUID();
+        EnergyDataSource wallbox = new EnergyDataSource();
+        wallbox.setId(sourceId);
+        wallbox.setName("Kathrein Wallbox");
+        wallbox.setProvider(EnergyDataSourceProvider.KATHREIN_WALLBOX);
+
+        Meter privateWallbox = new Meter();
+        privateWallbox.setId(UUID.randomUUID());
+        privateWallbox.setName("Wallbox Privat");
+        privateWallbox.setType(MeterType.WALLBOX_PRIVATE);
+        privateWallbox.setDataSourceId(sourceId);
+        privateWallbox.setSourceMetricKey("7E929E80,9333A680");
+
+        MeterReading octReading = new MeterReading();
+        octReading.setReadingDate(LocalDate.of(2026, 10, 31));
+        octReading.setReadingValue(new BigDecimal("500.000"));
+
+        when(meterRepository.findByDataSourceId(sourceId)).thenReturn(List.of(privateWallbox));
+        when(readingService.findByMeter(privateWallbox.getId())).thenReturn(List.of(octReading));
+        when(wallboxClient.fetch(wallbox, null)).thenReturn(new DeviceSnapshot(
+                Map.of(),
+                List.of(
+                        // Before/on previous reading date -> ignored
+                        new ChargingSession(390L, "7E929E80", new BigDecimal("50.000"), LocalDate.of(2026, 10, 31)),
+                        // Inside (2026-10-31, 2026-11-30] -> counted
+                        new ChargingSession(398L, "9333A680", new BigDecimal("23.376"), LocalDate.of(2026, 11, 22)),
+                        new ChargingSession(402L, "7E929E80", new BigDecimal("9.049"), LocalDate.of(2026, 11, 26)),
+                        // Different RFID -> ignored
+                        new ChargingSession(401L, "04968ADA551390", new BigDecimal("39.267"), LocalDate.of(2026, 11, 26))),
+                Map.of()));
+
+        LocalDate novEnd = LocalDate.of(2026, 11, 30);
+        EnergySyncSummary first = service.syncSources(List.of(wallbox), novEnd);
+        assertThat(first.readingsUpdated()).isEqualTo(1);
+        verify(readingService).recordReading(
+                privateWallbox.getId(), novEnd, new BigDecimal("532.425"), "Auto-Sync: Kathrein Wallbox");
+
+        // Re-running on same date is idempotent (same base reading before novEnd -> same 532.425)
+        EnergySyncSummary second = service.syncSources(List.of(wallbox), novEnd);
+        assertThat(second.readingsUpdated()).isEqualTo(1);
+        verify(readingService, org.mockito.Mockito.times(2)).recordReading(
+                privateWallbox.getId(), novEnd, new BigDecimal("532.425"), "Auto-Sync: Kathrein Wallbox");
     }
 }

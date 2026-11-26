@@ -43,6 +43,7 @@ public class EnergySyncService {
     private final MeterReadingService readingService;
     private final ShellyPro3EmClient shellyClient;
     private final FusionSolarKioskClient kioskClient;
+    private final HuaweiModbusClient modbusClient;
     private final KathreinWallboxClient wallboxClient;
     private final SessionCryptoService cryptoService;
 
@@ -53,6 +54,7 @@ public class EnergySyncService {
             MeterReadingService readingService,
             ShellyPro3EmClient shellyClient,
             FusionSolarKioskClient kioskClient,
+            HuaweiModbusClient modbusClient,
             KathreinWallboxClient wallboxClient,
             @Autowired(required = false) SessionCryptoService cryptoService) {
         this.dataSourceRepository = dataSourceRepository;
@@ -60,6 +62,7 @@ public class EnergySyncService {
         this.readingService = readingService;
         this.shellyClient = shellyClient;
         this.kioskClient = kioskClient;
+        this.modbusClient = modbusClient;
         this.wallboxClient = wallboxClient;
         this.cryptoService = cryptoService;
     }
@@ -231,11 +234,45 @@ public class EnergySyncService {
                 .reduce((first, second) -> second);
 
         if (source.getProvider() == EnergyDataSourceProvider.KATHREIN_WALLBOX) {
+            Set<String> allowedTags = parseRfidTags(metricKey);
+            boolean useDateWindow = latestBeforeToday.isPresent()
+                    && snapshot.sessions().stream().anyMatch(s -> s.stopDate() != null);
+            if (useDateWindow) {
+                LocalDate prevDate = latestBeforeToday.get().getReadingDate();
+                BigDecimal addedKwh = BigDecimal.ZERO;
+                long maxRemoteId = meter.getLastRemoteId() != null ? meter.getLastRemoteId() : 0L;
+                for (ChargingSession session : snapshot.sessions()) {
+                    if (session.userTag() != null
+                            && allowedTags.contains(session.userTag().trim().toUpperCase(java.util.Locale.ROOT))
+                            && session.stopDate() != null
+                            && session.stopDate().isAfter(prevDate)
+                            && !session.stopDate().isAfter(readingDate)) {
+                        addedKwh = addedKwh.add(session.energyKwh());
+                        if (session.remoteId() > maxRemoteId) {
+                            maxRemoteId = session.remoteId();
+                        }
+                    }
+                }
+                if (addedKwh.signum() <= 0) {
+                    return false;
+                }
+                BigDecimal nextReading = latestBeforeToday.get().getReadingValue()
+                        .add(addedKwh)
+                        .setScale(3, RoundingMode.HALF_UP);
+                readingService.recordReading(meter.getId(), readingDate, nextReading, "Auto-Sync: " + source.getName());
+                if (maxRemoteId > (meter.getLastRemoteId() != null ? meter.getLastRemoteId() : 0L)) {
+                    meter.setLastRemoteId(maxRemoteId);
+                    meterRepository.save(meter);
+                }
+                return true;
+            }
+
             long minRemoteId = meter.getLastRemoteId() != null ? meter.getLastRemoteId() : 0L;
             BigDecimal addedKwh = BigDecimal.ZERO;
             long maxRemoteId = minRemoteId;
             for (ChargingSession session : snapshot.sessions()) {
-                if (session.remoteId() > minRemoteId && metricKey.trim().equalsIgnoreCase(session.userTag())) {
+                if (session.remoteId() > minRemoteId && session.userTag() != null
+                        && allowedTags.contains(session.userTag().trim().toUpperCase(java.util.Locale.ROOT))) {
                     addedKwh = addedKwh.add(session.energyKwh());
                     if (session.remoteId() > maxRemoteId) {
                         maxRemoteId = session.remoteId();
@@ -274,6 +311,7 @@ public class EnergySyncService {
         return switch (source.getProvider()) {
             case SHELLY_PRO_3EM -> shellyClient.fetch(source);
             case FUSIONSOLAR_KIOSK -> kioskClient.fetch(source, rawSecret);
+            case HUAWEI_MODBUS -> modbusClient.fetch(source);
             case KATHREIN_WALLBOX -> wallboxClient.fetch(source, rawSecret);
         };
     }
@@ -289,6 +327,14 @@ public class EnergySyncService {
             throw new IllegalStateException("MONEYPOLY_CRYPTO_KEY is not configured");
         }
         return cryptoService.decrypt(source.getSecretEncrypted());
+    }
+
+    private static Set<String> parseRfidTags(String metricKey) {
+        return java.util.Arrays.stream(metricKey.split("[,;\\s]+"))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .map(s -> s.toUpperCase(java.util.Locale.ROOT))
+                .collect(Collectors.toSet());
     }
 
     private static String truncate(String text, int maxLen) {

@@ -32,6 +32,7 @@ import de.in.mp.energy.sync.EnergyDataSource;
 import de.in.mp.energy.sync.EnergyDataSourceProvider;
 import de.in.mp.energy.sync.EnergySyncService;
 import de.in.mp.energy.sync.FusionSolarKioskClient;
+import de.in.mp.energy.sync.HuaweiModbusClient;
 import de.in.mp.energy.sync.ShellyPro3EmClient;
 
 /**
@@ -268,6 +269,7 @@ public class MeterEditorDialog extends Dialog {
                         ShellyPro3EmClient.METRIC_TOTAL_ACT,
                         ShellyPro3EmClient.METRIC_TOTAL_ACT_RET);
                 case FUSIONSOLAR_KIOSK -> List.of(FusionSolarKioskClient.METRIC_CUMULATIVE_ENERGY);
+                case HUAWEI_MODBUS -> List.of(HuaweiModbusClient.METRIC_CUMULATIVE_ENERGY);
                 case KATHREIN_WALLBOX -> List.of();
             };
             String currentMetric = sourceMetricKey.getValue();

@@ -1,6 +1,7 @@
 package de.in.mp.energy.sync;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 
@@ -22,7 +23,10 @@ public final class EnergyDeviceModels {
         }
     }
 
-    public record ChargingSession(long remoteId, String userTag, BigDecimal energyKwh) {
+    public record ChargingSession(long remoteId, String userTag, BigDecimal energyKwh, LocalDate stopDate) {
+        public ChargingSession(long remoteId, String userTag, BigDecimal energyKwh) {
+            this(remoteId, userTag, energyKwh, null);
+        }
     }
 
     public record EnergySyncSummary(int sourcesChecked, int readingsUpdated, List<String> errors) {

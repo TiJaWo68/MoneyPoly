@@ -159,6 +159,16 @@ public class EnergyDataSourceDialog extends Dialog {
                 username.clear();
                 trustSelfSigned.setValue(false);
             }
+            case HUAWEI_MODBUS -> {
+                if (name.getValue().isBlank()) {
+                    name.setValue("Huawei PV (Modbus)");
+                }
+                baseUrl.setValue("homeassistant.local:502");
+                if (username.getValue().isBlank()) {
+                    username.setValue("1,2,16");
+                }
+                trustSelfSigned.setValue(false);
+            }
             case KATHREIN_WALLBOX -> {
                 if (name.getValue().isBlank()) {
                     name.setValue("Kathrein Wallbox");
@@ -177,6 +187,15 @@ public class EnergyDataSourceDialog extends Dialog {
         username.setVisible(p != null && p.supportsUsername());
         secret.setVisible(p != null && p.usesSecret());
         trustSelfSigned.setVisible(p != null && p.supportsSelfSigned());
+        if (p == EnergyDataSourceProvider.HUAWEI_MODBUS) {
+            baseUrl.setLabel(getTranslation("energy.source.field.modbus-host"));
+            username.setLabel(getTranslation("energy.source.field.unit-ids"));
+            username.setHelperText(getTranslation("energy.source.hint.unit-ids"));
+        } else {
+            baseUrl.setLabel(getTranslation("energy.source.field.base-url"));
+            username.setLabel(getTranslation("energy.source.field.username"));
+            username.setHelperText("");
+        }
         if (p == EnergyDataSourceProvider.FUSIONSOLAR_KIOSK) {
             secret.setLabel(getTranslation("energy.source.field.kiosk-key"));
         } else {
